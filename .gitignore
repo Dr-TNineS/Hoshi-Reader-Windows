@@ -1,0 +1,10 @@
+﻿__pycache__/
+*.pyc
+*.pyo
+search_settings.json
+搜索结果.txt
+.vscode/
+.idea/
+*.egg-info/
+dist/
+build/
