@@ -24,6 +24,13 @@
   let isVert = $derived(direction === "vertical");
   let columnGap = $derived(isVert ? 30 : 40);
 
+  // Measured page step: (scrollWidth + gap) / totalPages
+  // Accounts for actual column width differing from clientWidth
+  function pageStep(): number {
+    if (!containerEl || totalPages <= 1) return containerEl?.clientWidth || 1;
+    return (containerEl.scrollWidth + columnGap) / totalPages;
+  }
+
   function recalc() {
     if (!containerEl || !contentEl) return;
     if (mode === "scroll") { totalPages = 1; return; }
@@ -36,11 +43,11 @@
 
   function goPage(p: number) {
     if (!containerEl) return;
-    const pageW = containerEl.clientWidth + columnGap;
+    const step = pageStep();
     currentPage = Math.max(0, Math.min(p, totalPages - 1));
     const scrollTarget = isVert
-      ? (totalPages - 1 - currentPage) * pageW
-      : currentPage * pageW;
+      ? (totalPages - 1 - currentPage) * step
+      : currentPage * step;
     containerEl.scrollTo({ left: scrollTarget, behavior: "smooth" });
   }
 
@@ -56,9 +63,11 @@
 
   function onScroll() {
     if (!containerEl || mode !== "paginated" || initializing) return;
-    const pageW = containerEl.clientWidth + columnGap;
-    const raw = Math.round(containerEl.scrollLeft / (pageW || 1));
-    currentPage = isVert ? totalPages - 1 - raw : raw;
+    const step = pageStep();
+    const raw = Math.round(containerEl.scrollLeft / (step || 1));
+    currentPage = isVert
+      ? Math.max(0, Math.min(totalPages - 1, totalPages - 1 - raw))
+      : Math.max(0, Math.min(totalPages - 1, raw));
   }
 
   function handleKey(e: KeyboardEvent) {
@@ -80,11 +89,11 @@
       charCount = getTotalChars(el);
       recalc();
       if (containerEl) {
-        const pageW = containerEl.clientWidth + columnGap;
+        const step = pageStep();
         initializing = true;
         if (startAtEnd) {
           currentPage = totalPages - 1;
-          containerEl.scrollLeft = isVert ? 0 : currentPage * pageW;
+          containerEl.scrollLeft = isVert ? 0 : currentPage * step;
         } else if (isVert) {
           containerEl.scrollLeft = containerEl.scrollWidth;
           currentPage = 0;
