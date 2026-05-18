@@ -20,6 +20,7 @@
   let totalPages = $state(1);
   let mode: "paginated" | "scroll" = $state((localStorage.getItem("hoshi_mode") as "paginated" | "scroll") ?? "paginated");
   let initializing = $state(false);
+  let lastSnappedScroll = $state(0);
   let showSettings = $state(false);
 
   // ---- Reader appearance settings ----
@@ -43,14 +44,16 @@
   $effect(() => { localStorage.setItem("hoshi_textIndent", String(textIndent)); });
 
   let isVert = $derived(direction === "vertical");
-  let columnGap = $derived(isVert ? 30 : 40);
 
   let styleVars = $derived(`--fs:${fontSize}px;--lh:${lineHeight};--hp:${hPadding}px;--indent:${textIndent}em`);
+
+  // Column gap mirrors CSS: 2vh for vertical, 2vw for horizontal
+  function columnGapPx(): number { return isVert ? window.innerHeight * 0.02 : window.innerWidth * 0.02; }
 
   // Measured page step: (scrollWidth + gap) / totalPages
   function pageStep(): number {
     if (!containerEl || totalPages <= 1) return containerEl?.clientWidth || 1;
-    return (containerEl.scrollWidth + columnGap) / totalPages;
+    return (containerEl.scrollWidth + columnGapPx()) / totalPages;
   }
 
   function recalc() {
@@ -58,8 +61,8 @@
     if (mode === "scroll") { totalPages = 1; return; }
     const colW = containerEl.clientWidth;
     const sw = containerEl.scrollWidth || colW;
-    const pageW = colW + columnGap;
-    totalPages = Math.max(1, Math.ceil((sw + columnGap) / (pageW || 1)));
+    const pageW = colW + columnGapPx();
+    totalPages = Math.max(1, Math.ceil((sw + columnGapPx()) / (pageW || 1)));
   }
 
   function goPage(p: number) {
@@ -69,7 +72,9 @@
     const scrollTarget = isVert
       ? (totalPages - 1 - currentPage) * step
       : currentPage * step;
-    containerEl.scrollTo({ left: scrollTarget, behavior: "smooth" });
+    // Pre-set snapped position so the scroll handler accepts it (reference: paginate)
+    lastSnappedScroll = scrollTarget;
+    containerEl.scrollLeft = scrollTarget;
   }
 
   function next() {
@@ -82,10 +87,26 @@
     else onPrevChapter();
   }
 
+  // JS math snap (reference: Mac/iOS registerSnapScroll + Android paginate)
+  // Replaces CSS scroll-snap for deterministic page alignment
   function onScroll() {
     if (!containerEl || mode !== "paginated" || initializing) return;
     const step = pageStep();
-    const raw = Math.round(containerEl.scrollLeft / (step || 1));
+    if (step <= 0) return;
+
+    const currentScroll = containerEl.scrollLeft;
+    const snappedScroll = Math.round(currentScroll / step) * step;
+
+    // Reject intermediate positions: snap back to last accepted page
+    if (Math.abs(currentScroll - snappedScroll) > 1) {
+      containerEl.scrollLeft = lastSnappedScroll;
+      return;
+    }
+
+    // At a page boundary: accept and track
+    lastSnappedScroll = snappedScroll;
+
+    const raw = Math.round(containerEl.scrollLeft / step);
     currentPage = isVert
       ? Math.max(0, Math.min(totalPages - 1, totalPages - 1 - raw))
       : Math.max(0, Math.min(totalPages - 1, raw));
@@ -114,6 +135,8 @@
 
     queueMicrotask(() => {
       charCount = getTotalChars(el);
+      // Inject exact page width (excludes scrollbar, unlike 100vw). Reference: Android ReaderPaginationScripts
+      containerEl.style.setProperty('--page-width', containerEl.clientWidth + 'px');
       recalc();
       if (containerEl) {
         const step = pageStep();
@@ -128,11 +151,14 @@
           containerEl.scrollLeft = 0;
           currentPage = 0;
         }
-        requestAnimationFrame(() => requestAnimationFrame(() => { initializing = false; }));
+        requestAnimationFrame(() => requestAnimationFrame(() => {
+          initializing = false;
+          lastSnappedScroll = containerEl.scrollLeft;
+        }));
       }
     });
 
-    const ro = new ResizeObserver(() => recalc());
+    const ro = new ResizeObserver(() => { containerEl.style.setProperty('--page-width', containerEl.clientWidth + 'px'); recalc(); });
     ro.observe(el);
 
     return () => ro.disconnect();
@@ -200,40 +226,95 @@
   }
 
   .rv { flex:1; overflow:hidden; }
-  .rv:has(.vp) { overflow-x:auto; overflow-y:hidden; scroll-snap-type:x mandatory; }
+  .rv:has(.vp) { overflow-x:auto; overflow-y:hidden; }
   .rv:has(.vs) { overflow-y:auto; overflow-x:hidden; }
-  .rct.vp { height:100%; scroll-snap-align:start; }
+  .rct.vp { height:100%; }
 
   .rct {
     font-size: var(--fs, 21px);
     line-height: var(--lh, 1.9);
     text-indent: var(--indent, 0);
   }
+
+  /* ---- Paginated vertical (reference: Mac/Android column-width scheme) ---- */
   .rct.vp.vt {
-    writing-mode:vertical-rl;
-    column-width:calc(100vw - var(--hp, 150px) * 2);
-    column-gap:30px; column-fill:auto;
-    padding:20px var(--hp, 150px);
-    overflow-x:visible; width:max-content;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    column-width: var(--page-width, 100vw);
+    column-gap: 2vh;
+    column-fill: auto;
+    orphans: 1;
+    widows: 1;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    padding: 2vh var(--hp, 150px);
+    padding-bottom: calc(var(--fs, 21px) * 0.55 + 2vh);
+    overflow-x: visible;
+    width: max-content;
   }
+
+  /* ---- Paginated horizontal ---- */
   .rct.vp:not(.vt) {
-    column-width:calc(100vw - var(--hp, 150px) * 2);
-    column-gap:40px; column-fill:auto;
-    padding:28px var(--hp, 150px);
-    font-family:"Yu Mincho","Hiragino Mincho Pro","MS Mincho",serif;
-    width:max-content;
+    text-orientation: mixed;
+    column-width: var(--page-width, 100vw);
+    column-gap: 2vw;
+    column-fill: auto;
+    orphans: 1;
+    widows: 1;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    padding: 2vh var(--hp, 150px);
+    font-family: "Yu Mincho","Hiragino Mincho Pro","MS Mincho",serif;
+    width: max-content;
   }
+
+  /* ---- Scroll vertical ---- */
   .rct.vs.vt {
-    writing-mode:vertical-rl;
-    padding:28px var(--hp, 150px);
-    overflow-y:hidden; overflow-x:auto;
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    padding: 2vh var(--hp, 150px);
+    overflow-y: hidden;
+    overflow-x: auto;
   }
+
+  /* ---- Scroll horizontal ---- */
   .rct.vs:not(.vt) {
-    padding:28px var(--hp, 150px);
-    overflow-y:auto;
-    font-family:"Yu Mincho","Hiragino Mincho Pro","MS Mincho",serif;
+    overflow-wrap: anywhere;
+    word-break: normal;
+    padding: 2vh var(--hp, 150px);
+    overflow-y: auto;
+    font-family: "Yu Mincho","Hiragino Mincho Pro","MS Mincho",serif;
   }
-  .rct :global(img) { max-width:100%; max-height:80vh; }
-  .rct :global(ruby) { ruby-align:center; }
-  .rct :global(rt) { font-size:0.5em; }
+
+  /* ---- Global content constraints (reference: * { max-width:100% }) ---- */
+  .rct :global(*) { max-width: 100% !important; box-sizing: border-box !important; }
+
+  /* ---- Images ---- */
+  .rct :global(img) {
+    max-width: 100%;
+    max-height: 80vh;
+    object-fit: contain;
+    display: block;
+    margin: 0 auto;
+  }
+
+  /* ---- Avoid page break for structural blocks (reference: avoidPageBreak) ---- */
+  .rct.vp :global(h1),
+  .rct.vp :global(h2),
+  .rct.vp :global(h3),
+  .rct.vp :global(h4),
+  .rct.vp :global(h5),
+  .rct.vp :global(h6),
+  .rct.vp :global(figure),
+  .rct.vp :global(table),
+  .rct.vp :global(blockquote),
+  .rct.vp :global(svg) {
+    break-inside: avoid !important;
+    -webkit-column-break-inside: avoid !important;
+  }
+
+  .rct :global(ruby) { ruby-align: center; }
+  .rct :global(rt) { font-size: 0.5em; }
 </style>

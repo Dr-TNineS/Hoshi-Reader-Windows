@@ -1,1 +1,3 @@
-/* Hoshi Reader Windows - styles in components */
+html {
+  -webkit-line-box-contain: block glyphs replaced;
+}
