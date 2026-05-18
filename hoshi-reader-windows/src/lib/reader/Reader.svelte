@@ -18,7 +18,7 @@
   let charCount = $state(0);
   let currentPage = $state(0);
   let totalPages = $state(1);
-  let mode: "paginated" | "scroll" = $state("paginated");
+  let mode: "paginated" | "scroll" = $state((localStorage.getItem("hoshi_mode") as "paginated" | "scroll") ?? "paginated");
   let initializing = $state(false);
 
   let isVert = $derived(direction === "vertical");
@@ -79,6 +79,11 @@
     else if (e.key === "m" || e.key === "M") { mode = mode === "paginated" ? "scroll" : "paginated"; currentPage = 0; }
     else if (e.key === "Escape") onBackToShelf();
   }
+
+  // Persist mode
+  $effect(() => {
+    localStorage.setItem("hoshi_mode", mode);
+  });
 
   $effect(() => {
     const el = contentEl;
