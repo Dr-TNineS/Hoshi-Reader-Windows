@@ -1,6 +1,6 @@
 // Reader core - ported from Hoshi Reader Mac reader.js
 
-const CJK_REGEX = /[0-9A-Za-z○▷�?〃�?ヿ一-鿿豈-﫿︰-﹏\p{Radical}\p{Unified_Ideograph}]+/gimu;
+const CJK_REGEX = /[0-9A-Za-z○▷〆〃々ヿ一-鿿豈-﫿︰-﹏\p{Radical}\p{Unified_Ideograph}]+/gimu;
 
 export function isVertical(container: HTMLElement): boolean {
   return getComputedStyle(container).writingMode === "vertical-rl";
