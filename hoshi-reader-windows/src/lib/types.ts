@@ -24,5 +24,3 @@ export interface TocNode {
   children: TocNode[];
 }
 
-export type ReadingMode = "paginated" | "scroll";
-export type TextDirection = "horizontal" | "vertical";

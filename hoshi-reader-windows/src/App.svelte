@@ -2,7 +2,7 @@
   import { convertFileSrc, invoke, isTauri as isTauriRuntime } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-dialog";
   import Reader from "./lib/reader/Reader.svelte";
-  import type { EpubMeta, TextDirection, TocNode } from "./lib/types";
+  import type { EpubMeta, TocNode } from "./lib/types";
 
   type SavedSession = {
     path: string;
@@ -121,9 +121,6 @@
   let chapterIndex = $state(0);
   let currentBookPath = $state("");
   let books = $state<BookRecord[]>(readJson<BookRecord[]>(BOOKS_KEY, []));
-  let direction = $state<TextDirection>(
-    (localStorage.getItem("hoshi_direction") as TextDirection) ?? "vertical"
-  );
   let startAtEnd = $state(false);
   let showToc = $state(false);
   let error = $state("");
@@ -265,10 +262,6 @@
     if (meta && chapterIndex < meta.spine.length - 1) loadChapter(chapterIndex + 1);
   }
 
-  function toggleDirection() {
-    direction = direction === "vertical" ? "horizontal" : "vertical";
-  }
-
   function progressLabel(book: BookRecord): string {
     if (book.totalChapters <= 0) return "No chapters";
     return `Ch.${book.chapter + 1}/${book.totalChapters}`;
@@ -278,9 +271,6 @@
     return new Date(timestamp).toLocaleString();
   }
 
-  $effect(() => {
-    localStorage.setItem("hoshi_direction", direction);
-  });
 </script>
 
 <main class="app">
@@ -313,12 +303,11 @@
         {/if}
       </div>
 
-      <p class="keys">arrow:page | M:mode | Ctrl+arrow:chapter | Esc:shelf</p>
+      <p class="keys">arrow:page | Ctrl+arrow:chapter | Esc:shelf</p>
     </section>
   {:else}
     <Reader
       content={chapterHtml}
-      {direction}
       {chapterIndex}
       totalChapters={meta?.spine.length ?? 0}
       onPrevChapter={prevChapter}
@@ -357,18 +346,15 @@
       <span>Ch.{chapterIndex + 1}/{meta?.spine.length ?? 0}</span>
       <button onclick={nextChapter}>Next Ch</button>
       <button onclick={() => showToc = !showToc}>TOC</button>
-      <button onclick={toggleDirection}>{direction === "vertical" ? "V" : "H"}</button>
       <button onclick={() => view = "bookshelf"}>Esc</button>
     </div>
   {/if}
-  {#if debug}<div class="dbg">{debug}</div>{/if}
 </main>
 
 <style>
   :global(*) { margin: 0; padding: 0; box-sizing: border-box; }
   :global(body) { background: #202124; color: #e8eaed; font-family: "Segoe UI", sans-serif; overflow: hidden; }
   .app { width: 100vw; height: 100vh; }
-  .dbg { position: fixed; top: 0; right: 0; z-index: 9999; padding: 2px 10px; font-size: 11px; background: rgba(0, 130, 90, 0.85); color: #fff; border-radius: 0 0 0 4px; pointer-events: none; }
   .bookshelf { width: min(920px, calc(100vw - 48px)); height: 100vh; margin: 0 auto; display: flex; flex-direction: column; justify-content: center; gap: 22px; }
   .shelf-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; }
   h1 { font-size: 32px; font-weight: 300; letter-spacing: 4px; color: #fff; }
