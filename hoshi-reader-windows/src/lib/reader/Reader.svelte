@@ -119,7 +119,7 @@
   }
 
   function pageScrollFor(page: number): number {
-    return (totalPages - 1 - page) * pageSize();
+    return page * pageSize();
   }
 
   function goPage(page: number) {
@@ -155,7 +155,7 @@
 
     lastSnappedScroll = snappedScroll;
     const raw = Math.round(containerEl.scrollLeft / ps);
-    currentPage = Math.max(0, Math.min(totalPages - 1, totalPages - 1 - raw));
+    currentPage = Math.max(0, Math.min(totalPages - 1, raw));
   }
 
   function handleKey(e: KeyboardEvent) {
@@ -205,10 +205,10 @@
       initializing = true;
       if (startAtEnd) {
         currentPage = pages - 1;
-        containerEl.scrollLeft = 0;
+        containerEl.scrollLeft = pageScrollFor(currentPage);
       } else {
         currentPage = 0;
-        containerEl.scrollLeft = containerEl.scrollWidth;
+        containerEl.scrollLeft = 0;
       }
 
       await waitFrame();
@@ -313,6 +313,129 @@
   .rct :global(*) {
     max-width: 100% !important;
     box-sizing: border-box !important;
+  }
+
+  .rct :global(.main),
+  .rct :global(.epub-body),
+  .rct :global(.calibre) {
+    display: block;
+    width: auto;
+    height: auto;
+    margin: 0;
+    padding: 0;
+  }
+
+  .rct :global(a) {
+    color: inherit;
+    text-decoration: none;
+  }
+
+  .rct :global(.align-center) {
+    display: block;
+    text-align: center;
+    text-indent: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  .rct :global(.align-right) {
+    display: block;
+    text-align: right;
+    text-indent: 0;
+    margin: 0;
+    padding: 0;
+  }
+
+  .rct :global(.bold) {
+    font-size: 1.29167em;
+    font-weight: bold;
+  }
+
+  .rct :global(.font-090per) {
+    font-size: 0.83333em;
+  }
+
+  .rct :global(.font-120per),
+  .rct :global(.gfont) {
+    font-size: 1.29167em;
+  }
+
+  .rct :global(.h-valign-width) {
+    writing-mode: horizontal-tb;
+    display: inline-block;
+    width: 100%;
+    vertical-align: middle;
+  }
+
+  .rct :global(.inline-height) {
+    display: inline-block;
+    width: auto;
+    height: 100%;
+    text-indent: 0;
+    vertical-align: middle;
+    margin: 0;
+    padding: 0;
+  }
+
+  .rct :global(.inline-width) {
+    display: inline-block;
+    width: 100%;
+    height: auto;
+    text-indent: 0;
+    vertical-align: middle;
+    margin: 0;
+    padding: 0;
+  }
+
+  .rct :global(.m-bottom-030per) {
+    display: block;
+    width: auto;
+    height: auto;
+    text-indent: 0;
+    margin: 0 0 30%;
+    padding: 0;
+  }
+
+  .rct :global(.h-indent-1em) {
+    display: block;
+    text-indent: -1em;
+    margin: 0;
+    padding: 1em 0 0;
+  }
+
+  .rct :global(.h-indent-2em) {
+    display: block;
+    text-indent: -2em;
+    margin: 0;
+    padding: 2em 0 0;
+  }
+
+  .rct :global(.h-indent-2em1) {
+    display: block;
+    text-indent: -2em;
+    margin: 0;
+    padding: 0 0 0 2em;
+  }
+
+  .rct :global(.h-indent-4em) {
+    display: block;
+    text-indent: -4em;
+    margin: 0;
+    padding: 4em 0 0;
+  }
+
+  .rct :global(.h-indent-6em) {
+    display: block;
+    text-indent: -6em;
+    margin: 0;
+    padding: 6em 0 0;
+  }
+
+  .rct :global(.h-indent-7em) {
+    display: block;
+    text-indent: -7em;
+    margin: 0;
+    padding: 7em 0 0;
   }
 
   .rct :global(img) {

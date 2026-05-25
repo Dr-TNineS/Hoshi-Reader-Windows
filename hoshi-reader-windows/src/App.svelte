@@ -98,7 +98,12 @@
       el.setAttribute("loading", "eager");
       el.setAttribute("decoding", "sync");
     });
-    return doc.body.innerHTML;
+    const bodyClasses = Array.from(doc.body.classList)
+      .filter((name) => /^[A-Za-z0-9_-]+$/.test(name))
+      .map((name) => `epub-body-${name}`)
+      .join(" ");
+    const bodyId = doc.body.id ? ` data-epub-body-id="${doc.body.id.replace(/"/g, "&quot;")}"` : "";
+    return `<div class="epub-body ${bodyClasses}"${bodyId}>${doc.body.innerHTML}</div>`;
   }
 
   function findChapterIndex(bookMeta: EpubMeta, href: string | null): number | null {
