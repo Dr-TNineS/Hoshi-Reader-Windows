@@ -25,4 +25,5 @@ tauri = { version = "2.11.2", features = [] }
 tauri-plugin-log = "2"
 rbook = { version = "0.7", default-features = false, features = ["threadsafe"] }
 zip = "0.6"
+tauri-plugin-dialog = "2"
 
