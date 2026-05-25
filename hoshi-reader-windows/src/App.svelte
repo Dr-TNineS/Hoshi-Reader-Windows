@@ -87,6 +87,17 @@
     doc.querySelectorAll("[href]").forEach((el) => rewriteUrlAttribute(el, "href", chapterPath));
     doc.querySelectorAll("[poster]").forEach((el) => rewriteUrlAttribute(el, "poster", chapterPath));
     doc.querySelectorAll("[xlink\\:href]").forEach((el) => rewriteUrlAttribute(el, "xlink:href", chapterPath));
+    doc.querySelectorAll("img.gaiji").forEach((el) => {
+      el.setAttribute("width", "1");
+      el.setAttribute("height", "1");
+      el.setAttribute("loading", "eager");
+      el.setAttribute("decoding", "sync");
+    });
+    doc.querySelectorAll("img.gaiji-line").forEach((el) => {
+      el.setAttribute("width", "1");
+      el.setAttribute("loading", "eager");
+      el.setAttribute("decoding", "sync");
+    });
     return doc.body.innerHTML;
   }
 

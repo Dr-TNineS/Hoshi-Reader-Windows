@@ -59,6 +59,10 @@
   }
 
   function markBlockImage(img: HTMLImageElement) {
+    if (img.classList.contains("gaiji") || img.classList.contains("gaiji-line")) {
+      return;
+    }
+
     if (img.naturalWidth > 256 || img.naturalHeight > 256) {
       img.classList.add("block-img");
     }
@@ -276,15 +280,19 @@
 
   .rct {
     --font-size: 21px;
-    --line-height: 1.9;
-    --safe-block: 2vh;
-    --safe-inline: clamp(48px, 8vw, 112px);
-    --content-width: max(1px, calc(var(--page-width, 100vw) - (var(--safe-inline) * 2)));
-    --column-gap: calc(var(--safe-inline) * 2);
-    --content-height: max(1px, calc(var(--page-height, 100vh) - (var(--safe-block) * 2)));
+    --line-height: 1.86;
+    --safe-top: clamp(24px, 3.4vh, 42px);
+    --safe-bottom: clamp(32px, 5.2vh, 64px);
+    --safe-left: clamp(320px, 27vw, 540px);
+    --safe-right: clamp(150px, 11vw, 240px);
+    --content-width: max(1px, calc(var(--page-width, 100vw) - var(--safe-left) - var(--safe-right)));
+    --column-gap: calc(var(--safe-left) + var(--safe-right));
+    --content-height: max(1px, calc(var(--page-height, 100vh) - var(--safe-top) - var(--safe-bottom)));
 
+    box-sizing: border-box;
     height: 100%;
-    width: max-content;
+    width: var(--page-width, 100vw);
+    min-width: var(--page-width, 100vw);
     writing-mode: vertical-rl;
     text-orientation: mixed;
     column-width: var(--content-width);
@@ -292,8 +300,7 @@
     column-fill: auto;
     orphans: 1;
     widows: 1;
-    padding: var(--safe-block) var(--safe-inline);
-    padding-bottom: calc(var(--font-size) * 0.55 + var(--safe-block));
+    padding: var(--safe-top) var(--safe-right) var(--safe-bottom) var(--safe-left);
     overflow-x: visible;
     overflow-wrap: anywhere;
     word-break: normal;
@@ -312,6 +319,28 @@
     max-width: 100%;
     max-height: var(--content-height, 80vh);
     object-fit: contain;
+  }
+
+  .rct :global(img.gaiji) {
+    display: inline-block;
+    width: 1em;
+    height: 1em;
+    max-width: 1em !important;
+    max-height: 1em !important;
+    margin: 0;
+    padding: 0;
+    vertical-align: baseline;
+  }
+
+  .rct :global(img.gaiji-line) {
+    display: inline-block;
+    width: 1em;
+    height: auto;
+    max-width: 1em !important;
+    max-height: none;
+    margin: 0;
+    padding: 0;
+    vertical-align: baseline;
   }
 
   .rct :global(img.block-img) {
