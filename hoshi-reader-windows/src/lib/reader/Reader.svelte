@@ -58,30 +58,35 @@
     return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
-  async function waitForContentAssets(el: HTMLElement, run: number): Promise<void> {
+  function markBlockImage(img: HTMLImageElement) {
+    if (img.naturalWidth > 256 || img.naturalHeight > 256) {
+      img.classList.add("block-img");
+    }
+  }
+
+  async function waitForInitialFonts(): Promise<void> {
     const fontReady = document.fonts?.ready?.then(() => undefined).catch(() => undefined) ?? Promise.resolve();
+    await Promise.race([fontReady, waitTimeout(120)]);
+  }
+
+  function watchImages(el: HTMLElement, run: number) {
     const images = Array.from(el.querySelectorAll("img"));
-    const imageReady = images.map((img) => {
-      if (img.complete) return Promise.resolve();
-      return new Promise<void>((resolve) => {
-        const done = () => resolve();
-        img.addEventListener("load", done, { once: true });
-        img.addEventListener("error", done, { once: true });
-      });
-    });
-
-    await Promise.race([
-      Promise.all([fontReady, ...imageReady]).then(() => undefined),
-      waitTimeout(1400),
-    ]);
-
-    if (run !== layoutRun) return;
     images.forEach((img) => {
-      if (img.naturalWidth > 256 || img.naturalHeight > 256) {
-        img.classList.add("block-img");
+      if (img.complete) {
+        markBlockImage(img);
+        return;
       }
+
+      img.addEventListener("load", () => {
+        if (run !== layoutRun) return;
+        markBlockImage(img);
+        requestAnimationFrame(() => {
+          if (run !== layoutRun) return;
+          recalc();
+          goPage(currentPage);
+        });
+      }, { once: true });
     });
-    await waitFrame();
   }
 
   async function waitForStableLayout(run: number): Promise<number> {
@@ -89,7 +94,7 @@
     let lastPages = -1;
     let stableFrames = 0;
 
-    for (let i = 0; i < 18; i += 1) {
+    for (let i = 0; i < 8; i += 1) {
       await waitFrame();
       if (run !== layoutRun || !containerEl) return totalPages;
 
@@ -103,7 +108,7 @@
       lastPages = pages;
       totalPages = pages;
 
-      if (stableFrames >= 2) return pages;
+      if (stableFrames >= 1) return pages;
     }
 
     return lastPages > 0 ? lastPages : measureTotalPages();
@@ -185,7 +190,8 @@
 
     queueMicrotask(async () => {
       syncPageGeometry();
-      await waitForContentAssets(el, run);
+      watchImages(el, run);
+      await waitForInitialFonts();
       if (run !== layoutRun) return;
 
       charCount = getTotalChars(el);
