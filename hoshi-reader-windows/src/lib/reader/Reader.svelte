@@ -409,6 +409,10 @@
     vertical-align: middle;
   }
 
+  .rct :global(.h-valign-width:empty) {
+    display: none;
+  }
+
   .rct :global(.inline-height) {
     display: inline-block;
     width: auto;
