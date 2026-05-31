@@ -24,6 +24,7 @@
   let layoutReady = $state(false);
   let activeContent = $state("");
   let layoutRun = 0;
+  let contentMaxScroll = 0;
 
   let styleVars = $derived(`--page-width:${pageWidth}px;--page-height:${pageHeight}px`);
 
@@ -42,8 +43,8 @@
   function measureTotalPages(): number {
     if (!containerEl || !contentEl) return 1;
     const ps = pageSize();
-    const sw = containerEl.scrollWidth || ps;
-    return Math.max(1, Math.ceil(sw / ps));
+    contentMaxScroll = measureContentMaxScroll();
+    return Math.max(1, Math.floor(contentMaxScroll / ps) + 1);
   }
 
   function recalc() {
@@ -66,6 +67,44 @@
     if (img.naturalWidth > 256 || img.naturalHeight > 256) {
       img.classList.add("block-img");
     }
+  }
+
+  function measureContentMaxScroll(): number {
+    if (!containerEl || !contentEl) return 0;
+
+    const ps = pageSize();
+    const scrollLimit = Math.max(0, (containerEl.scrollWidth || ps) - ps);
+    const currentScroll = containerEl.scrollLeft;
+    let lastContentEdge = 0;
+
+    const updateEdge = (rect: DOMRect | ClientRect) => {
+      if (rect.width <= 0 || rect.height <= 0) return;
+      lastContentEdge = Math.max(lastContentEdge, rect.right + currentScroll);
+    };
+
+    const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        if (!node.textContent?.trim()) return NodeFilter.FILTER_REJECT;
+        if (node.parentElement?.closest("rt, rp")) return NodeFilter.FILTER_REJECT;
+        return NodeFilter.FILTER_ACCEPT;
+      },
+    });
+
+    while (walker.nextNode()) {
+      const range = document.createRange();
+      range.selectNodeContents(walker.currentNode);
+      Array.from(range.getClientRects()).forEach(updateEdge);
+      range.detach();
+    }
+
+    contentEl.querySelectorAll("img, svg, image, video, canvas").forEach((media) => {
+      updateEdge(media.getBoundingClientRect());
+    });
+
+    if (lastContentEdge <= 0) return scrollLimit;
+
+    const lastContentScroll = Math.floor(Math.max(0, lastContentEdge - 1) / ps) * ps;
+    return Math.min(scrollLimit, lastContentScroll);
   }
 
   async function waitForInitialFonts(): Promise<void> {
@@ -95,6 +134,7 @@
 
   async function waitForStableLayout(run: number): Promise<number> {
     let lastScrollWidth = -1;
+    let lastMaxScroll = -1;
     let lastPages = -1;
     let stableFrames = 0;
 
@@ -105,10 +145,12 @@
       syncPageGeometry();
       const pages = measureTotalPages();
       const scrollWidth = Math.round(containerEl.scrollWidth);
-      const same = scrollWidth === lastScrollWidth && pages === lastPages;
+      const maxScroll = Math.round(contentMaxScroll);
+      const same = scrollWidth === lastScrollWidth && maxScroll === lastMaxScroll && pages === lastPages;
 
       stableFrames = same ? stableFrames + 1 : 0;
       lastScrollWidth = scrollWidth;
+      lastMaxScroll = maxScroll;
       lastPages = pages;
       totalPages = pages;
 
@@ -119,7 +161,7 @@
   }
 
   function pageScrollFor(page: number): number {
-    return page * pageSize();
+    return Math.min(page * pageSize(), contentMaxScroll);
   }
 
   function goPage(page: number) {
