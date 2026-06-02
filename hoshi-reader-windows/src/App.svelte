@@ -57,6 +57,11 @@
     return /^(?:[a-z][a-z0-9+.-]*:|#|data:|blob:)/i.test(url);
   }
 
+  function isInternalChapterHref(href: string): boolean {
+    const path = href.split("#")[0];
+    return /\.(?:x?html?|xht)$/i.test(path);
+  }
+
   function chapterDir(path: string): string {
     const normalized = path.replace(/\\/g, "/");
     return normalized.slice(0, normalized.lastIndexOf("/"));
@@ -77,6 +82,11 @@
   function rewriteUrlAttribute(el: Element, attr: string, chapterPath: string) {
     const value = el.getAttribute(attr);
     if (!value || isExternalAssetUrl(value)) return;
+    if (attr === "href" && isInternalChapterHref(value)) {
+      el.setAttribute("data-epub-href", value);
+      el.setAttribute("href", "#");
+      return;
+    }
     el.setAttribute(attr, convertFileSrc(resolveAssetPath(chapterPath, value)));
   }
 
@@ -259,6 +269,20 @@
     await loadChapter(idx);
   }
 
+  async function navigateReaderHref(href: string) {
+    if (!meta) return;
+
+    const idx = findChapterIndex(meta, href);
+    if (idx === null) {
+      debug = "Link target not found";
+      return;
+    }
+
+    startAtEnd = false;
+    showToc = false;
+    await loadChapter(idx);
+  }
+
   function prevChapter() {
     if (chapterIndex > 0) {
       startAtEnd = true;
@@ -329,6 +353,7 @@
       onPrevChapter={prevChapter}
       onPrevChapterDirect={prevChapterDirect}
       onNextChapter={nextChapter}
+      onNavigateHref={navigateReaderHref}
       onBackToShelf={() => view = "bookshelf"}
       {startAtEnd}
     />

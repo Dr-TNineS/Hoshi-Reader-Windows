@@ -8,6 +8,7 @@
     onPrevChapter = () => {},
     onPrevChapterDirect = () => {},
     onNextChapter = () => {},
+    onNavigateHref = (_href: string) => {},
     onBackToShelf = () => {},
     startAtEnd = false,
   } = $props();
@@ -219,6 +220,17 @@
     }
   }
 
+  function handleContentClick(e: MouseEvent) {
+    if (!(e.target instanceof Element)) return;
+
+    const link = e.target.closest<HTMLAnchorElement>("a[data-epub-href]");
+    const href = link?.dataset.epubHref;
+    if (!href) return;
+
+    e.preventDefault();
+    onNavigateHref(href);
+  }
+
   $effect.pre(() => {
     if (content !== activeContent) {
       activeContent = content;
@@ -226,6 +238,14 @@
       initializing = true;
       layoutRun += 1;
     }
+  });
+
+  $effect(() => {
+    const el = contentEl;
+    if (!el) return;
+
+    el.addEventListener("click", handleContentClick);
+    return () => el.removeEventListener("click", handleContentClick);
   });
 
   $effect(() => {
