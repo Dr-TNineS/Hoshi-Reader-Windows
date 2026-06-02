@@ -387,6 +387,10 @@
     padding: 0;
   }
 
+  .rct :global(.main:has(> .inline-height)) {
+    height: var(--content-height);
+  }
+
   .rct :global(a) {
     color: inherit;
     text-decoration: none;
