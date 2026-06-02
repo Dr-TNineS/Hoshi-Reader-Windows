@@ -30,7 +30,25 @@
   let styleVars = $derived(`--page-width:${pageWidth}px;--page-height:${pageHeight}px`);
 
   function pageSize(): number {
-    return containerEl?.clientWidth || window.innerWidth;
+    return containerEl?.clientHeight || window.innerHeight;
+  }
+
+  function scrollLimit(): number {
+    const ps = pageSize();
+    return Math.max(0, (containerEl?.scrollHeight || ps) - ps);
+  }
+
+  function logicalScrollPos(): number {
+    if (!containerEl) return 0;
+    return Math.min(scrollLimit(), Math.max(0, containerEl.scrollTop));
+  }
+
+  function setLogicalScrollPos(value: number): number {
+    if (!containerEl) return 0;
+
+    const target = Math.max(0, Math.min(value, contentMaxScroll));
+    containerEl.scrollTop = target;
+    return logicalScrollPos();
   }
 
   function syncPageGeometry() {
@@ -71,41 +89,7 @@
   }
 
   function measureContentMaxScroll(): number {
-    if (!containerEl || !contentEl) return 0;
-
-    const ps = pageSize();
-    const scrollLimit = Math.max(0, (containerEl.scrollWidth || ps) - ps);
-    const currentScroll = containerEl.scrollLeft;
-    let lastContentEdge = 0;
-
-    const updateEdge = (rect: DOMRect | ClientRect) => {
-      if (rect.width <= 0 || rect.height <= 0) return;
-      lastContentEdge = Math.max(lastContentEdge, rect.right + currentScroll);
-    };
-
-    const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        if (!node.textContent?.trim()) return NodeFilter.FILTER_REJECT;
-        if (node.parentElement?.closest("rt, rp")) return NodeFilter.FILTER_REJECT;
-        return NodeFilter.FILTER_ACCEPT;
-      },
-    });
-
-    while (walker.nextNode()) {
-      const range = document.createRange();
-      range.selectNodeContents(walker.currentNode);
-      Array.from(range.getClientRects()).forEach(updateEdge);
-      range.detach();
-    }
-
-    contentEl.querySelectorAll("img, svg, image, video, canvas").forEach((media) => {
-      updateEdge(media.getBoundingClientRect());
-    });
-
-    if (lastContentEdge <= 0) return scrollLimit;
-
-    const lastContentScroll = Math.floor(Math.max(0, lastContentEdge - 1) / ps) * ps;
-    return Math.min(scrollLimit, lastContentScroll);
+    return scrollLimit();
   }
 
   async function waitForInitialFonts(): Promise<void> {
@@ -145,12 +129,12 @@
 
       syncPageGeometry();
       const pages = measureTotalPages();
-      const scrollWidth = Math.round(containerEl.scrollWidth);
+      const scrollHeight = Math.round(containerEl.scrollHeight);
       const maxScroll = Math.round(contentMaxScroll);
-      const same = scrollWidth === lastScrollWidth && maxScroll === lastMaxScroll && pages === lastPages;
+      const same = scrollHeight === lastScrollWidth && maxScroll === lastMaxScroll && pages === lastPages;
 
       stableFrames = same ? stableFrames + 1 : 0;
-      lastScrollWidth = scrollWidth;
+      lastScrollWidth = scrollHeight;
       lastMaxScroll = maxScroll;
       lastPages = pages;
       totalPages = pages;
@@ -170,17 +154,25 @@
     currentPage = Math.max(0, Math.min(page, totalPages - 1));
     const scrollTarget = pageScrollFor(currentPage);
     lastSnappedScroll = scrollTarget;
-    containerEl.scrollLeft = scrollTarget;
+    setLogicalScrollPos(scrollTarget);
   }
 
-  function next() {
-    if (currentPage < totalPages - 1) goPage(currentPage + 1);
-    else onNextChapter();
+  function nextPage() {
+    if (currentPage < totalPages - 1) {
+      goPage(currentPage + 1);
+      return;
+    }
+
+    onNextChapter();
   }
 
-  function prev() {
-    if (currentPage > 0) goPage(currentPage - 1);
-    else onPrevChapter();
+  function prevPage() {
+    if (currentPage > 0) {
+      goPage(currentPage - 1);
+      return;
+    }
+
+    onPrevChapter();
   }
 
   function onScroll() {
@@ -188,16 +180,16 @@
     const ps = pageSize();
     if (ps <= 0) return;
 
-    const currentScroll = containerEl.scrollLeft;
+    const currentScroll = logicalScrollPos();
     const snappedScroll = Math.round(currentScroll / ps) * ps;
 
     if (Math.abs(currentScroll - snappedScroll) > 1) {
-      containerEl.scrollLeft = lastSnappedScroll;
+      setLogicalScrollPos(lastSnappedScroll);
       return;
     }
 
     lastSnappedScroll = snappedScroll;
-    const raw = Math.round(containerEl.scrollLeft / ps);
+    const raw = Math.round(currentScroll / ps);
     currentPage = Math.max(0, Math.min(totalPages - 1, raw));
   }
 
@@ -211,10 +203,10 @@
       onPrevChapterDirect();
     } else if (e.key === "ArrowRight") {
       e.preventDefault();
-      prev();
+      prevPage();
     } else if (e.key === "ArrowLeft") {
       e.preventDefault();
-      next();
+      nextPage();
     } else if (e.key === "Escape") {
       onBackToShelf();
     }
@@ -267,16 +259,16 @@
       initializing = true;
       if (startAtEnd) {
         currentPage = pages - 1;
-        containerEl.scrollLeft = pageScrollFor(currentPage);
+        setLogicalScrollPos(pageScrollFor(currentPage));
       } else {
         currentPage = 0;
-        containerEl.scrollLeft = 0;
+        setLogicalScrollPos(0);
       }
 
       await waitFrame();
       if (run !== layoutRun || !containerEl) return;
       initializing = false;
-      lastSnappedScroll = containerEl.scrollLeft;
+      lastSnappedScroll = logicalScrollPos();
       layoutReady = true;
     });
 
@@ -328,8 +320,8 @@
 
   .rv {
     flex: 1;
-    overflow-x: auto;
-    overflow-y: hidden;
+    overflow-x: hidden;
+    overflow-y: auto;
   }
 
   .rv:not(.ready) {
@@ -347,17 +339,16 @@
     --safe-bottom: clamp(32px, 5.2vh, 64px);
     --safe-left: clamp(320px, 27vw, 540px);
     --safe-right: clamp(150px, 11vw, 240px);
-    --content-width: max(1px, calc(var(--page-width, 100vw) - var(--safe-left) - var(--safe-right)));
-    --column-gap: calc(var(--safe-left) + var(--safe-right));
     --content-height: max(1px, calc(var(--page-height, 100vh) - var(--safe-top) - var(--safe-bottom)));
+    --column-gap: calc(var(--safe-top) + var(--safe-bottom));
 
     box-sizing: border-box;
-    height: 100%;
+    min-height: 100%;
     width: var(--page-width, 100vw);
     min-width: var(--page-width, 100vw);
     writing-mode: vertical-rl;
     text-orientation: mixed;
-    column-width: var(--content-width);
+    column-width: var(--content-height);
     column-gap: var(--column-gap);
     column-fill: auto;
     orphans: 1;
