@@ -535,6 +535,16 @@
     break-inside: avoid;
   }
 
+  .rct :global(img.epub-svg-cover-img) {
+    display: block;
+    width: auto;
+    height: var(--content-height, 80vh);
+    max-width: 100% !important;
+    max-height: var(--content-height, 80vh) !important;
+    object-fit: contain;
+    break-inside: avoid;
+  }
+
   .rct :global(h1),
   .rct :global(h2),
   .rct :global(h3),
