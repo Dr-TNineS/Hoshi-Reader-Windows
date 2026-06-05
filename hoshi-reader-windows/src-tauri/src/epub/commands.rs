@@ -16,6 +16,7 @@ pub fn epub_open(path: String, state: State<EpubState>) -> Result<EpubMeta, Stri
         manifest: book.manifest(),
         spine: book.spine(),
         toc: book.toc(),
+        book_info: book.book_info(),
     };
     *state.book.lock().unwrap() = Some(book);
     Ok(meta)

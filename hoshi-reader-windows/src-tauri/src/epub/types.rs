@@ -22,10 +22,24 @@ pub struct TocNode {
 }
 
 #[derive(Debug, Clone, Serialize)]
+pub struct ChapterInfo {
+    pub spine_index: usize,
+    pub current_total: usize,
+    pub chapter_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize)]
+pub struct BookInfo {
+    pub character_count: usize,
+    pub chapter_info: Vec<ChapterInfo>,
+}
+
+#[derive(Debug, Clone, Serialize)]
 pub struct EpubMeta {
     pub title: Option<String>,
     pub cover_href: Option<String>,
     pub manifest: Vec<ManifestItem>,
     pub spine: Vec<SpineItem>,
     pub toc: Vec<TocNode>,
+    pub book_info: BookInfo,
 }

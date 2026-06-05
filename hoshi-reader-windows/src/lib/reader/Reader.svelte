@@ -1,5 +1,14 @@
 <script lang="ts">
-  import { getTotalChars } from "../reader";
+  import { countChars, createWalker, getTotalChars } from "../reader";
+
+  type ReaderProgress = {
+    chapterIndex: number;
+    chapterProgress: number;
+    chapterReadChars: number;
+    bookReadChars: number;
+    totalBookChars: number;
+    percent: number;
+  };
 
   let {
     content = "",
@@ -11,6 +20,10 @@
     onNavigateHref = (_href: string) => {},
     onBackToShelf = () => {},
     startAtEnd = false,
+    initialProgress = 0,
+    chapterStartChars = 0,
+    totalBookChars = 0,
+    onProgressChange = (_progress: ReaderProgress) => {},
   } = $props();
 
   const PAGE_EPSILON = 1;
@@ -26,6 +39,8 @@
   let pageHeight = $state(typeof window === "undefined" ? 0 : window.innerHeight);
   let layoutReady = $state(false);
   let activeContent = $state("");
+  let bookReadChars = $state(0);
+  let bookPercent = $state(0);
   let scrollTailTop = $state(0);
   let layoutRun = 0;
   let contentMaxScroll = 0;
@@ -103,16 +118,127 @@
   function textNodes(): Text[] {
     if (!contentEl) return [];
 
-    const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, {
-      acceptNode(node) {
-        return node.textContent?.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
-      },
-    });
+    const walker = createWalker(contentEl);
     const nodes: Text[] = [];
     while (walker.nextNode()) {
-      nodes.push(walker.currentNode as Text);
+      const node = walker.currentNode as Text;
+      if (node.textContent?.trim()) nodes.push(node);
     }
     return nodes;
+  }
+
+  function textEndOffsets(text: string): number[] {
+    const offsets: number[] = [];
+    let rawOffset = 0;
+    for (const ch of text) {
+      rawOffset += ch.length;
+      if (countChars(ch) > 0) offsets.push(rawOffset);
+    }
+    return offsets;
+  }
+
+  function rangeRectsForText(node: Text, endOffset: number): DOMRect[] {
+    const range = document.createRange();
+    range.setStart(node, 0);
+    range.setEnd(node, Math.max(0, Math.min(endOffset, node.length)));
+    const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 && rect.height > 0);
+    range.detach();
+    return rects;
+  }
+
+  function rectsBeforeViewport(rects: DOMRect[], viewportTop: number): boolean {
+    return rects.length > 0 && Math.max(...rects.map((rect) => rect.bottom)) <= viewportTop + PAGE_EPSILON;
+  }
+
+  function rectsAfterViewport(rects: DOMRect[], viewportTop: number): boolean {
+    return rects.length > 0 && Math.min(...rects.map((rect) => rect.top)) >= viewportTop - PAGE_EPSILON;
+  }
+
+  function countTextBeforeViewport(node: Text, viewportTop: number): number {
+    const text = node.textContent || "";
+    const total = countChars(text);
+    if (total === 0) return 0;
+
+    const fullRects = rangeRectsForText(node, node.length);
+    if (rectsBeforeViewport(fullRects, viewportTop)) return total;
+    if (rectsAfterViewport(fullRects, viewportTop)) return 0;
+
+    const offsets = textEndOffsets(text);
+    let lo = 0;
+    let hi = offsets.length;
+    while (lo < hi) {
+      const mid = Math.ceil((lo + hi) / 2);
+      const rects = rangeRectsForText(node, offsets[mid - 1]);
+      if (rectsBeforeViewport(rects, viewportTop)) lo = mid;
+      else hi = mid - 1;
+    }
+    return lo;
+  }
+
+  function chapterCharsBeforeViewport(): number {
+    if (!containerEl || !contentEl) return 0;
+    const viewportTop = containerEl.getBoundingClientRect().top;
+    return textNodes().reduce((total, node) => total + countTextBeforeViewport(node, viewportTop), 0);
+  }
+
+  function rawOffsetForReaderChars(text: string, targetChars: number): number {
+    if (targetChars <= 0) return 0;
+    let rawOffset = 0;
+    let chars = 0;
+    for (const ch of text) {
+      rawOffset += ch.length;
+      if (countChars(ch) > 0) chars += 1;
+      if (chars >= targetChars) return rawOffset;
+    }
+    return text.length;
+  }
+
+  function scrollForChapterProgress(progress: number): number {
+    if (!containerEl || !contentEl || charCount <= 0) return 0;
+    const target = Math.max(0, Math.min(charCount, Math.floor(charCount * Math.max(0, Math.min(progress, 1)))));
+    if (target <= 0) return 0;
+    if (target >= charCount) return contentMaxScroll;
+
+    let seen = 0;
+    for (const node of textNodes()) {
+      const text = node.textContent || "";
+      const nodeChars = countChars(text);
+      if (seen + nodeChars < target) {
+        seen += nodeChars;
+        continue;
+      }
+
+      const rawOffset = rawOffsetForReaderChars(text, target - seen);
+      const rects = rangeRectsForText(node, rawOffset);
+      const targetRect = rects.at(-1);
+      if (!targetRect) return 0;
+
+      const viewportTop = containerEl.getBoundingClientRect().top;
+      const logicalTop = targetRect.top - viewportTop + logicalScrollPos();
+      return Math.floor(Math.max(0, logicalTop) / pageSize()) * pageSize();
+    }
+
+    return contentMaxScroll;
+  }
+
+  function emitProgress() {
+    if (!layoutReady || !contentEl) return;
+    const chapterReadChars = Math.max(0, Math.min(charCount, chapterCharsBeforeViewport()));
+    const total = Math.max(0, totalBookChars || 0);
+    bookReadChars = Math.max(0, Math.min(total || chapterStartChars + charCount, chapterStartChars + chapterReadChars));
+    bookPercent = total > 0 ? (bookReadChars / total) * 100 : 0;
+    onProgressChange({
+      chapterIndex,
+      chapterProgress: charCount > 0 ? chapterReadChars / charCount : 0,
+      chapterReadChars,
+      bookReadChars,
+      totalBookChars: total,
+      percent: bookPercent,
+    });
+  }
+
+  function scheduleProgressEmit() {
+    requestAnimationFrame(() => emitProgress());
   }
 
   function measureContentMaxScroll(): number {
@@ -244,6 +370,7 @@
     const scrollTarget = pageScrollFor(currentPage);
     lastSnappedScroll = scrollTarget;
     setLogicalScrollPos(scrollTarget);
+    scheduleProgressEmit();
   }
 
   function nextPage() {
@@ -280,6 +407,7 @@
     lastSnappedScroll = snappedScroll;
     const raw = Math.round(currentScroll / ps);
     currentPage = Math.max(0, Math.min(totalPages - 1, raw));
+    scheduleProgressEmit();
   }
 
   function handleKey(e: KeyboardEvent) {
@@ -351,8 +479,9 @@
         currentPage = pages - 1;
         setLogicalScrollPos(pageScrollFor(currentPage));
       } else {
-        currentPage = 0;
-        setLogicalScrollPos(0);
+        const restoredScroll = scrollForChapterProgress(initialProgress);
+        currentPage = Math.max(0, Math.min(totalPages - 1, Math.round(restoredScroll / pageSize())));
+        setLogicalScrollPos(pageScrollFor(currentPage));
       }
 
       await waitFrame();
@@ -361,6 +490,7 @@
       lastSnappedScroll = logicalScrollPos();
       layoutReady = true;
       logReaderGeometry("layout-ready");
+      emitProgress();
     });
 
     const ro = new ResizeObserver(() => {
@@ -379,7 +509,10 @@
 
 <div class="rc">
   <div class="rh">
-    <span>Ch.{chapterIndex + 1}/{totalChapters} | P.{currentPage + 1}/{totalPages} | {charCount}c</span>
+    <span>
+      Ch.{chapterIndex + 1}/{totalChapters} | P.{currentPage + 1}/{totalPages} |
+      {bookReadChars}/{totalBookChars || charCount}c | {bookPercent.toFixed(2)}%
+    </span>
   </div>
 
   <div bind:this={containerEl} class="rv" class:ready={layoutReady} onscroll={onScroll}>

@@ -4,6 +4,7 @@ export interface EpubMeta {
   manifest: ManifestItem[];
   spine: SpineItem[];
   toc: TocNode[];
+  book_info: BookInfo;
 }
 
 export interface ManifestItem {
@@ -22,5 +23,16 @@ export interface TocNode {
   label: string;
   href: string | null;
   children: TocNode[];
+}
+
+export interface BookInfo {
+  character_count: number;
+  chapter_info: ChapterInfo[];
+}
+
+export interface ChapterInfo {
+  spine_index: number;
+  current_total: number;
+  chapter_count: number;
 }
 

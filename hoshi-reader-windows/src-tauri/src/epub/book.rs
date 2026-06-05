@@ -1,7 +1,15 @@
 use crate::epub::types::*;
+use regex::Regex;
 use std::fs;
 use std::path::PathBuf;
+use std::sync::LazyLock;
 use std::time::{SystemTime, UNIX_EPOCH};
+
+static RUBY_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?is)<r[tp]\b[^>]*>.*?</r[tp]>").unwrap());
+static TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<[^>]+>").unwrap());
+static ENTITY_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"&#(?:x[0-9a-f]+|[0-9]+);|&[a-z][a-z0-9]+;").unwrap());
 
 pub struct EpubBook {
     pub epub: rbook::Epub,
@@ -102,6 +110,29 @@ impl EpubBook {
         }
     }
 
+    pub fn book_info(&self) -> BookInfo {
+        let mut current_total = 0;
+        let mut chapter_info = Vec::new();
+
+        for spine_index in 0..self.epub.spine().len() {
+            let chapter_count = self
+                .read_spine_item_text(spine_index as u32)
+                .map(|html| count_reader_chars(&html))
+                .unwrap_or(0);
+            chapter_info.push(ChapterInfo {
+                spine_index,
+                current_total,
+                chapter_count,
+            });
+            current_total += chapter_count;
+        }
+
+        BookInfo {
+            character_count: current_total,
+            chapter_info,
+        }
+    }
+
     pub fn chapter_absolute_path(&self, spine_index: u32) -> Result<Option<String>, String> {
         let spine_entry = self
             .epub
@@ -144,6 +175,50 @@ impl EpubBook {
             children: entry.iter().map(|e| Self::convert_toc_entry(&e)).collect(),
         }
     }
+}
+
+fn count_reader_chars(html: &str) -> usize {
+    let without_ruby = RUBY_REGEX.replace_all(html, "");
+    let without_tags = TAG_REGEX.replace_all(&without_ruby, "");
+    let decoded = decode_basic_entities(&without_tags);
+    decoded.chars().filter(|ch| is_reader_char(*ch)).count()
+}
+
+fn decode_basic_entities(text: &str) -> String {
+    ENTITY_REGEX
+        .replace_all(text, |caps: &regex::Captures| match &caps[0] {
+            "&amp;" => "&".to_string(),
+            "&lt;" => "<".to_string(),
+            "&gt;" => ">".to_string(),
+            "&quot;" => "\"".to_string(),
+            "&apos;" => "'".to_string(),
+            "&nbsp;" => "".to_string(),
+            entity if entity.starts_with("&#x") || entity.starts_with("&#X") => {
+                u32::from_str_radix(&entity[3..entity.len() - 1], 16)
+                    .ok()
+                    .and_then(char::from_u32)
+                    .map(|ch| ch.to_string())
+                    .unwrap_or_default()
+            }
+            entity if entity.starts_with("&#") => entity[2..entity.len() - 1]
+                .parse::<u32>()
+                .ok()
+                .and_then(char::from_u32)
+                .map(|ch| ch.to_string())
+                .unwrap_or_default(),
+            _ => "".to_string(),
+        })
+        .into_owned()
+}
+
+fn is_reader_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric()
+        || ('\u{3040}'..='\u{30ff}').contains(&ch)
+        || ('\u{31f0}'..='\u{31ff}').contains(&ch)
+        || ('\u{3400}'..='\u{9fff}').contains(&ch)
+        || ('\u{f900}'..='\u{faff}').contains(&ch)
+        || ('\u{ff10}'..='\u{ff9f}').contains(&ch)
+        || matches!(ch, '銆? | '銆? | '銆? | '銆? | '鈼? | '鈼?)
 }
 
 impl Drop for EpubBook {
@@ -243,5 +318,11 @@ mod tests {
         drop(second);
         assert!(!second_root.exists());
         let _ = fs::remove_file(epub_path);
+    }
+
+    #[test]
+    fn reader_char_count_ignores_markup_and_ruby() {
+        let html = r#"<p>浜旀湀<ruby>闆?rt>銇傘倎</rt><rp>锛?/rp></ruby>&nbsp;A1</p>"#;
+        assert_eq!(count_reader_chars(html), 5);
     }
 }

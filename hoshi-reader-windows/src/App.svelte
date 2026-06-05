@@ -7,6 +7,10 @@
   type SavedSession = {
     path: string;
     chapter: number;
+    chapterProgress?: number;
+    bookReadChars?: number;
+    totalCharacters?: number;
+    percent?: number;
   };
 
   type BookRecord = {
@@ -15,6 +19,19 @@
     chapter: number;
     totalChapters: number;
     lastOpened: number;
+    chapterProgress?: number;
+    bookReadChars?: number;
+    totalCharacters?: number;
+    percent?: number;
+  };
+
+  type ReaderProgress = {
+    chapterIndex: number;
+    chapterProgress: number;
+    chapterReadChars: number;
+    bookReadChars: number;
+    totalBookChars: number;
+    percent: number;
   };
 
   type TocEntry = {
@@ -43,6 +60,11 @@
 
   function clampChapter(chapter: number, total: number): number {
     return Math.max(0, Math.min(chapter, Math.max(0, total - 1)));
+  }
+
+  function clampUnit(value: number | undefined): number {
+    if (!Number.isFinite(value)) return 0;
+    return Math.max(0, Math.min(value ?? 0, 1));
   }
 
   function normalizeHref(href: string): string {
@@ -132,6 +154,7 @@
     el.setAttribute("srcset", rewritten);
   }
 
+
   function replaceSingleImageSvgs(doc: Document, chapterPath: string) {
     doc.querySelectorAll("svg").forEach((svg) => {
       const images = Array.from(svg.querySelectorAll("image"));
@@ -211,12 +234,15 @@
   let currentBookPath = $state("");
   let books = $state<BookRecord[]>(readJson<BookRecord[]>(BOOKS_KEY, []));
   let startAtEnd = $state(false);
+  let readerInitialProgress = $state(0);
+  let currentReaderProgress = $state<ReaderProgress | null>(null);
   let showToc = $state(false);
   let error = $state("");
   let debug = $state("");
   let triedRestore = false;
 
   let tocEntries = $derived(meta ? flattenToc(meta.toc, meta) : []);
+  let chapterBookInfo = $derived(meta?.book_info.chapter_info[chapterIndex] ?? null);
 
   // Restore the last reader session once on page load. Returning to the shelf
   // should stay on the shelf, so this effect is intentionally one-shot.
@@ -229,7 +255,7 @@
       (async () => {
         try {
           const session = JSON.parse(saved) as SavedSession;
-          await openBookPath(session.path, session.chapter, "Restoring...");
+          await openBookPath(session.path, session.chapter, "Restoring...", session.chapterProgress ?? 0);
           debug = "Restored";
         } catch (e) {
           localStorage.removeItem(SESSION_KEY);
@@ -245,10 +271,33 @@
     localStorage.setItem(BOOKS_KEY, JSON.stringify(nextBooks));
   }
 
-  function saveProgress(path: string, bookMeta: EpubMeta, chapter: number) {
+  function saveProgress(
+    path: string,
+    bookMeta: EpubMeta,
+    chapter: number,
+    progress: ReaderProgress | null = currentReaderProgress,
+    chapterProgressFallback = 0,
+  ) {
     const totalChapters = bookMeta.spine.length;
     const safeChapter = clampChapter(chapter, totalChapters);
-    localStorage.setItem(SESSION_KEY, JSON.stringify({ path, chapter: safeChapter }));
+    const chapterInfo = bookMeta.book_info.chapter_info[safeChapter];
+    const totalCharacters = bookMeta.book_info.character_count;
+    const chapterProgress = progress?.chapterIndex === safeChapter
+      ? clampUnit(progress.chapterProgress)
+      : clampUnit(chapterProgressFallback);
+    const bookReadChars = progress?.chapterIndex === safeChapter
+      ? progress.bookReadChars
+      : Math.round((chapterInfo?.current_total ?? 0) + (chapterInfo?.chapter_count ?? 0) * chapterProgress);
+    const percent = totalCharacters > 0 ? (bookReadChars / totalCharacters) * 100 : 0;
+
+    localStorage.setItem(SESSION_KEY, JSON.stringify({
+      path,
+      chapter: safeChapter,
+      chapterProgress,
+      bookReadChars,
+      totalCharacters,
+      percent,
+    }));
 
     const record: BookRecord = {
       path,
@@ -256,6 +305,10 @@
       chapter: safeChapter,
       totalChapters,
       lastOpened: Date.now(),
+      chapterProgress,
+      bookReadChars,
+      totalCharacters,
+      percent,
     };
     const nextBooks = [
       record,
@@ -264,7 +317,7 @@
     persistBooks(nextBooks);
   }
 
-  async function openBookPath(path: string, chapter = 0, status = "Opening...") {
+  async function openBookPath(path: string, chapter = 0, status = "Opening...", chapterProgress = 0) {
     error = "";
     debug = status;
     if (!isTauriRuntime()) {
@@ -276,8 +329,8 @@
     currentBookPath = path;
     meta = await invoke<EpubMeta>("epub_open", { path });
     const safeChapter = clampChapter(chapter, meta.spine.length);
-    await loadChapter(safeChapter);
-    saveProgress(path, meta, safeChapter);
+    await loadChapter(safeChapter, chapterProgress);
+    saveProgress(path, meta, safeChapter, null, chapterProgress);
     view = "reader";
   }
 
@@ -301,25 +354,27 @@
   async function continueBook(book: BookRecord) {
     try {
       startAtEnd = false;
-      await openBookPath(book.path, book.chapter, "Loading...");
+      await openBookPath(book.path, book.chapter, "Loading...", book.chapterProgress ?? 0);
     } catch (e) {
       error = String(e);
       debug = "Err";
     }
   }
 
-  async function loadChapter(idx: number) {
+  async function loadChapter(idx: number, chapterProgress = 0) {
     if (!meta || !isTauriRuntime()) return;
 
     try {
       const safeIndex = clampChapter(idx, meta.spine.length);
+      readerInitialProgress = clampUnit(chapterProgress);
+      currentReaderProgress = null;
       const [rawHtml, chapterPath] = await Promise.all([
         invoke<string>("epub_read_chapter", { spineIndex: safeIndex }),
         invoke<string | null>("epub_get_chapter_path", { spineIndex: safeIndex }),
       ]);
       chapterHtml = resolveChapterAssets(rawHtml, chapterPath);
       chapterIndex = safeIndex;
-      if (currentBookPath) saveProgress(currentBookPath, meta, safeIndex);
+      if (currentBookPath) saveProgress(currentBookPath, meta, safeIndex, null, readerInitialProgress);
       debug = `Ch${safeIndex + 1}/${meta.spine.length}`;
     } catch (e) {
       error = String(e);
@@ -329,7 +384,7 @@
   async function jumpToChapter(idx: number) {
     startAtEnd = false;
     showToc = false;
-    await loadChapter(idx);
+    await loadChapter(idx, 0);
   }
 
   async function navigateReaderHref(href: string) {
@@ -343,30 +398,39 @@
 
     startAtEnd = false;
     showToc = false;
-    await loadChapter(idx);
+    await loadChapter(idx, 0);
   }
 
   function prevChapter() {
     if (chapterIndex > 0) {
       startAtEnd = true;
-      loadChapter(chapterIndex - 1);
+      loadChapter(chapterIndex - 1, 1);
     }
   }
 
   function prevChapterDirect() {
     if (chapterIndex > 0) {
       startAtEnd = false;
-      loadChapter(chapterIndex - 1);
+      loadChapter(chapterIndex - 1, 0);
     }
   }
 
   function nextChapter() {
     startAtEnd = false;
-    if (meta && chapterIndex < meta.spine.length - 1) loadChapter(chapterIndex + 1);
+    if (meta && chapterIndex < meta.spine.length - 1) loadChapter(chapterIndex + 1, 0);
+  }
+
+  function handleReaderProgress(progress: ReaderProgress) {
+    if (!meta || !currentBookPath || progress.chapterIndex !== chapterIndex) return;
+    currentReaderProgress = progress;
+    saveProgress(currentBookPath, meta, chapterIndex, progress);
   }
 
   function progressLabel(book: BookRecord): string {
     if (book.totalChapters <= 0) return "No chapters";
+    if ((book.totalCharacters ?? 0) > 0) {
+      return `Ch.${book.chapter + 1}/${book.totalChapters} | ${book.bookReadChars ?? 0}/${book.totalCharacters}c | ${(book.percent ?? 0).toFixed(2)}%`;
+    }
     return `Ch.${book.chapter + 1}/${book.totalChapters}`;
   }
 
@@ -418,6 +482,10 @@
       onNextChapter={nextChapter}
       onNavigateHref={navigateReaderHref}
       onBackToShelf={() => view = "bookshelf"}
+      initialProgress={readerInitialProgress}
+      chapterStartChars={chapterBookInfo?.current_total ?? 0}
+      totalBookChars={meta?.book_info.character_count ?? 0}
+      onProgressChange={handleReaderProgress}
       {startAtEnd}
     />
     {#if showToc}
