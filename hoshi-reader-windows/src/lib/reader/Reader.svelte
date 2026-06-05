@@ -13,6 +13,8 @@
     startAtEnd = false,
   } = $props();
 
+  const PAGE_EPSILON = 1;
+
   let containerEl: HTMLDivElement = $state()!;
   let contentEl: HTMLDivElement = $state()!;
   let charCount = $state(0);
@@ -24,10 +26,15 @@
   let pageHeight = $state(typeof window === "undefined" ? 0 : window.innerHeight);
   let layoutReady = $state(false);
   let activeContent = $state("");
+  let scrollTailTop = $state(0);
   let layoutRun = 0;
   let contentMaxScroll = 0;
 
   let styleVars = $derived(`--page-width:${pageWidth}px;--page-height:${pageHeight}px`);
+
+  function readerDebugEnabled(): boolean {
+    return typeof localStorage !== "undefined" && localStorage.getItem("hoshi_reader_debug") === "1";
+  }
 
   function pageSize(): number {
     return containerEl?.clientHeight || window.innerHeight;
@@ -36,6 +43,11 @@
   function scrollLimit(): number {
     const ps = pageSize();
     return Math.max(0, (containerEl?.scrollHeight || ps) - ps);
+  }
+
+  function contentScrollLimit(): number {
+    const ps = pageSize();
+    return Math.max(0, (contentEl?.scrollHeight || ps) - ps);
   }
 
   function logicalScrollPos(): number {
@@ -63,7 +75,7 @@
     if (!containerEl || !contentEl) return 1;
     const ps = pageSize();
     contentMaxScroll = measureContentMaxScroll();
-    return Math.max(1, Math.floor(contentMaxScroll / ps) + 1);
+    return Math.max(1, Math.round(contentMaxScroll / ps) + 1);
   }
 
   function recalc() {
@@ -88,8 +100,85 @@
     }
   }
 
+  function textNodes(): Text[] {
+    if (!contentEl) return [];
+
+    const walker = document.createTreeWalker(contentEl, NodeFilter.SHOW_TEXT, {
+      acceptNode(node) {
+        return node.textContent?.trim() ? NodeFilter.FILTER_ACCEPT : NodeFilter.FILTER_REJECT;
+      },
+    });
+    const nodes: Text[] = [];
+    while (walker.nextNode()) {
+      nodes.push(walker.currentNode as Text);
+    }
+    return nodes;
+  }
+
   function measureContentMaxScroll(): number {
-    return scrollLimit();
+    const ps = pageSize();
+    if (ps <= 0) return 0;
+
+    const rawLimit = contentScrollLimit();
+    const alignedLimit = Math.ceil(Math.max(0, rawLimit - PAGE_EPSILON) / ps) * ps;
+    const nextScrollTailTop = alignedLimit > rawLimit ? ps + alignedLimit : 0;
+    if (Math.abs(nextScrollTailTop - scrollTailTop) > 0.5) {
+      scrollTailTop = nextScrollTailTop;
+    }
+    return alignedLimit;
+  }
+
+  function readableTextRects(): { first: DOMRect | null; last: DOMRect | null } {
+    const nodes = textNodes();
+
+    function rectFor(node: Text, side: "first" | "last"): DOMRect | null {
+      const range = document.createRange();
+      range.selectNodeContents(node);
+      const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 && rect.height > 0);
+      const rect = side === "first" ? rects[0] : rects.at(-1);
+      range.detach();
+      return rect ?? null;
+    }
+
+    return {
+      first: nodes.length ? rectFor(nodes[0], "first") : null,
+      last: nodes.length ? rectFor(nodes[nodes.length - 1], "last") : null,
+    };
+  }
+
+  function rectSnapshot(rect: DOMRect | null) {
+    if (!rect) return null;
+    return {
+      x: Math.round(rect.x),
+      y: Math.round(rect.y),
+      width: Math.round(rect.width),
+      height: Math.round(rect.height),
+      right: Math.round(rect.right),
+      bottom: Math.round(rect.bottom),
+    };
+  }
+
+  function logReaderGeometry(reason: string) {
+    if (!readerDebugEnabled() || !containerEl || !contentEl) return;
+
+    const textRects = readableTextRects();
+    console.table({
+      reason,
+      chapter: chapterIndex + 1,
+      currentPage: currentPage + 1,
+      totalPages,
+      pageSize: pageSize(),
+      clientWidth: containerEl.clientWidth,
+      clientHeight: containerEl.clientHeight,
+      scrollTop: Math.round(containerEl.scrollTop),
+      scrollHeight: containerEl.scrollHeight,
+      contentScrollHeight: contentEl.scrollHeight,
+      contentMaxScroll: Math.round(contentMaxScroll),
+      scrollTailTop: Math.round(scrollTailTop),
+      contentRect: JSON.stringify(rectSnapshot(contentEl.getBoundingClientRect())),
+      firstTextRect: JSON.stringify(rectSnapshot(textRects.first)),
+      lastTextRect: JSON.stringify(rectSnapshot(textRects.last)),
+    });
   }
 
   async function waitForInitialFonts(): Promise<void> {
@@ -228,6 +317,7 @@
       activeContent = content;
       layoutReady = false;
       initializing = true;
+      scrollTailTop = 0;
       layoutRun += 1;
     }
   });
@@ -270,13 +360,15 @@
       initializing = false;
       lastSnappedScroll = logicalScrollPos();
       layoutReady = true;
+      logReaderGeometry("layout-ready");
     });
 
     const ro = new ResizeObserver(() => {
       syncPageGeometry();
       recalc();
     });
-    ro.observe(el);
+    // Content changes are handled by the chapter/image layout path above.
+    // Observe only the viewport so tail padding cannot trigger a resize loop.
     if (containerEl) ro.observe(containerEl);
 
     return () => ro.disconnect();
@@ -294,6 +386,9 @@
     <div bind:this={contentEl} class="rct" style={styleVars}>
       {@html content}
     </div>
+    {#if scrollTailTop > 0}
+      <div class="scroll-tail" style={`top:${scrollTailTop}px`} aria-hidden="true"></div>
+    {/if}
   </div>
 </div>
 
@@ -320,6 +415,7 @@
 
   .rv {
     flex: 1;
+    position: relative;
     overflow-x: hidden;
     overflow-y: auto;
   }
@@ -330,6 +426,16 @@
 
   .rv.ready {
     opacity: 1;
+  }
+
+  .scroll-tail {
+    position: absolute;
+    left: 0;
+    width: 1px;
+    height: 1px;
+    margin: 0;
+    padding: 0;
+    pointer-events: none;
   }
 
   .rct {
