@@ -439,12 +439,12 @@
   }
 
   .rct {
-    --font-size: 21px;
-    --line-height: 1.86;
+    --font-size: 22px;
+    --line-height: 1.65;
     --safe-top: clamp(24px, 3.4vh, 42px);
     --safe-bottom: clamp(32px, 5.2vh, 64px);
-    --safe-left: clamp(320px, 27vw, 540px);
-    --safe-right: clamp(150px, 11vw, 240px);
+    --safe-left: clamp(40px, 2.5vw, 72px);
+    --safe-right: clamp(40px, 2.5vw, 72px);
     --content-height: max(1px, calc(var(--page-height, 100vh) - var(--safe-top) - var(--safe-bottom)));
     --column-gap: calc(var(--safe-top) + var(--safe-bottom));
 
