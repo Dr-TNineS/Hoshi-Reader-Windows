@@ -58,3 +58,16 @@ export interface ReaderSelection {
   chapterIndex: number;
 }
 
+export interface GlossaryEntry {
+  dict: string;
+  text: string;
+}
+
+export interface DictResult {
+  expression: string;
+  reading: string;
+  glossary: GlossaryEntry[];
+  matched: string;
+  deinflected: string;
+}
+

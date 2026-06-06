@@ -57,8 +57,16 @@
 - Dictionary popup shell：
   - 选中 reader 正文后显示轻量 lookup popup。
   - 支持桌面端 hover 文字后按 Shift，从指针位置扫描并选中短文本；非日文 token 会向左扩到词起点。
-  - Dictionary backend 尚未 ready 时显示明确 not-ready 状态。
+  - 支持按住 Shift 后移动鼠标连续重扫选词。
+  - Popup 优先贴在 selection 高亮块左/右侧，空间不足时回退到上下方。
+  - 通过 `dict_status` / `dict_lookup` 进入最小 lookup 状态机；backend 未 ready 时显示明确 not-ready 状态。
+  - Backend ready 且返回结果时显示最小 expression、reading、matched 和 glossary 列表。
   - 翻页、切章、TOC 跳转、返回书架或关闭 popup 时清除 selection popup。
+- Dictionary backend：
+  - Rust dictionary state 会在启动时扫描 app data 下的 `dictionaries/imported/*`。
+  - 已导入的 hoshidicts term dictionary 目录需要包含 `.hoshidicts_1`、`index.json`、`hash.table` 和 `blobs.bin`。
+  - 构建环境存在 CMake/C++ 工具链时，`build.rs` 会尝试编译链接 `hoshidicts` 和现有 C API bridge。
+  - 当前环境未找到 CMake 时，backend 会保持 not-ready，Rust 构建仍可通过并给出 warning。
 - 阅读进度：
   - Rust 侧书籍和章节字数 metadata。
   - 前端基于可见文本位置计算 reader progress。
@@ -67,9 +75,8 @@
 ## 未实现 / Stub
 
 - 尚无 durable database；app-owned library metadata 当前是 JSON。
-- Dictionary lookup 尚未实现；`dict_lookup` 当前返回 dictionary engine not linked 错误。
-- `dict_status` 已接线，但默认不是 ready。
 - 尚无 dictionary import、dictionary management 或 dictionary settings UI。
+- 尚无已验证的 dictionary zip import flow；当前只读取 app data 中已导入的 hoshidicts 目录。
 - 尚无 Anki 集成。
 - 尚无 sync 实现。
 - 尚无 settings 或 appearance panel。
@@ -79,7 +86,8 @@
 ## 已知问题
 
 - 旧版 path-only bookshelf 记录在原 EPUB 文件被移动、重命名或删除后可能无法重新打开。
-- Dictionary 功能不可用，因为 dictionary backend 仍是 stub。
+- 当前机器未安装 CMake/C++ 构建工具时，hoshidicts backend 不会链接，Dictionary 功能保持 not-ready。
+- 没有 app data `dictionaries/imported/*` 下的已导入 hoshidicts term dictionary 时，`dict_status` 为 false。
 - Reader layout 对任意 EPUB 的正确性尚未充分验证。
 - Rust 侧字数统计和前端 DOM-based progress 的口径一致性尚未充分验证。
 - Cover 和图片渲染依赖 EPUB 解压路径映射和 asset URL rewriting 成功。
@@ -110,7 +118,7 @@
   - Text measurement 使用 DOM ranges 和 viewport geometry。
   - Ruby / furigana 处理需要在计数和显示之间保持一致。
 - 后续 dictionary 集成：
-  - Rust command surface 已存在，但真实 dictionary engine 尚未接入。
+  - Rust command surface 已存在；真实 lookup 依赖 hoshidicts 构建链接和已导入 dictionary 目录。
 
 ## 验证命令
 
@@ -123,8 +131,8 @@
 
 ## 下一候选任务
 
-- 在真实 dictionary backend 接入后，把 selection 连接到 dictionary lookup popup。
-- 在现有 Rust dictionary commands 后面接入或实现真实 dictionary backend。
+- 为 dictionary backend 添加 Yomitan zip import / management flow。
+- 在有真实 dictionary 数据的环境中验证 `dict_lookup("学校")` 等主路径结果。
 - 为 reader pagination、final-page alignment、image pages、chapter-boundary keyboard behavior
   添加最小自动回归探针。
 - 如 bookshelf flow 需要，添加 cover thumbnail generation 或 cache。

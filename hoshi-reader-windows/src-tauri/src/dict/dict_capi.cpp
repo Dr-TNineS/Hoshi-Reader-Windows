@@ -1,6 +1,7 @@
 #include "dict_capi.h"
 #include "hoshidicts.h"
 #include <string>
+#include <vector>
 #include <cstring>
 #include <cstdlib>
 
@@ -18,19 +19,67 @@ struct LookupEngine {
     ::Lookup* inner;
 };
 
-static std::string glossary_to_json(const std::vector<GlossaryEntry>& glossaries) {
+static void append_json_string(std::string& json, const std::string& value) {
+    json += "\"";
+    for (unsigned char c : value) {
+        switch (c) {
+            case '"':
+                json += "\\\"";
+                break;
+            case '\\':
+                json += "\\\\";
+                break;
+            case '\b':
+                json += "\\b";
+                break;
+            case '\f':
+                json += "\\f";
+                break;
+            case '\n':
+                json += "\\n";
+                break;
+            case '\r':
+                json += "\\r";
+                break;
+            case '\t':
+                json += "\\t";
+                break;
+            default:
+                if (c < 0x20) {
+                    const char hex[] = "0123456789abcdef";
+                    json += "\\u00";
+                    json += hex[(c >> 4) & 0x0f];
+                    json += hex[c & 0x0f];
+                } else {
+                    json += static_cast<char>(c);
+                }
+                break;
+        }
+    }
+    json += "\"";
+}
+
+static char* glossary_to_json(const std::vector<GlossaryEntry>& glossaries) {
     std::string json = "[";
     for (size_t i = 0; i < glossaries.size(); i++) {
         if (i > 0) json += ",";
         json += "{";
-        json += "\"dict\":\"" + glossaries[i].dict_name + "\"";
-        json += ",\"text\":\"" + glossaries[i].glossary + "\"";
+        json += "\"dict\":";
+        append_json_string(json, glossaries[i].dict_name);
+        json += ",\"text\":";
+        append_json_string(json, glossaries[i].glossary);
         json += "}";
     }
     json += "]";
     char* result = (char*)malloc(json.size() + 1);
     memcpy(result, json.c_str(), json.size() + 1);
     return result;
+}
+
+static void free_lookup_result(LookupResultC* r) {
+    free((void*)r->matched);
+    free((void*)r->deinflected);
+    free_result(&r->term);
 }
 
 static char* strdup_c(const std::string& s) {
@@ -116,7 +165,7 @@ int lookup_engine_lookup(LookupEngine* e, const char* text, int max_results, int
             c_results.push_back(cr);
         }
         cb(c_results.data(), (int)c_results.size(), user_data);
-        for (auto& cr : c_results) free_result(&cr);
+        for (auto& cr : c_results) free_lookup_result(&cr);
         return 0;
     } catch (...) {
         return -1;

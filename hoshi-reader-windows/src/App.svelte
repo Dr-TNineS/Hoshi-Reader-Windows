@@ -14,7 +14,7 @@
     saveReadingProgress,
   } from "./lib/storage";
   import { findChapterIndex, flattenToc } from "./lib/toc";
-  import type { EpubMeta, ReaderProgress, ReaderSelection } from "./lib/types";
+  import type { DictResult, EpubMeta, ReaderProgress, ReaderSelection } from "./lib/types";
   import type { BookLocator, BookRecord, LibraryBookRecord } from "./lib/storage";
 
   function clampChapter(chapter: number, total: number): number {
@@ -33,6 +33,10 @@
   let readerSelection = $state<ReaderSelection | null>(null);
   let lookupPopEl: HTMLElement | null = $state(null);
   let lookupPopupSize = $state({ width: 306, height: 154 });
+  let lookupState = $state<"idle" | "loading" | "ready" | "empty" | "error">("idle");
+  let lookupError = $state("");
+  let lookupResults = $state<DictResult[]>([]);
+  let lookupRequestId = 0;
   let showToc = $state(false);
   let error = $state("");
   let debug = $state("");
@@ -234,6 +238,10 @@
   function closeReaderSelection() {
     window.getSelection()?.removeAllRanges();
     readerSelection = null;
+    lookupState = "idle";
+    lookupError = "";
+    lookupResults = [];
+    lookupRequestId += 1;
   }
 
   function backToShelf() {
@@ -244,6 +252,50 @@
   function toggleToc() {
     closeReaderSelection();
     showToc = !showToc;
+  }
+
+  function handleReaderSelection(selection: ReaderSelection | null) {
+    readerSelection = selection;
+    lookupError = "";
+    lookupResults = [];
+    lookupRequestId += 1;
+    const requestId = lookupRequestId;
+
+    if (!selection) {
+      lookupState = "idle";
+      return;
+    }
+
+    lookupState = "loading";
+    void lookupSelection(selection, requestId);
+  }
+
+  async function lookupSelection(selection: ReaderSelection, requestId: number) {
+    if (!isTauriRuntime()) {
+      if (requestId !== lookupRequestId) return;
+      lookupState = "error";
+      lookupError = "Dictionary lookup requires Tauri runtime.";
+      return;
+    }
+
+    try {
+      const ready = await invoke<boolean>("dict_status");
+      if (requestId !== lookupRequestId) return;
+      if (!ready) {
+        lookupState = "error";
+        lookupError = "Dictionary backend not ready.";
+        return;
+      }
+
+      const results = await invoke<DictResult[]>("dict_lookup", { text: selection.text });
+      if (requestId !== lookupRequestId) return;
+      lookupResults = results;
+      lookupState = results.length > 0 ? "ready" : "empty";
+    } catch (e) {
+      if (requestId !== lookupRequestId) return;
+      lookupState = "error";
+      lookupError = String(e);
+    }
   }
 
   function clamp(value: number, min: number, max: number): number {
@@ -351,7 +403,7 @@
       chapterStartChars={chapterBookInfo?.current_total ?? 0}
       totalBookChars={meta?.book_info.character_count ?? 0}
       onProgressChange={handleReaderProgress}
-      onSelectionChange={(selection: ReaderSelection | null) => readerSelection = selection}
+      onSelectionChange={handleReaderSelection}
       {startAtEnd}
     />
     {#if readerSelection}
@@ -361,7 +413,32 @@
           <button aria-label="Close lookup" onclick={closeReaderSelection}>Close</button>
         </div>
         <p class="lookup-text">{readerSelection.text}</p>
-        <p class="lookup-state">Dictionary backend not ready.</p>
+        {#if lookupState === "loading"}
+          <p class="lookup-state">Looking up...</p>
+        {:else if lookupState === "error"}
+          <p class="lookup-state">{lookupError}</p>
+        {:else if lookupState === "empty"}
+          <p class="lookup-state">No dictionary results.</p>
+        {:else if lookupState === "ready"}
+          <div class="lookup-results">
+            {#each lookupResults.slice(0, 3) as result}
+              <section class="lookup-result">
+                <div class="lookup-result-head">
+                  <span>{result.expression}</span>
+                  {#if result.reading && result.reading !== result.expression}
+                    <span class="lookup-reading">{result.reading}</span>
+                  {/if}
+                </div>
+                {#if result.matched || result.deinflected}
+                  <p class="lookup-match">{result.matched}{result.deinflected ? ` -> ${result.deinflected}` : ""}</p>
+                {/if}
+                {#each result.glossary.slice(0, 2) as entry}
+                  <p class="lookup-glossary"><span>{entry.dict}</span>{entry.text}</p>
+                {/each}
+              </section>
+            {/each}
+          </div>
+        {/if}
       </aside>
     {/if}
     {#if showToc}
@@ -434,6 +511,13 @@
   .lookup-head button { flex-shrink: 0; padding: 3px 8px; background: #33383e; color: #d7d9dc; border: 1px solid #555c64; border-radius: 3px; cursor: pointer; font-size: 11px; text-transform: none; }
   .lookup-text { color: #fff; font-size: 18px; line-height: 1.35; overflow-wrap: anywhere; max-height: 54px; overflow: hidden; }
   .lookup-state { color: #b7bcc3; font-size: 12px; line-height: 1.35; }
+  .lookup-results { display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; padding-right: 2px; }
+  .lookup-result { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; border-top: 1px solid #3c4043; }
+  .lookup-result-head { display: flex; align-items: baseline; gap: 8px; color: #fff; font-size: 16px; line-height: 1.25; }
+  .lookup-reading { color: #b7bcc3; font-size: 12px; }
+  .lookup-match { color: #8ab4f8; font-size: 11px; line-height: 1.3; }
+  .lookup-glossary { color: #d7d9dc; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+  .lookup-glossary span { margin-right: 6px; color: #81c995; font-size: 11px; }
   .ctrls { position: fixed; bottom: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 5px; background: #111; border-top: 1px solid #333; z-index: 100; }
   .ctrls button { padding: 4px 10px; background: #333; color: #ccc; border: 1px solid #555; border-radius: 3px; cursor: pointer; font-size: 12px; }
   .ctrls button:hover { background: #444; }

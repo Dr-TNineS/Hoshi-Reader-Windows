@@ -4,6 +4,7 @@ mod library;
 
 use dict::commands::DictState;
 use epub::commands::EpubState;
+use tauri::Manager;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
@@ -12,9 +13,7 @@ pub fn run() {
         .manage(EpubState {
             book: std::sync::Mutex::new(None),
         })
-        .manage(DictState {
-            ready: std::sync::Mutex::new(false),
-        })
+        .manage(DictState::new())
         .invoke_handler(tauri::generate_handler![
             epub::commands::epub_open,
             epub::commands::epub_get_chapter_path,
@@ -27,6 +26,7 @@ pub fn run() {
             dict::commands::dict_status,
         ])
         .setup(|app| {
+            app.state::<DictState>().initialize(app.handle());
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
