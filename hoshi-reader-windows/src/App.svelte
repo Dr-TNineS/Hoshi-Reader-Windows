@@ -3,28 +3,9 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { normalizeHref, resolveChapterAssets } from "./lib/epub-assets";
   import Reader from "./lib/reader/Reader.svelte";
+  import { clearSession, clampUnit, loadBooks, loadSession, saveReadingProgress } from "./lib/storage";
   import type { EpubMeta, ReaderProgress, TocNode } from "./lib/types";
-
-  type SavedSession = {
-    path: string;
-    chapter: number;
-    chapterProgress?: number;
-    bookReadChars?: number;
-    totalCharacters?: number;
-    percent?: number;
-  };
-
-  type BookRecord = {
-    path: string;
-    title: string;
-    chapter: number;
-    totalChapters: number;
-    lastOpened: number;
-    chapterProgress?: number;
-    bookReadChars?: number;
-    totalCharacters?: number;
-    percent?: number;
-  };
+  import type { BookRecord } from "./lib/storage";
 
   type TocEntry = {
     label: string;
@@ -33,30 +14,8 @@
     chapterIndex: number | null;
   };
 
-  const BOOKS_KEY = "hoshi_books";
-  const SESSION_KEY = "hoshi_session";
-  const MAX_BOOKS = 12;
-
-  function readJson<T>(key: string, fallback: T): T {
-    try {
-      const raw = localStorage.getItem(key);
-      return raw ? JSON.parse(raw) as T : fallback;
-    } catch {
-      return fallback;
-    }
-  }
-
-  function fileName(path: string): string {
-    return path.split(/[\\/]/).pop()?.replace(/\.epub$/i, "") || "Untitled";
-  }
-
   function clampChapter(chapter: number, total: number): number {
     return Math.max(0, Math.min(chapter, Math.max(0, total - 1)));
-  }
-
-  function clampUnit(value: number | undefined): number {
-    if (!Number.isFinite(value)) return 0;
-    return Math.max(0, Math.min(value ?? 0, 1));
   }
 
   function findChapterIndex(bookMeta: EpubMeta, href: string | null): number | null {
@@ -89,7 +48,7 @@
   let chapterHtml = $state("");
   let chapterIndex = $state(0);
   let currentBookPath = $state("");
-  let books = $state<BookRecord[]>(readJson<BookRecord[]>(BOOKS_KEY, []));
+  let books = $state<BookRecord[]>(loadBooks());
   let startAtEnd = $state(false);
   let readerInitialProgress = $state(0);
   let currentReaderProgress = $state<ReaderProgress | null>(null);
@@ -107,26 +66,20 @@
     if (triedRestore) return;
     triedRestore = true;
 
-    const saved = localStorage.getItem(SESSION_KEY);
-    if (saved && view === "bookshelf" && isTauriRuntime()) {
+    const session = loadSession();
+    if (session && view === "bookshelf" && isTauriRuntime()) {
       (async () => {
         try {
-          const session = JSON.parse(saved) as SavedSession;
           await openBookPath(session.path, session.chapter, "Restoring...", session.chapterProgress ?? 0);
           debug = "Restored";
         } catch (e) {
-          localStorage.removeItem(SESSION_KEY);
+          clearSession();
           error = String(e);
           debug = "Restore failed";
         }
       })();
     }
   });
-
-  function persistBooks(nextBooks: BookRecord[]) {
-    books = nextBooks;
-    localStorage.setItem(BOOKS_KEY, JSON.stringify(nextBooks));
-  }
 
   function saveProgress(
     path: string,
@@ -135,43 +88,7 @@
     progress: ReaderProgress | null = currentReaderProgress,
     chapterProgressFallback = 0,
   ) {
-    const totalChapters = bookMeta.spine.length;
-    const safeChapter = clampChapter(chapter, totalChapters);
-    const chapterInfo = bookMeta.book_info.chapter_info[safeChapter];
-    const totalCharacters = bookMeta.book_info.character_count;
-    const chapterProgress = progress?.chapterIndex === safeChapter
-      ? clampUnit(progress.chapterProgress)
-      : clampUnit(chapterProgressFallback);
-    const bookReadChars = progress?.chapterIndex === safeChapter
-      ? progress.bookReadChars
-      : Math.round((chapterInfo?.current_total ?? 0) + (chapterInfo?.chapter_count ?? 0) * chapterProgress);
-    const percent = totalCharacters > 0 ? (bookReadChars / totalCharacters) * 100 : 0;
-
-    localStorage.setItem(SESSION_KEY, JSON.stringify({
-      path,
-      chapter: safeChapter,
-      chapterProgress,
-      bookReadChars,
-      totalCharacters,
-      percent,
-    }));
-
-    const record: BookRecord = {
-      path,
-      title: bookMeta.title || fileName(path),
-      chapter: safeChapter,
-      totalChapters,
-      lastOpened: Date.now(),
-      chapterProgress,
-      bookReadChars,
-      totalCharacters,
-      percent,
-    };
-    const nextBooks = [
-      record,
-      ...books.filter((book) => book.path !== path),
-    ].slice(0, MAX_BOOKS);
-    persistBooks(nextBooks);
+    books = saveReadingProgress(books, path, bookMeta, chapter, progress, chapterProgressFallback);
   }
 
   async function openBookPath(path: string, chapter = 0, status = "Opening...", chapterProgress = 0) {

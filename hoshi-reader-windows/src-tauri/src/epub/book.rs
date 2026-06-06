@@ -1,3 +1,4 @@
+use crate::epub::sanitizer::sanitize_css_files;
 use crate::epub::types::*;
 use regex::Regex;
 use std::fs;
@@ -47,6 +48,7 @@ fn extract_epub(epub_path: &str) -> Result<PathBuf, String> {
             std::io::copy(&mut file, &mut outfile).map_err(|e| format!("Cannot extract: {e}"))?;
         }
     }
+    sanitize_css_files(&dest)?;
     Ok(dest)
 }
 
@@ -218,7 +220,7 @@ fn is_reader_char(ch: char) -> bool {
         || ('\u{3400}'..='\u{9fff}').contains(&ch)
         || ('\u{f900}'..='\u{faff}').contains(&ch)
         || ('\u{ff10}'..='\u{ff9f}').contains(&ch)
-        || matches!(ch, '銆? | '銆? | '銆? | '銆? | '鈼? | '鈼?)
+        || matches!(ch, '々' | '〆' | '〻' | '〇' | '○' | '◯')
 }
 
 impl Drop for EpubBook {
@@ -322,7 +324,7 @@ mod tests {
 
     #[test]
     fn reader_char_count_ignores_markup_and_ruby() {
-        let html = r#"<p>浜旀湀<ruby>闆?rt>銇傘倎</rt><rp>锛?/rp></ruby>&nbsp;A1</p>"#;
+        let html = r#"<p>五月<ruby>雨<rt>あめ</rt><rp>（</rp></ruby>&nbsp;A1</p>"#;
         assert_eq!(count_reader_chars(html), 5);
     }
 }
