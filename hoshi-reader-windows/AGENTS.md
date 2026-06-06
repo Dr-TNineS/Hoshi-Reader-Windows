@@ -1,130 +1,100 @@
 # Hoshi Reader Windows Agent 指南
 
-Hoshi Reader Windows 是 Hoshi Reader 的 Windows/Tauri 版本。当前目标不是完整复刻任一上游仓库，而是在 Windows 桌面上把日语 EPUB 小说阅读、分页排版、查词和后续学习工作流逐步收拢成稳定可用的 Hoshi Reader。
+本文件记录 `hoshi-reader-windows` 的仓库级协作规则。内容应保持简洁、长期有效，并且只针对当前 Windows/Tauri 代码库。
 
-技术栈：Tauri 2 + Svelte 5 + TypeScript + Vite + Rust。前端负责书架、阅读器 UI、章节 HTML 资源重写和分页交互；Rust/Tauri 负责 EPUB 解包、元数据、章节读取、CSS 清洗、字数统计和后续词典后端。
+`STATUS.md` 是当前工程状态快照，不是 agent 指令来源。可以用它快速了解项目现状，但做重要判断前必须回到当前代码核实。
 
-## 核心原则
+## 工作原则
 
-- Windows 用户可见行为以本仓库为准；Hoshi Android、Hoshi Mac、Hoshi 原版/iOS 和旧 HSW 参考实现都是参考，不是可以直接覆盖当前实现的真源。
-- 修 Reader 问题时不要堆补丁。先确认是 EPUB CSS、资源路径、Tauri asset protocol、容器尺寸、CSS columns、滚动轴、末页边界、键盘事件还是保存进度导致，再改最小稳定方案。
-- 当前推进顺序采用 `model/storage -> bookshelf import -> reader selection -> dictionary popup -> Anki -> sync -> settings`。当前主路径是 `bookshelf -> import EPUB -> open reader -> select text -> lookup`。
-- Reader 排版进入守住基线、避免回归的阶段；除非阻塞主路径，不再默认压过功能闭环。不要把外观设置面板、横排阅读、continuous/scroll 模式、AnkiConnect、sync、settings 或 Sasayaki 提前混进主路径切片。
-- EPUB import 默认复制到应用库，不只依赖原始文件路径。Dictionary popup MVP 默认接真实 `hoshidicts`，不做假数据 UI。
-- 遇到平台能力、Tauri 配置、asset protocol、文件权限、WebView 行为、Rust crate API 或构建发布流程时，优先查官方文档或项目现有配置，不凭印象改。
-- 工作树可能包含用户或上一轮 agent 的未提交内容。不要回滚、重置或覆盖未明确属于当前任务的改动；提交时只 stage 本次任务相关文件和 hunk。
-- Commit message 使用 Conventional Commits，例如 `feat(reader): add character progress`、`fix(reader): align final page`。用户没有要求 commit 时，不要主动提交。
+- HSW 是 HSA/HS 阅读体验在 Windows 平台上的迁移、复刻或再实现；核心阅读体验优先对齐 HSA/HS 的用户可见行为。
+- Android 平台特有 UI、权限、WebView、存储和系统 API 细节只作参考，必须按 Windows/Tauri 实际能力逐项判断。
+- 默认推进顺序：model/storage -> bookshelf import -> reader -> dictionary popup -> Anki -> sync -> settings。
+- 主路径优先闭环：bookshelf -> import EPUB -> open reader -> select text -> lookup。
+- 当前 `hoshi-reader-windows` 代码是实现细节的真源。
+- 改动行为前，先检查相关 frontend、Rust command、storage 边界，不要依赖早期项目笔记或记忆。
+- 不要复活旧 `STATUS.md`、旧 `AGENTS.md`、`ebook-reader` 或 `hibiki` 中的过期上下文。
+- Hoshi Reader Android 和 Hoshi Reader Mac 只能在任务明确需要时作为事实对照；不要默认继承它们的产品定位或架构。
+- 修改范围应贴合当前任务。除非用户明确要求一个完整切片，否则不要把 reader、storage、dictionary、settings、packaging 改动混在一起。
+- 如果实现改动导致 `STATUS.md` 不准确，应在同一任务里同步更新 `STATUS.md`。
+- 文档里不确定或未验证的项目事实必须标注为 `unknown` / `not verified`，不要猜。
 
-## 参考项目定位
+## 架构基线
 
-- `hoshi-reader-android` / HSA：当前最活跃的 Hoshi 工程参考。优先参考 EPUB/CSS 清洗、资源处理、书架、封面、字数进度、字典和学习功能架构。
-- `hoshi-reader-mac` / Hoshi Mac：桌面端 Hoshi 体验参考。优先参考窗口、键盘、桌面阅读区、导入、书架、设置取舍和发布思路。
-- `hoshi-reader-original` / Hoshi 原版或 iOS：产品气质和学习链路参考。用于判断 Hoshi 应该怎样把阅读、查词、制卡、音频和跟读串起来。
-- W1ght/Hoshi-Reader-Windows / 旧 HSW 参考实现：Windows/WebView2 小说 reader 参考。重点看 `reader-bridge.js`、小说样式、视口内字数进度和 Windows 端交互取舍。
-- `hoshidicts`：后续词典引擎和词典数据处理参考。
+### 当前技术栈
 
-定位原则：HSA 回答“现代 Hoshi 怎么处理 EPUB、书架、字典和学习功能”；Hoshi Mac 回答“桌面 Hoshi 应该怎么用”；旧 HSW 参考实现回答“Windows 小说阅读器如何处理 WebView/视口/进度”；本项目负责把这些经验转译为 Tauri 桌面日语阅读工具。不再参考已删除的外部参考代码。
+- Frontend：Svelte 5、TypeScript、Vite。
+- Desktop shell：Tauri 2。
+- Native backend：Rust。
+- 当前持久化：浏览器 `localStorage`。
+- 当前 EPUB 路径：Rust commands、`rbook`、临时解压目录、Tauri asset URL。
 
-## 项目结构
+### Frontend 边界
 
-- `src/App.svelte`：应用入口、书架、EPUB 打开、章节加载、资源重写、阅读进度保存、TOC 和 Reader 接线。
-- `src/lib/reader/Reader.svelte`：当前核心阅读器。负责竖排分页、键盘翻页、章节边界、末页对齐、布局稳定、字数进度回传。
-- `src/lib/reader.ts`：Reader JS 工具函数，例如正文字符统计、furigana 过滤、文本 walker。
-- `src/lib/types.ts`：前端 EPUB/Tauri 数据类型。
-- `src-tauri/src/epub/`：Rust EPUB 模块。包含打开/解包、元数据、章节读取、章节路径、CSS sanitizer、字数统计和 Tauri commands。
-- `src-tauri/src/dict/`：后续词典 FFI/commands。当前不是 Reader 排版主线，修改前先确认边界。
-- `src-tauri/capabilities/default.json` 和 `src-tauri/tauri.conf.json`：Tauri 权限、asset protocol、窗口和 app 配置。
-- `docs/reader-layout-baseline.md`：当前 Reader 排版基线和回归观察文档。修改分页模型、默认排版参数或验证口径时同步更新。
-- `STATUS.md`：阶段性状态记录。不要把它当作精确架构真源；需要长期沉淀的规则放入 `AGENTS.md` 或 `docs/`。
+- `src/App.svelte` 负责当前顶层应用流程：bookshelf、打开 EPUB、session restore、进入 reader、TOC overlay、章节导航。
+- `src/lib/reader/Reader.svelte` 负责 reader layout、分页、键盘处理、进度上报、图片重排处理、内部章节链接处理。
+- `src/lib/epub-assets.ts` 负责前端 HTML asset URL rewriting 和轻量 EPUB HTML normalization。
+- `src/lib/storage.ts` 负责当前 `localStorage` bookshelf/session records。
+- `src/lib/toc.ts` 负责 TOC flattening 和 href 到 spine 的匹配。
+- `src/lib/types.ts` 负责前端共享 API shape。
 
-## Reader 排版规则
+### Rust 边界
 
-- 当前 Reader 是竖排 paginated-only，不做横排、continuous/scroll 模式或临时外观设置。
-- 当前分页模型是 `.rv` 纵向 `scrollTop` + `.rct` vertical-rl CSS columns。页尺寸来自 `.rv.clientHeight`，内容边界来自 `.rct.scrollHeight` 和实际 text/image rect。
-- 默认排版基线来自 Hoshi 系列：字号 `22px`，行高 `1.65`，左右留白每侧 `clamp(40px, 2.5vw, 72px)`，保留上下安全区和末页 `scroll-tail` 对齐方案。
-- 末页和短章节不能靠按字数猜测。优先用实际 scroll/content rect 判断可翻页范围，确保最后一页不截断、不下移、不错位。
-- 左右键语义：竖排下 `ArrowLeft` 下一页，`ArrowRight` 上一页；章节边界处普通左右键可跨章节；`Ctrl`/`Meta` + 左右键直接切章节。
-- 修改 Reader、CSS sanitizer、资源重写、图片加载或字数进度后，至少验证长正文页、章节末尾、章节边界、封面/图片页。
-- 不要为了某一张截图硬塞 magic number。需要调整间距、padding、page size、column gap 或 scroll tail 时，先确认它们与当前分页模型的契约。
+- `src-tauri/src/lib.rs` 负责 Tauri plugins、state 和 command handlers wiring。
+- `src-tauri/src/epub/commands.rs` 是 EPUB 操作的 Tauri command surface。
+- `src-tauri/src/epub/book.rs` 负责 EPUB 解压、metadata access、chapter reading、chapter paths、book character metadata。
+- `src-tauri/src/epub/sanitizer.rs` 负责解压后 CSS sanitization。
+- `src-tauri/src/dict/commands.rs` 目前仍是 dictionary command stub；真实 dictionary backend 接入前，不要构建假定 lookup 已可用的 UI。
 
-## EPUB 与资源处理
+## 领域规则
 
-- Rust 侧打开 EPUB 后会解包到临时目录，Tauri asset scope 应限制在需要的本地路径范围内，不要启用宽泛 file URL 访问。
-- 章节 HTML 的 `src`、`srcset`、`href`、`poster`、`xlink:href` 由前端按章节路径重写；内部章节链接应转为 `data-epub-href` 并走 Reader 导航。
-- 单图 SVG 封面可以转成普通 `<img>`，避免 WebView 中 `xlink:href` 和 100% 高度 SVG 不可见。
-- `img.gaiji` / `img.gaiji-line` 是行内字形资源，必须保持小尺寸和基线行为；大图才应标记为 block image。
-- EPUB 自带 CSS 不能破坏 Reader 的 vertical-rl/page contract。清洗 calibre、writing-mode、过大 width/height 等规则时，优先参考 HSA，并给 Rust sanitizer 增加聚焦测试。
-- 字符统计需要忽略 ruby/furigana，口径应尽量与前端 Reader `countChars` 一致；书籍总字数来自后端 `book_info`，当前页已读字数来自浏览器布局后的页前正文。
+### Bookshelf 与 Import
 
-## 进度与持久化
+- 当前 bookshelf records 仍引用原始 EPUB 路径。代码真正把 EPUB copy 到 app-owned library 之前，不要把它描述成 app-owned import storage。
+- 如果实现 app-owned import，应先建立明确的 model/storage 边界，不要把 path-copy 逻辑散落到 UI components 里。
+- 修改 storage shape 时，需要考虑 session restore 和 recent-book compatibility。
 
-- 阅读进度采用 HSA 风格：`已读字数 / 全书总字数 + 百分比`。当前页显示的已读字数是不包含当前页正文的“页前累计”；例如第 10 页统计前 9 页。
-- 章节内恢复进度用 chapter progress；全书显示用章节起始累计字数 + 当前章节页前字数。
-- 保存到 localStorage 的 session/recent book 数据需要兼容旧格式。新增字段必须可选，不能让旧书架记录打不开。
-- 切章节、TOC 跳转、内部链接跳转、启动恢复、章节边界翻页都要检查是否错误覆盖已有进度。
+### Reader
 
-## 文档真源
+- 当前 reader pagination 使用 vertical layout，核心测量模型是 `scrollTop`、`.rv.clientHeight`、`.rct.scrollHeight`、CSS columns，以及 final-page tail alignment。
+- DOM measurement、image loading、CSS column layout、progress restore 都是高风险区域。
+- 修改 reader layout 后，需要验证普通页、最后一页、章节边界、cover/image 页和 progress reporting。
+- 除非任务明确要求更大的 reader 改造，否则不要替换当前 pagination model。
 
-- `AGENTS.md`：仓库级长期协作规则，只写所有会话都应该遵守的约定。
-- `docs/reader-layout-baseline.md`：Reader 排版模型、默认参数、已验证回归清单和 HSA/Mac/HSW 对照结论。
-- `STATUS.md`：阶段性状态、最近排查和下一步计划。它可以帮助接力，但过期内容要谨慎对待。
-- 新增长期架构说明时放入 `docs/`，不要把长日志、命令输出或一次性调查过程写进 README。
-- 只有任务改变了对应文档的事实内容时才更新文档；不要为了“看起来完整”重复已有规则。
-- 如果 agent 犯错后定位到可复发的正确做法，先确认现有文档是否已有等价规则；需要长期常驻时，把最小可执行规则沉淀到 `AGENTS.md` 或对应 `docs/`，不要追加一次性调查过程。
+### Dictionary 与 Lookup
 
-## UI 与产品取舍
+- Dictionary commands 已存在，但真实 lookup 尚未实现。
+- 不要把 fake dictionary-result UI 做成看起来已经可用的 lookup 功能。
+- Selection 和 popup 工作应保持清晰边界：reader selection capture、lookup command invocation、result rendering 分开处理。
 
-- 当前 UI 是工程可用骨架，不是最终产品。做用户可见 UI 时优先保持安静、紧凑、桌面工具感，不要做营销式 landing page。
-- 新增可见文案时先确认是否需要中英文/本地化策略；当前项目尚未建立完整 i18n，不要把大量硬编码文案散落到多个模块。
-- 书架、TOC、Reader chrome 和错误提示要保持低干扰。Reader 内容区域优先于装饰。
-- 新增图标优先使用现有资产或成熟图标库；不要临时手绘复杂图标。
-- 用户可见错误应转为明确状态或提示，不要直接把原始异常大段渲染进主要 UI。
+### Settings、Anki 与 Sync
 
-## 测试与验证
+- Settings、Anki、sync 当前尚未实现。
+- 除非任务明确是用户可配置 settings，否则不要为了调整常量而提前加入 settings UI。
+- 除非当前切片需要，否则不要把 Anki 或 sync 混入 reader/storage 工作。
 
-常规前端改动至少运行：
+## 文档规则
 
-```powershell
-npm run check
-npm run build
-```
+- `STATUS.md` 记录当前工程状态：已实现功能、stub、known issues、risk areas、validation commands、next candidates。
+- `STATUS.md` 不应包含 agent 指令、产品定位或长期战略判断。
+- `AGENTS.md` 记录未来 agent 需要长期遵守的仓库级规则。
+- 长调查日志、临时 debugging 细节、一次性决策不应写入 `AGENTS.md`。
+- 如果从 bug 中沉淀规则，只写能防止同类问题复发的最小可复用指令。
+- HSW 文档维护任务不要修改参考项目。
 
-涉及 Rust/Tauri/EPUB 后端时再运行：
+## 用户可见 UI
 
-```powershell
-cd src-tauri
-cargo check
-cargo test --lib
-```
+- UI 改动应与当前 minimal desktop app 保持一致，除非任务明确要求更大 redesign。
+- 用户可见错误应可理解、可行动；不要把原始内部异常文本当作主要 UI 文案展示。
+- Reader UI 不应遮挡正文、不应意外改变页面测量、不应在正常阅读时引入 layout shift。
+- 涉及 layout risk 的 frontend 改动，需要同时检查窄窗口和宽窗口。
 
-需要启动本地开发环境时：
+## 验证与提交
 
-```powershell
-cmd /c npx.cmd tauri dev
-```
-
-Reader 相关手工或浏览器探针至少覆盖：
-
-- 长正文页：分页、末页对齐、左右留白、字数进度。
-- 章节末尾：最后一页不截断、不下移。
-- 章节边界：普通左右键跨章节，`Ctrl`/`Meta` + 左右键直接切章节。
-- 封面/图片页：图片可见，不跳版，不把 gaiji 当作大图。
-- 启动恢复：章节和页内进度不被初始保存覆盖。
-
-无法完成某项验证时，在回复中明确说明，不要声称未验证的 UI 已经可用。
-
-## 提交策略
-
-- 提交前先看 `git status --short`，确认工作树里是否有无关 dirty 文件或相邻 repo 改动。
-- 对混有无关改动的文件使用分块 staging 或临时 index，只提交当前任务相关 hunk。
-- 不要把 `STATUS.md`、package/Cargo 变化、sanitizer、Reader、词典、相邻仓库改动混进同一个 commit，除非它们确实属于同一个用户请求。
-- 提交前优先运行相关检查，并至少执行 `git diff --cached --check`。
-- 用户要求 commit 时再提交；提交后报告 commit hash 和验证命令。
-
-## 工作方式
-
-- 搜索优先使用 `rg` / `rg --files`。
-- 手动编辑文件使用 `apply_patch`。
-- 不使用 `git reset --hard` 或 `git checkout --` 回滚用户改动，除非用户明确要求。
-- 涉及具体页面或视觉排版时，尽量用浏览器/截图/DOM rect 探针验证，不只凭肉眼描述。
-- 回答用户时说明做了什么、验证了什么、哪些没有验证；遇到阻塞再请求决策。
+- 文档-only 改动通常运行 `git diff --check` 即可。
+- Frontend 或共享 TypeScript 改动运行 `npm run check`。
+- Production frontend 改动运行 `npm run build`。
+- Rust command、EPUB、sanitizer 或 dictionary backend 改动运行 `cd src-tauri; cargo check` 和相关 Rust tests。
+- Reader layout 改动还需要 runtime visual check，覆盖 pagination、final-page alignment、image/cover behavior、keyboard navigation。
+- Commit message 使用 Conventional Commits。
+- 不要把无关的既有 worktree 改动混进 commit。
+- 用户要求 commit 时，只 stage 本次完成任务相关文件。
