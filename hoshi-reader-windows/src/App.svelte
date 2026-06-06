@@ -14,7 +14,7 @@
     saveReadingProgress,
   } from "./lib/storage";
   import { findChapterIndex, flattenToc } from "./lib/toc";
-  import type { DictResult, EpubMeta, ReaderProgress, ReaderSelection } from "./lib/types";
+  import type { DictImportSummary, DictResult, EpubMeta, ReaderProgress, ReaderSelection } from "./lib/types";
   import type { BookLocator, BookRecord, LibraryBookRecord } from "./lib/storage";
 
   function clampChapter(chapter: number, total: number): number {
@@ -39,6 +39,7 @@
   let lookupRequestId = 0;
   let showToc = $state(false);
   let error = $state("");
+  let dictionaryStatus = $state("");
   let debug = $state("");
   let triedRestore = false;
   let triedLibraryLoad = false;
@@ -244,6 +245,33 @@
     lookupRequestId += 1;
   }
 
+  async function importDictionary() {
+    try {
+      dictionaryStatus = "Importing dictionary...";
+      const selected = await open({
+        multiple: false,
+        filters: [{ name: "Yomitan Dictionary", extensions: ["zip"] }],
+      });
+      if (!selected) {
+        dictionaryStatus = "Dictionary import cancelled.";
+        return;
+      }
+
+      const imported = await invoke<DictImportSummary>("dictionary_import_yomitan_zip", { zipPath: selected });
+      const reused = imported.reused ? "Reused" : "Imported";
+      const ready = imported.ready ? "ready" : "not ready";
+      dictionaryStatus = `${reused} ${imported.title} (${imported.termCount} terms, ${ready}).`;
+      if (readerSelection) {
+        lookupRequestId += 1;
+        const requestId = lookupRequestId;
+        lookupState = "loading";
+        void lookupSelection(readerSelection, requestId);
+      }
+    } catch (e) {
+      dictionaryStatus = String(e);
+    }
+  }
+
   function backToShelf() {
     closeReaderSelection();
     view = "bookshelf";
@@ -365,10 +393,14 @@
           <h1>Hoshi Reader</h1>
           <p class="subtitle">Lightweight Japanese EPUB Reader</p>
         </div>
-        <button class="ob" onclick={openBook}>Open EPUB</button>
+        <div class="head-actions">
+          <button class="secondary-action" onclick={importDictionary}>Import Dictionary</button>
+          <button class="ob" onclick={openBook}>Open EPUB</button>
+        </div>
       </div>
 
       {#if error}<p class="err">{error}</p>{/if}
+      {#if dictionaryStatus}<p class="dict-status">{dictionaryStatus}</p>{/if}
 
       <div class="recent">
         <h2>Recent Books</h2>
@@ -485,9 +517,13 @@
   h1 { font-size: 32px; font-weight: 300; letter-spacing: 4px; color: #fff; }
   h2 { font-size: 13px; font-weight: 600; color: #9aa0a6; text-transform: uppercase; }
   .subtitle { margin-top: 6px; color: #9aa0a6; font-size: 14px; }
+  .head-actions { flex-shrink: 0; display: flex; align-items: center; gap: 10px; }
   .ob { flex-shrink: 0; padding: 10px 22px; font-size: 14px; background: #3b8f78; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
   .ob:hover { background: #46a187; }
+  .secondary-action { flex-shrink: 0; padding: 10px 16px; font-size: 14px; background: #303134; color: #d7d9dc; border: 1px solid #555c64; border-radius: 4px; cursor: pointer; }
+  .secondary-action:hover { background: #3a3d41; }
   .err { color: #ff8a80; font-size: 13px; white-space: pre-wrap; }
+  .dict-status { color: #b7bcc3; font-size: 13px; white-space: pre-wrap; }
   .recent { display: flex; flex-direction: column; gap: 10px; min-height: 240px; }
   .empty { padding: 28px 0; color: #80868b; font-size: 13px; }
   .book-list { display: flex; flex-direction: column; gap: 8px; max-height: 54vh; overflow-y: auto; padding-right: 4px; }

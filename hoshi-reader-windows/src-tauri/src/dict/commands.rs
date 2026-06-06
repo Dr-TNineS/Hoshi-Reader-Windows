@@ -1,4 +1,5 @@
 use serde::Serialize;
+use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -27,6 +28,21 @@ pub struct DictResult {
 pub struct GlossaryEntry {
     pub dict: String,
     pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictImportSummary {
+    pub dict_id: String,
+    pub title: String,
+    pub dictionary_path: String,
+    pub term_count: usize,
+    pub meta_count: usize,
+    pub freq_count: usize,
+    pub pitch_count: usize,
+    pub media_count: usize,
+    pub ready: bool,
+    pub reused: bool,
 }
 
 #[derive(Default)]
@@ -92,6 +108,60 @@ pub fn dict_status(state: tauri::State<DictState>) -> bool {
     }
 }
 
+#[tauri::command]
+pub fn dictionary_import_yomitan_zip(
+    zip_path: String,
+    app: AppHandle,
+    state: tauri::State<DictState>,
+) -> Result<DictImportSummary, String> {
+    import_yomitan_zip(&zip_path, &app, &state)
+}
+
+fn import_yomitan_zip(
+    zip_path: &str,
+    app: &AppHandle,
+    state: &DictState,
+) -> Result<DictImportSummary, String> {
+    let source = PathBuf::from(zip_path);
+    if !source.is_file() {
+        return Err(format!("Dictionary zip does not exist: {}", source.display()));
+    }
+
+    let dict_id = dictionary_zip_id(&source)?;
+    let imported_root = imported_dictionary_root(app)?;
+    let final_dir = imported_root.join(&dict_id);
+
+    if is_hoshidicts_term_dir(&final_dir) {
+        state.initialize(app);
+        let runtime = state.runtime.lock().unwrap();
+        return Ok(DictImportSummary {
+            dict_id,
+            title: read_imported_dictionary_title(&final_dir).unwrap_or_else(|| "Imported Dictionary".into()),
+            dictionary_path: final_dir.to_string_lossy().into_owned(),
+            term_count: 0,
+            meta_count: 0,
+            freq_count: 0,
+            pitch_count: 0,
+            media_count: 0,
+            ready: dict_runtime_ready(&runtime),
+            reused: true,
+        });
+    }
+
+    #[cfg(hoshi_dicts_linked)]
+    {
+        import_yomitan_zip_linked(&source, &imported_root, &final_dir, &dict_id, app, state)
+    }
+
+    #[cfg(not(hoshi_dicts_linked))]
+    {
+        let _ = imported_root;
+        let _ = final_dir;
+        let _ = state;
+        Err("Dictionary importer is not linked. Install CMake/C++ build tools and rebuild HSW with hoshidicts.".into())
+    }
+}
+
 fn initialize_runtime(app: &AppHandle) -> DictRuntime {
     let imported_root = match imported_dictionary_root(app) {
         Ok(root) => root,
@@ -148,6 +218,19 @@ fn initialize_runtime(app: &AppHandle) -> DictRuntime {
     }
 }
 
+fn dict_runtime_ready(runtime: &DictRuntime) -> bool {
+    #[cfg(hoshi_dicts_linked)]
+    {
+        runtime.backend.is_some()
+    }
+
+    #[cfg(not(hoshi_dicts_linked))]
+    {
+        let _ = runtime;
+        false
+    }
+}
+
 fn imported_dictionary_root(app: &AppHandle) -> Result<PathBuf, String> {
     let root = app
         .path()
@@ -190,6 +273,155 @@ fn runtime_error(runtime: &DictRuntime) -> String {
             "Dictionary backend is not ready.".into()
         }
     })
+}
+
+fn dictionary_zip_id(path: &Path) -> Result<String, String> {
+    let bytes = fs::read(path).map_err(|e| format!("Cannot read dictionary zip: {e}"))?;
+    let hash = Sha256::digest(bytes);
+    Ok(hash[..8].iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+#[derive(serde::Deserialize)]
+struct ImportedDictionaryIndex {
+    title: Option<String>,
+}
+
+fn read_imported_dictionary_title(path: &Path) -> Option<String> {
+    let content = fs::read_to_string(path.join("index.json")).ok()?;
+    let index = serde_json::from_str::<ImportedDictionaryIndex>(&content).ok()?;
+    index.title.filter(|title| !title.trim().is_empty())
+}
+
+#[cfg(hoshi_dicts_linked)]
+fn import_yomitan_zip_linked(
+    source: &Path,
+    imported_root: &Path,
+    final_dir: &Path,
+    dict_id: &str,
+    app: &AppHandle,
+    state: &DictState,
+) -> Result<DictImportSummary, String> {
+    use std::ptr;
+
+    let staging_root = imported_root.join(format!(".importing-{dict_id}"));
+    if staging_root.exists() {
+        fs::remove_dir_all(&staging_root)
+            .map_err(|e| format!("Cannot clean dictionary import staging dir: {e}"))?;
+    }
+    fs::create_dir_all(&staging_root)
+        .map_err(|e| format!("Cannot create dictionary import staging dir: {e}"))?;
+
+    let source_c = CString::new(source.to_string_lossy().as_bytes())
+        .map_err(|_| format!("Dictionary zip path contains an interior NUL: {}", source.display()))?;
+    let staging_c = CString::new(staging_root.to_string_lossy().as_bytes()).map_err(|_| {
+        format!(
+            "Dictionary import staging path contains an interior NUL: {}",
+            staging_root.display()
+        )
+    })?;
+    let mut raw = ffi::DictImportResultC {
+        success: 0,
+        title: ptr::null(),
+        term_count: 0,
+        meta_count: 0,
+        freq_count: 0,
+        pitch_count: 0,
+        media_count: 0,
+        errors_json: ptr::null(),
+    };
+
+    let status = unsafe {
+        ffi::dict_import_yomitan_zip(source_c.as_ptr(), staging_c.as_ptr(), 0, &mut raw)
+    };
+    if status != 0 {
+        let _ = fs::remove_dir_all(&staging_root);
+        return Err("Dictionary import failed.".into());
+    }
+
+    let title = unsafe { c_string(raw.title) };
+    let errors_json = unsafe { c_string(raw.errors_json) };
+    let errors = serde_json::from_str::<Vec<String>>(&errors_json).unwrap_or_default();
+    let summary_counts = (
+        raw.term_count,
+        raw.meta_count,
+        raw.freq_count,
+        raw.pitch_count,
+        raw.media_count,
+    );
+    let success = raw.success != 0;
+    unsafe {
+        ffi::free_import_result(&mut raw);
+    }
+
+    if !success {
+        let _ = fs::remove_dir_all(&staging_root);
+        return Err(if errors.is_empty() {
+            "Dictionary import failed.".into()
+        } else {
+            errors.join("; ")
+        });
+    }
+
+    let imported_dir = find_single_imported_dictionary_dir(&staging_root)?;
+    if final_dir.exists() {
+        fs::remove_dir_all(final_dir)
+            .map_err(|e| format!("Cannot replace existing dictionary dir: {e}"))?;
+    }
+    fs::rename(&imported_dir, final_dir)
+        .or_else(|_| {
+            copy_dir_all(&imported_dir, final_dir)?;
+            fs::remove_dir_all(&imported_dir)
+        })
+        .map_err(|e| format!("Cannot move imported dictionary into library: {e}"))?;
+    let _ = fs::remove_dir_all(&staging_root);
+
+    state.initialize(app);
+    let runtime = state.runtime.lock().unwrap();
+    Ok(DictImportSummary {
+        dict_id: dict_id.to_string(),
+        title: if title.trim().is_empty() {
+            read_imported_dictionary_title(final_dir).unwrap_or_else(|| "Imported Dictionary".into())
+        } else {
+            title
+        },
+        dictionary_path: final_dir.to_string_lossy().into_owned(),
+        term_count: summary_counts.0,
+        meta_count: summary_counts.1,
+        freq_count: summary_counts.2,
+        pitch_count: summary_counts.3,
+        media_count: summary_counts.4,
+        ready: dict_runtime_ready(&runtime),
+        reused: false,
+    })
+}
+
+#[cfg(hoshi_dicts_linked)]
+fn find_single_imported_dictionary_dir(staging_root: &Path) -> Result<PathBuf, String> {
+    let mut dirs = fs::read_dir(staging_root)
+        .map_err(|e| format!("Cannot read dictionary import staging dir: {e}"))?
+        .filter_map(Result::ok)
+        .map(|entry| entry.path())
+        .filter(|path| is_hoshidicts_term_dir(path))
+        .collect::<Vec<_>>();
+    dirs.sort();
+    dirs.into_iter()
+        .next()
+        .ok_or_else(|| "Dictionary import did not create a valid hoshidicts term dictionary.".into())
+}
+
+#[cfg(hoshi_dicts_linked)]
+fn copy_dir_all(from: &Path, to: &Path) -> Result<(), std::io::Error> {
+    fs::create_dir_all(to)?;
+    for entry in fs::read_dir(from)? {
+        let entry = entry?;
+        let target = to.join(entry.file_name());
+        if entry.file_type()?.is_dir() {
+            copy_dir_all(&entry.path(), &target)?;
+        } else {
+            fs::copy(entry.path(), target)?;
+        }
+    }
+    Ok(())
 }
 
 #[cfg(hoshi_dicts_linked)]

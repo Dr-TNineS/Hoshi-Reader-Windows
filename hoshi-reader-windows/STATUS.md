@@ -66,6 +66,8 @@
   - Rust dictionary state 会在启动时扫描 app data 下的 `dictionaries/imported/*`。
   - 已导入的 hoshidicts term dictionary 目录需要包含 `.hoshidicts_1`、`index.json`、`hash.table` 和 `blobs.bin`。
   - 构建环境存在 CMake/C++ 工具链时，`build.rs` 会尝试编译链接 `hoshidicts` 和现有 C API bridge。
+  - 书架页有最小 `Import Dictionary` 入口，可选择 Yomitan `.zip` 并通过 hoshidicts importer 导入到 app data。
+  - 导入目录使用 zip 内容 hash 作为稳定 `dict_id`；重复导入同一 zip 会复用已有目录。
   - 当前环境未找到 CMake 时，backend 会保持 not-ready，Rust 构建仍可通过并给出 warning。
 - 阅读进度：
   - Rust 侧书籍和章节字数 metadata。
@@ -75,8 +77,8 @@
 ## 未实现 / Stub
 
 - 尚无 durable database；app-owned library metadata 当前是 JSON。
-- 尚无 dictionary import、dictionary management 或 dictionary settings UI。
-- 尚无已验证的 dictionary zip import flow；当前只读取 app data 中已导入的 hoshidicts 目录。
+- 尚无 dictionary management 或 dictionary settings UI。
+- 尚无在本机真实 hoshidicts 链接环境下验证过的 dictionary zip import flow。
 - 尚无 Anki 集成。
 - 尚无 sync 实现。
 - 尚无 settings 或 appearance panel。
@@ -86,7 +88,7 @@
 ## 已知问题
 
 - 旧版 path-only bookshelf 记录在原 EPUB 文件被移动、重命名或删除后可能无法重新打开。
-- 当前机器未安装 CMake/C++ 构建工具时，hoshidicts backend 不会链接，Dictionary 功能保持 not-ready。
+- 当前机器未安装 CMake/C++ 构建工具时，hoshidicts backend 和 importer 不会链接，Dictionary 功能保持 not-ready。
 - 没有 app data `dictionaries/imported/*` 下的已导入 hoshidicts term dictionary 时，`dict_status` 为 false。
 - Reader layout 对任意 EPUB 的正确性尚未充分验证。
 - Rust 侧字数统计和前端 DOM-based progress 的口径一致性尚未充分验证。
@@ -131,7 +133,7 @@
 
 ## 下一候选任务
 
-- 为 dictionary backend 添加 Yomitan zip import / management flow。
+- 在有 CMake/C++ 工具链和真实 dictionary zip 的环境中验证 Yomitan zip import 与 `dict_lookup("学校")` 主路径。
 - 在有真实 dictionary 数据的环境中验证 `dict_lookup("学校")` 等主路径结果。
 - 为 reader pagination、final-page alignment、image pages、chapter-boundary keyboard behavior
   添加最小自动回归探针。

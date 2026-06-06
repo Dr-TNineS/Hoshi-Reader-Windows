@@ -71,3 +71,15 @@ export interface DictResult {
   deinflected: string;
 }
 
+export interface DictImportSummary {
+  dictId: string;
+  title: string;
+  dictionaryPath: string;
+  termCount: number;
+  metaCount: number;
+  freqCount: number;
+  pitchCount: number;
+  mediaCount: number;
+  ready: boolean;
+  reused: boolean;
+}

@@ -27,6 +27,17 @@ typedef struct {
     int preprocessor_steps;
 } LookupResultC;
 
+typedef struct {
+    int success;
+    const char* title;
+    size_t term_count;
+    size_t meta_count;
+    size_t freq_count;
+    size_t pitch_count;
+    size_t media_count;
+    const char* errors_json;
+} DictImportResultC;
+
 typedef void (*ResultCallback)(const LookupResultC* results, int count, void* user_data);
 
 DictQuery* dict_query_create(void);
@@ -42,7 +53,9 @@ LookupEngine* lookup_engine_create(DictQuery* q, Deinflector* d);
 void lookup_engine_destroy(LookupEngine* e);
 int lookup_engine_lookup(LookupEngine* e, const char* text, int max_results, int scan_length, ResultCallback cb, void* user_data);
 
+int dict_import_yomitan_zip(const char* zip_path, const char* output_dir, int low_ram, DictImportResultC* out);
 void free_result(TermResultC* r);
+void free_import_result(DictImportResultC* r);
 
 #ifdef __cplusplus
 }

@@ -22,6 +22,7 @@ pub fn run() {
             library::library_import_epub,
             library::library_list_books,
             library::library_open_book,
+            dict::commands::dictionary_import_yomitan_zip,
             dict::commands::dict_lookup,
             dict::commands::dict_status,
         ])

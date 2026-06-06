@@ -180,4 +180,37 @@ void free_result(TermResultC* r) {
     free((void*)r->dict_name);
 }
 
+int dict_import_yomitan_zip(const char* zip_path, const char* output_dir, int low_ram, DictImportResultC* out) {
+    if (out == nullptr) {
+        return -1;
+    }
+
+    try {
+        auto result = dictionary_importer::import(zip_path, output_dir, low_ram != 0);
+        out->success = result.success ? 1 : 0;
+        out->title = strdup_c(result.title);
+        out->term_count = result.term_count;
+        out->meta_count = result.meta_count;
+        out->freq_count = result.freq_count;
+        out->pitch_count = result.pitch_count;
+        out->media_count = result.media_count;
+
+        std::string errors_json = "[";
+        for (size_t i = 0; i < result.errors.size(); i++) {
+            if (i > 0) errors_json += ",";
+            append_json_string(errors_json, result.errors[i]);
+        }
+        errors_json += "]";
+        out->errors_json = strdup_c(errors_json);
+        return 0;
+    } catch (...) {
+        return -1;
+    }
+}
+
+void free_import_result(DictImportResultC* r) {
+    free((void*)r->title);
+    free((void*)r->errors_json);
+}
+
 } // extern "C"
