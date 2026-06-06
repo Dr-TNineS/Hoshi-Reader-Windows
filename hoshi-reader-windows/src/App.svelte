@@ -1,46 +1,15 @@
 <script lang="ts">
   import { invoke, isTauri as isTauriRuntime } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { normalizeHref, resolveChapterAssets } from "./lib/epub-assets";
+  import { resolveChapterAssets } from "./lib/epub-assets";
   import Reader from "./lib/reader/Reader.svelte";
   import { clearSession, clampUnit, loadBooks, loadSession, saveReadingProgress } from "./lib/storage";
-  import type { EpubMeta, ReaderProgress, TocNode } from "./lib/types";
+  import { findChapterIndex, flattenToc } from "./lib/toc";
+  import type { EpubMeta, ReaderProgress } from "./lib/types";
   import type { BookRecord } from "./lib/storage";
-
-  type TocEntry = {
-    label: string;
-    href: string | null;
-    level: number;
-    chapterIndex: number | null;
-  };
 
   function clampChapter(chapter: number, total: number): number {
     return Math.max(0, Math.min(chapter, Math.max(0, total - 1)));
-  }
-
-  function findChapterIndex(bookMeta: EpubMeta, href: string | null): number | null {
-    if (!href) return null;
-    const target = normalizeHref(href);
-    const manifestById = new Map(bookMeta.manifest.map((item) => [item.id, normalizeHref(item.href)]));
-    const spineHrefs = bookMeta.spine.map((item) => manifestById.get(item.idref) ?? "");
-    const exact = spineHrefs.findIndex((spineHref) => spineHref === target);
-    if (exact >= 0) return exact;
-    const suffix = spineHrefs.findIndex(
-      (spineHref) => spineHref.endsWith(`/${target}`) || target.endsWith(`/${spineHref}`)
-    );
-    return suffix >= 0 ? suffix : null;
-  }
-
-  function flattenToc(nodes: TocNode[], bookMeta: EpubMeta, level = 0): TocEntry[] {
-    return nodes.flatMap((node) => [
-      {
-        label: node.label,
-        href: node.href,
-        level,
-        chapterIndex: findChapterIndex(bookMeta, node.href),
-      },
-      ...flattenToc(node.children, bookMeta, level + 1),
-    ]);
   }
 
   let view = $state<"bookshelf" | "reader">("bookshelf");
