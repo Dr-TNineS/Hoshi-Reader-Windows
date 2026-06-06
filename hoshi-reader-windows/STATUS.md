@@ -8,7 +8,25 @@
 
 项目不需要推倒重来。EPUB 打开、章节读取、资源路径、竖排分页、基础书架这些底座已经能跑，问题集中在“小说展示/排版”还没有完全对齐目标阅读器。
 
-当前策略是保留现有 Tauri + Rust EPUB 解析 + Svelte Reader 的骨架，下一步专注重做/收敛 Reader 的竖排分页布局。不要再凭截图猜 `safe-left`，要对照参考实现，把页面尺寸、内容容器、页距、内容边界计算作为一套契约处理。
+当前策略是保留现有 Tauri + Rust EPUB 解析 + Svelte Reader 的骨架，但推进重心从 reader-only 排版打磨切换到 HSA 旧版式主路径功能链。Reader 排版进入守住基线、避免回归的阶段；除非阻塞主路径，不再默认压过功能闭环。
+
+## 2026-06-06 主路径推进决策
+
+本阶段推进顺序固定为：
+
+`model/storage -> bookshelf import -> reader selection -> dictionary popup -> Anki -> sync -> settings`
+
+当前主路径固定为：
+
+`bookshelf -> import EPUB -> open reader -> select text -> lookup`
+
+默认取舍：
+
+- `AGENTS.md` 记录长期战略优先级和默认取舍，不塞完整执行 schema 或临时调查过程。
+- EPUB import 默认复制到应用库，不再只依赖原始文件路径。
+- Dictionary popup MVP 默认接真实 `hoshidicts`，不做假数据 UI。
+- Anki、sync、settings 排在 lookup 闭环之后，不提前混入。
+- Reader 后续修改以守住现有竖排分页基线、避免进度/封面/章节边界回归为主；视觉细节继续收敛，但不阻塞主路径功能切片。
 
 ## 参考项目
 
@@ -17,17 +35,15 @@
 | [Manhhao/Hoshi-Reader](https://github.com/Manhhao/Hoshi-Reader) | Hoshi 的产品气质和源头行为参考。重点看阅读、查词、制卡、音频/跟读等学习工作流如何串起来。 |
 | `hoshi-reader-mac` / Hoshi Mac | 桌面端 Hoshi 的近亲参考。重点看桌面窗口、键盘操作、阅读区域、文件导入、书架和桌面端产品取舍；不按 Swift/macOS 工程实现逐行移植。 |
 | [HuangAntimony/Hoshi-Reader-Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) | 当前最活跃的 Hoshi 工程参考。重点看 EPUB/CSS 清洗、资源处理、封面缓存、书架、字典和学习功能架构。当前本地 `main` 已 fetch 到 `origin/main`，远端最新曾显示到 `27fcbfa fix(reader): prevent epub writing-mode css crashes`。 |
-| [ttu-ttu/ebook-reader](https://github.com/ttu-ttu/ebook-reader) | 排版引擎老师。重点参考 paginated reader 的 DOM/CSS/PageManager、`vertical-rl`、CSS columns、页数/页距/滚动轴处理和复杂 EPUB 的阅读稳定性。 |
 | [W1ght/Hoshi-Reader-Windows](https://github.com/W1ght/Hoshi-Reader-Windows) | Windows/WebView2 小说 reader 参考。重点看 `NovelReaderContentStyles.cs`、`reader-bridge.js`；只参考小说部分，原项目还有漫画残留。 |
 | [Manhhao/hoshidicts](https://github.com/Manhhao/hoshidicts) | 后续字典引擎来源。 |
 
 定位原则：
 
-- `ebook-reader` 负责回答“EPUB 页面怎么排稳”。
 - Hoshi Android 负责回答“现代 Hoshi 怎么处理 EPUB、书架、字典和学习功能”。
 - Hoshi Mac 负责回答“桌面端 Hoshi 应该怎么用”。
 - Hoshi 原版/iOS 负责回答“Hoshi 的产品味道和学习链路是什么”。
-- Windows 版当前目标是把 Hoshi 的学习型产品方向和 `ebook-reader` 的排版经验，收敛成 Tauri 桌面日语阅读/学习工具。
+- Windows 版当前目标是把 Hoshi 的学习型产品方向收敛成 Tauri 桌面日语阅读/学习工具。不再参考已删除的外部参考代码。
 
 ## 已完成并提交
 
@@ -108,7 +124,7 @@
 
 ### 当前未解决的问题
 
-- 小说展示位置仍没有达到 `ebook-reader` 红框效果。
+- 小说展示位置仍需要继续对齐当前阅读区基线。
 - 当前黑底布局与目标相比：
   - 短章节/标题页位置不对
   - 目录页和正文页的阅读区域还需要重新校准
@@ -133,7 +149,7 @@
    - 已回滚。
 
 2. **早期直接把竖排分页从 `scrollLeft` 改成 `scrollTop`**
-   - 想参考 `ebook-reader` / W1ght 的竖排分页轴。
+   - 曾尝试参考外部竖排分页轴。
    - 结果修坏：
      - 顶部出现横向散字
      - 短章节出现假页，例如 Ch.2 显示 `P.2/2`
@@ -145,7 +161,7 @@
 
 ## 下一步计划
 
-优先级只放在小说竖排展示，不动背景颜色和控制条。
+本节较早的 reader-only 计划已被 2026-06-06 主路径推进决策覆盖。以下 Reader 排版事项仍作为基线/回归任务保留，但不再默认压过 `bookshelf -> import EPUB -> open reader -> select text -> lookup` 功能闭环。
 
 1. **先对齐最新 Hoshi 参考**
    - 本地 `hoshi-reader-android` 已 fetch，当前远端 `origin/main` 比本地旧版本领先很多。
@@ -167,10 +183,6 @@
    - 继续增强资源重写：CSS `url(...)`、复杂 SVG、封面图、图片页居中。
 
 4. **拆清楚参考实现的布局契约**
-   - `ebook-reader`：
-     - `book-reader-paginated.svelte`
-     - `page-manager-paginated.ts`
-     - `styles.scss`
    - W1ght：
      - `Hoshi/Services/Novels/NovelReaderContentStyles.cs`
      - `Hoshi/Web/NovelReader/reader-bridge.js`
@@ -188,7 +200,7 @@
 
 6. **再处理视觉位置**
    - 先保证页数、翻页、章节切换稳定。
-   - 再把标题页、说明页、词条页、目录页、正文页的位置向 `ebook-reader` 红框效果靠近。
+   - 再把标题页、说明页、词条页、目录页、正文页的位置向当前阅读区基线靠近。
 
 7. **每轮验证**
    - 至少跑：
@@ -206,15 +218,15 @@
 
 ## 暂缓事项
 
-这些先不做，避免分散 Reader 排版主线：
+这些仍暂缓，避免在 lookup 闭环前扩大范围：
 
 - 背景色主题
 - 控制条/按钮 UI
 - 自定义字体大小、页间距设置
 - 横排阅读
 - scroll/continuous 模式
-- 字典查询 UI
-- AnkiConnect
+- 完整字典页/高级字典管理 UI
+- AnkiConnect（排在 reader lookup popup 之后）
 - Sasayaki 有声书
 - 完整书架美化
 

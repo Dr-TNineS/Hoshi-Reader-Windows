@@ -77,4 +77,4 @@ last.minTop: 52
 
 ## 已知非目标
 
-这轮不加入 Appearance 设置面板，也不复刻 ebook-reader 的完整 PageManager。当前目标是让现有 Tauri + Svelte Reader 的竖排分页稳定、可验证、可提交。
+这轮不加入 Appearance 设置面板，也不引入新的外部分页引擎参考。当前目标是让现有 Tauri + Svelte Reader 的竖排分页稳定、可验证、可提交。

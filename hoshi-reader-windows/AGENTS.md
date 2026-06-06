@@ -6,9 +6,11 @@ Hoshi Reader Windows 是 Hoshi Reader 的 Windows/Tauri 版本。当前目标不
 
 ## 核心原则
 
-- Windows 用户可见行为以本仓库为准；Hoshi Android、Hoshi Mac、Hoshi 原版/iOS、ebook-reader 和旧 HSW 参考实现都是参考，不是可以直接覆盖当前实现的真源。
+- Windows 用户可见行为以本仓库为准；Hoshi Android、Hoshi Mac、Hoshi 原版/iOS 和旧 HSW 参考实现都是参考，不是可以直接覆盖当前实现的真源。
 - 修 Reader 问题时不要堆补丁。先确认是 EPUB CSS、资源路径、Tauri asset protocol、容器尺寸、CSS columns、滚动轴、末页边界、键盘事件还是保存进度导致，再改最小稳定方案。
-- Reader 排版当前优先级最高。除非用户明确要求，不要把外观设置面板、横排阅读、continuous/scroll 模式、完整查词 UI、AnkiConnect 或 Sasayaki 提前混进 Reader 收尾任务。
+- 当前推进顺序采用 `model/storage -> bookshelf import -> reader selection -> dictionary popup -> Anki -> sync -> settings`。当前主路径是 `bookshelf -> import EPUB -> open reader -> select text -> lookup`。
+- Reader 排版进入守住基线、避免回归的阶段；除非阻塞主路径，不再默认压过功能闭环。不要把外观设置面板、横排阅读、continuous/scroll 模式、AnkiConnect、sync、settings 或 Sasayaki 提前混进主路径切片。
+- EPUB import 默认复制到应用库，不只依赖原始文件路径。Dictionary popup MVP 默认接真实 `hoshidicts`，不做假数据 UI。
 - 遇到平台能力、Tauri 配置、asset protocol、文件权限、WebView 行为、Rust crate API 或构建发布流程时，优先查官方文档或项目现有配置，不凭印象改。
 - 工作树可能包含用户或上一轮 agent 的未提交内容。不要回滚、重置或覆盖未明确属于当前任务的改动；提交时只 stage 本次任务相关文件和 hunk。
 - Commit message 使用 Conventional Commits，例如 `feat(reader): add character progress`、`fix(reader): align final page`。用户没有要求 commit 时，不要主动提交。
@@ -18,11 +20,10 @@ Hoshi Reader Windows 是 Hoshi Reader 的 Windows/Tauri 版本。当前目标不
 - `hoshi-reader-android` / HSA：当前最活跃的 Hoshi 工程参考。优先参考 EPUB/CSS 清洗、资源处理、书架、封面、字数进度、字典和学习功能架构。
 - `hoshi-reader-mac` / Hoshi Mac：桌面端 Hoshi 体验参考。优先参考窗口、键盘、桌面阅读区、导入、书架、设置取舍和发布思路。
 - `hoshi-reader-original` / Hoshi 原版或 iOS：产品气质和学习链路参考。用于判断 Hoshi 应该怎样把阅读、查词、制卡、音频和跟读串起来。
-- `ebook-reader`：分页排版参考。重点看 paginated reader 的 DOM/CSS/PageManager、`vertical-rl`、CSS columns、页距、滚动轴和复杂 EPUB 稳定性。
 - W1ght/Hoshi-Reader-Windows / 旧 HSW 参考实现：Windows/WebView2 小说 reader 参考。重点看 `reader-bridge.js`、小说样式、视口内字数进度和 Windows 端交互取舍。
 - `hoshidicts`：后续词典引擎和词典数据处理参考。
 
-定位原则：HSA 回答“现代 Hoshi 怎么处理 EPUB、书架、字典和学习功能”；Hoshi Mac 回答“桌面 Hoshi 应该怎么用”；ebook-reader 回答“EPUB 页面怎么排稳”；旧 HSW 参考实现回答“Windows 小说阅读器如何处理 WebView/视口/进度”；本项目负责把这些经验转译为 Tauri 桌面日语阅读工具。
+定位原则：HSA 回答“现代 Hoshi 怎么处理 EPUB、书架、字典和学习功能”；Hoshi Mac 回答“桌面 Hoshi 应该怎么用”；旧 HSW 参考实现回答“Windows 小说阅读器如何处理 WebView/视口/进度”；本项目负责把这些经验转译为 Tauri 桌面日语阅读工具。不再参考已删除的外部参考代码。
 
 ## 项目结构
 
@@ -65,7 +66,7 @@ Hoshi Reader Windows 是 Hoshi Reader 的 Windows/Tauri 版本。当前目标不
 ## 文档真源
 
 - `AGENTS.md`：仓库级长期协作规则，只写所有会话都应该遵守的约定。
-- `docs/reader-layout-baseline.md`：Reader 排版模型、默认参数、已验证回归清单和 HSA/Mac/HSW/ebook-reader 对照结论。
+- `docs/reader-layout-baseline.md`：Reader 排版模型、默认参数、已验证回归清单和 HSA/Mac/HSW 对照结论。
 - `STATUS.md`：阶段性状态、最近排查和下一步计划。它可以帮助接力，但过期内容要谨慎对待。
 - 新增长期架构说明时放入 `docs/`，不要把长日志、命令输出或一次性调查过程写进 README。
 - 只有任务改变了对应文档的事实内容时才更新文档；不要为了“看起来完整”重复已有规则。
