@@ -12,7 +12,6 @@
 - 主路径优先闭环：bookshelf -> import EPUB -> open reader -> select text -> lookup。
 - 当前 `hoshi-reader-windows` 代码是实现细节的真源。
 - 改动行为前，先检查相关 frontend、Rust command、storage 边界，不要依赖早期项目笔记或记忆。
-- 不要复活旧 `STATUS.md`、旧 `AGENTS.md`、`ebook-reader` 或 `hibiki` 中的过期上下文。
 - Hoshi Reader Android 和 Hoshi Reader Mac 只能在任务明确需要时作为事实对照；不要默认继承它们的产品定位或架构。
 - 修改范围应贴合当前任务。除非用户明确要求一个完整切片，否则不要把 reader、storage、dictionary、settings、packaging 改动混在一起。
 - 如果实现改动导致 `STATUS.md` 不准确，应在同一任务里同步更新 `STATUS.md`。
