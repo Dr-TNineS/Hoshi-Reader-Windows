@@ -31,6 +31,8 @@
   let readerInitialProgress = $state(0);
   let currentReaderProgress = $state<ReaderProgress | null>(null);
   let readerSelection = $state<ReaderSelection | null>(null);
+  let lookupPopEl: HTMLElement | null = $state(null);
+  let lookupPopupSize = $state({ width: 306, height: 154 });
   let showToc = $state(false);
   let error = $state("");
   let debug = $state("");
@@ -244,20 +246,62 @@
     showToc = !showToc;
   }
 
+  function clamp(value: number, min: number, max: number): number {
+    return Math.max(min, Math.min(max, value));
+  }
+
+  function measureLookupPopup() {
+    if (!lookupPopEl) return;
+    const rect = lookupPopEl.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
+    if (Math.abs(rect.width - lookupPopupSize.width) > 0.5 || Math.abs(rect.height - lookupPopupSize.height) > 0.5) {
+      lookupPopupSize = { width: rect.width, height: rect.height };
+    }
+  }
+
   function popupStyle(selection: ReaderSelection): string {
-    const width = 280;
-    const height = 132;
+    const contentWidth = 280;
+    const width = lookupPopupSize.width;
+    const height = lookupPopupSize.height;
     const margin = 12;
+    const gap = 10;
+    const topMargin = 44;
+    const bottomMargin = 48;
     const maxLeft = Math.max(margin, window.innerWidth - width - margin);
-    const maxTop = Math.max(44, window.innerHeight - height - 48);
-    const left = Math.max(margin, Math.min(maxLeft, selection.rect.x + selection.rect.width / 2 - width / 2));
+    const maxTop = Math.max(topMargin, window.innerHeight - height - bottomMargin);
+    const leftSpace = selection.rect.x - margin - gap;
+    const rightSpace = window.innerWidth - selection.rect.x - selection.rect.width - margin - gap;
+    const canFitLeft = leftSpace >= width;
+    const canFitRight = rightSpace >= width;
+    let left: number;
+
+    if (canFitLeft || canFitRight) {
+      const placeRight = canFitRight && (!canFitLeft || rightSpace >= leftSpace);
+      left = placeRight ? selection.rect.x + selection.rect.width + gap : selection.rect.x - width - gap;
+      const top = clamp(selection.rect.y, topMargin, maxTop);
+      return `left:${clamp(left, margin, maxLeft)}px;top:${top}px;width:${contentWidth}px`;
+    }
+
+    if (Math.max(leftSpace, rightSpace) >= width * 0.6) {
+      left = rightSpace >= leftSpace ? selection.rect.x + selection.rect.width + gap : selection.rect.x - width - gap;
+      const top = clamp(selection.rect.y, topMargin, maxTop);
+      return `left:${clamp(left, margin, maxLeft)}px;top:${top}px;width:${contentWidth}px`;
+    }
+
+    left = clamp(selection.rect.x + selection.rect.width / 2 - width / 2, margin, maxLeft);
     const below = selection.rect.y + selection.rect.height + 10;
     const above = selection.rect.y - height - 10;
     const topCandidate = below <= maxTop ? below : above;
-    const top = Math.max(44, Math.min(maxTop, topCandidate));
+    const top = clamp(topCandidate, topMargin, maxTop);
 
-    return `left:${left}px;top:${top}px;width:${width}px`;
+    return `left:${left}px;top:${top}px;width:${contentWidth}px`;
   }
+
+  $effect(() => {
+    if (!readerSelection || !lookupPopEl) return;
+    const frame = requestAnimationFrame(measureLookupPopup);
+    return () => cancelAnimationFrame(frame);
+  });
 
 </script>
 
@@ -311,7 +355,7 @@
       {startAtEnd}
     />
     {#if readerSelection}
-      <aside class="lookup-pop" style={popupStyle(readerSelection)}>
+      <aside bind:this={lookupPopEl} class="lookup-pop" style={popupStyle(readerSelection)}>
         <div class="lookup-head">
           <span>Lookup</span>
           <button aria-label="Close lookup" onclick={closeReaderSelection}>Close</button>

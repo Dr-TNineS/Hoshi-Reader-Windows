@@ -530,9 +530,15 @@
     onSelectionChange(null);
   }
 
+  function clearShiftHoverTimer() {
+    if (shiftHoverTimer === null) return;
+    window.clearTimeout(shiftHoverTimer);
+    shiftHoverTimer = null;
+  }
+
   function scheduleShiftHoverLookup() {
     if (!shiftKeyPressed || !lastPointer) return;
-    if (shiftHoverTimer !== null) window.clearTimeout(shiftHoverTimer);
+    clearShiftHoverTimer();
     shiftHoverTimer = window.setTimeout(() => {
       shiftHoverTimer = null;
       if (!shiftKeyPressed || !lastPointer) return;
@@ -697,10 +703,7 @@
   function handleKeyUp(e: KeyboardEvent) {
     if (e.key !== "Shift") return;
     shiftKeyPressed = false;
-    if (shiftHoverTimer !== null) {
-      window.clearTimeout(shiftHoverTimer);
-      shiftHoverTimer = null;
-    }
+    clearShiftHoverTimer();
   }
 
   function handleContentClick(e: MouseEvent) {
@@ -721,15 +724,17 @@
 
   function handlePointerMove(e: PointerEvent) {
     lastPointer = { x: e.clientX, y: e.clientY };
-    if (shiftKeyPressed) scheduleShiftHoverLookup();
+    shiftKeyPressed = e.shiftKey;
+    if (e.shiftKey) {
+      scheduleShiftHoverLookup();
+    } else {
+      clearShiftHoverTimer();
+    }
   }
 
   function handleWindowBlur() {
     shiftKeyPressed = false;
-    if (shiftHoverTimer !== null) {
-      window.clearTimeout(shiftHoverTimer);
-      shiftHoverTimer = null;
-    }
+    clearShiftHoverTimer();
   }
 
   $effect.pre(() => {
