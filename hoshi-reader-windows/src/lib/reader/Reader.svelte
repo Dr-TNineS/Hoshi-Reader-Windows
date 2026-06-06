@@ -206,8 +206,8 @@
       if (!targetRect) return 0;
 
       const viewportTop = containerEl.getBoundingClientRect().top;
-      const logicalTop = targetRect.top - viewportTop + logicalScrollPos();
-      return Math.floor(Math.max(0, logicalTop) / pageSize()) * pageSize();
+      const logicalBottom = targetRect.bottom - viewportTop + logicalScrollPos();
+      return Math.ceil(Math.max(0, logicalBottom - PAGE_EPSILON) / pageSize()) * pageSize();
     }
 
     return contentMaxScroll;
