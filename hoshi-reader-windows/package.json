@@ -22,13 +22,5 @@
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",
     "@tauri-apps/plugin-dialog": "^2.7.1"
-  },
-  "description": "This template should help get you started developing with Svelte and TypeScript in Vite.",
-  "main": "svelte.config.js",
-  "directories": {
-    "doc": "docs"
-  },
-  "keywords": [],
-  "author": "",
-  "license": "ISC"
+  }
 }
