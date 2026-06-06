@@ -21,7 +21,7 @@ fn try_link_hoshidicts() -> Result<(), String> {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").map_err(|e| e.to_string())?);
     let hoshidicts_dir = env::var_os("HSW_HOSHIDICTS_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|| manifest_dir.join("..").join("..").join("hoshidicts"));
+        .unwrap_or_else(|| manifest_dir.join("..").join("third_party").join("hoshidicts"));
     let hoshidicts_dir = hoshidicts_dir
         .canonicalize()
         .map_err(|e| format!("cannot resolve hoshidicts dir: {e}"))?;

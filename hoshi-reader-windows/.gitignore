@@ -22,3 +22,12 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# Local reference projects. Keep the README tracked, but keep copied
+# reference repositories out of HSW commits.
+reference/*
+!reference/README.md
+
+# Local third-party build inputs. hoshidicts is used by the dictionary
+# backend build path, but its source is not vendored into this repo.
+third_party/hoshidicts/
