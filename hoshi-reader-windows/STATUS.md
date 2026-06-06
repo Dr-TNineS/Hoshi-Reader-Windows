@@ -53,6 +53,12 @@
   - 基础图片加载处理和 layout recalculation。
   - 单图 SVG cover 替换为 image element。
   - 基础 gaiji 图片和较大 block image 处理。
+  - 捕获 reader 内文本 selection，并上报选中文本、位置和章节 index。
+- Dictionary popup shell：
+  - 选中 reader 正文后显示轻量 lookup popup。
+  - 支持桌面端 hover 文字后按 Shift，从指针位置扫描并选中短文本；非日文 token 会向左扩到词起点。
+  - Dictionary backend 尚未 ready 时显示明确 not-ready 状态。
+  - 翻页、切章、TOC 跳转、返回书架或关闭 popup 时清除 selection popup。
 - 阅读进度：
   - Rust 侧书籍和章节字数 metadata。
   - 前端基于可见文本位置计算 reader progress。
@@ -63,7 +69,6 @@
 - 尚无 durable database；app-owned library metadata 当前是 JSON。
 - Dictionary lookup 尚未实现；`dict_lookup` 当前返回 dictionary engine not linked 错误。
 - `dict_status` 已接线，但默认不是 ready。
-- 尚无 reader 文本选择查词 popup。
 - 尚无 dictionary import、dictionary management 或 dictionary settings UI。
 - 尚无 Anki 集成。
 - 尚无 sync 实现。
@@ -118,7 +123,6 @@
 
 ## 下一候选任务
 
-- 添加 reader 文本选择捕获。
 - 在真实 dictionary backend 接入后，把 selection 连接到 dictionary lookup popup。
 - 在现有 Rust dictionary commands 后面接入或实现真实 dictionary backend。
 - 为 reader pagination、final-page alignment、image pages、chapter-boundary keyboard behavior

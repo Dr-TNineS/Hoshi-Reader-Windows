@@ -45,3 +45,16 @@ export interface ReaderProgress {
   percent: number;
 }
 
+export interface ReaderSelectionRect {
+  x: number;
+  y: number;
+  width: number;
+  height: number;
+}
+
+export interface ReaderSelection {
+  text: string;
+  rect: ReaderSelectionRect;
+  chapterIndex: number;
+}
+

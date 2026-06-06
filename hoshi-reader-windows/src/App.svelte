@@ -14,7 +14,7 @@
     saveReadingProgress,
   } from "./lib/storage";
   import { findChapterIndex, flattenToc } from "./lib/toc";
-  import type { EpubMeta, ReaderProgress } from "./lib/types";
+  import type { EpubMeta, ReaderProgress, ReaderSelection } from "./lib/types";
   import type { BookLocator, BookRecord, LibraryBookRecord } from "./lib/storage";
 
   function clampChapter(chapter: number, total: number): number {
@@ -30,6 +30,7 @@
   let startAtEnd = $state(false);
   let readerInitialProgress = $state(0);
   let currentReaderProgress = $state<ReaderProgress | null>(null);
+  let readerSelection = $state<ReaderSelection | null>(null);
   let showToc = $state(false);
   let error = $state("");
   let debug = $state("");
@@ -149,6 +150,7 @@
     if (!meta || !isTauriRuntime()) return;
 
     try {
+      readerSelection = null;
       const safeIndex = clampChapter(idx, meta.spine.length);
       readerInitialProgress = clampUnit(chapterProgress);
       currentReaderProgress = null;
@@ -167,6 +169,7 @@
 
   async function jumpToChapter(idx: number) {
     startAtEnd = false;
+    readerSelection = null;
     showToc = false;
     await loadChapter(idx, 0);
   }
@@ -181,6 +184,7 @@
     }
 
     startAtEnd = false;
+    readerSelection = null;
     showToc = false;
     await loadChapter(idx, 0);
   }
@@ -188,6 +192,7 @@
   function prevChapter() {
     if (chapterIndex > 0) {
       startAtEnd = true;
+      readerSelection = null;
       loadChapter(chapterIndex - 1, 1);
     }
   }
@@ -195,12 +200,14 @@
   function prevChapterDirect() {
     if (chapterIndex > 0) {
       startAtEnd = false;
+      readerSelection = null;
       loadChapter(chapterIndex - 1, 0);
     }
   }
 
   function nextChapter() {
     startAtEnd = false;
+    readerSelection = null;
     if (meta && chapterIndex < meta.spine.length - 1) loadChapter(chapterIndex + 1, 0);
   }
 
@@ -220,6 +227,36 @@
 
   function openedLabel(timestamp: number): string {
     return new Date(timestamp).toLocaleString();
+  }
+
+  function closeReaderSelection() {
+    window.getSelection()?.removeAllRanges();
+    readerSelection = null;
+  }
+
+  function backToShelf() {
+    closeReaderSelection();
+    view = "bookshelf";
+  }
+
+  function toggleToc() {
+    closeReaderSelection();
+    showToc = !showToc;
+  }
+
+  function popupStyle(selection: ReaderSelection): string {
+    const width = 280;
+    const height = 132;
+    const margin = 12;
+    const maxLeft = Math.max(margin, window.innerWidth - width - margin);
+    const maxTop = Math.max(44, window.innerHeight - height - 48);
+    const left = Math.max(margin, Math.min(maxLeft, selection.rect.x + selection.rect.width / 2 - width / 2));
+    const below = selection.rect.y + selection.rect.height + 10;
+    const above = selection.rect.y - height - 10;
+    const topCandidate = below <= maxTop ? below : above;
+    const top = Math.max(44, Math.min(maxTop, topCandidate));
+
+    return `left:${left}px;top:${top}px;width:${width}px`;
   }
 
 </script>
@@ -265,13 +302,24 @@
       onPrevChapterDirect={prevChapterDirect}
       onNextChapter={nextChapter}
       onNavigateHref={navigateReaderHref}
-      onBackToShelf={() => view = "bookshelf"}
+      onBackToShelf={backToShelf}
       initialProgress={readerInitialProgress}
       chapterStartChars={chapterBookInfo?.current_total ?? 0}
       totalBookChars={meta?.book_info.character_count ?? 0}
       onProgressChange={handleReaderProgress}
+      onSelectionChange={(selection: ReaderSelection | null) => readerSelection = selection}
       {startAtEnd}
     />
+    {#if readerSelection}
+      <aside class="lookup-pop" style={popupStyle(readerSelection)}>
+        <div class="lookup-head">
+          <span>Lookup</span>
+          <button aria-label="Close lookup" onclick={closeReaderSelection}>Close</button>
+        </div>
+        <p class="lookup-text">{readerSelection.text}</p>
+        <p class="lookup-state">Dictionary backend not ready.</p>
+      </aside>
+    {/if}
     {#if showToc}
       <aside class="toc-panel">
         <div class="toc-head">
@@ -301,8 +349,8 @@
       <button onclick={prevChapterDirect}>Prev Ch</button>
       <span>Ch.{chapterIndex + 1}/{meta?.spine.length ?? 0}</span>
       <button onclick={nextChapter}>Next Ch</button>
-      <button onclick={() => showToc = !showToc}>TOC</button>
-      <button onclick={() => view = "bookshelf"}>Esc</button>
+      <button onclick={toggleToc}>TOC</button>
+      <button onclick={backToShelf}>Esc</button>
     </div>
   {/if}
 </main>
@@ -337,6 +385,11 @@
   .toc-row.active { background: #315c50; color: #fff; }
   .toc-row:disabled { color: #686d72; cursor: default; }
   .toc-row:disabled:hover { background: transparent; }
+  .lookup-pop { position: fixed; z-index: 125; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: #23262a; color: #e8eaed; border: 1px solid #4b5056; border-radius: 6px; box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42); }
+  .lookup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #9aa0a6; font-size: 11px; text-transform: uppercase; }
+  .lookup-head button { flex-shrink: 0; padding: 3px 8px; background: #33383e; color: #d7d9dc; border: 1px solid #555c64; border-radius: 3px; cursor: pointer; font-size: 11px; text-transform: none; }
+  .lookup-text { color: #fff; font-size: 18px; line-height: 1.35; overflow-wrap: anywhere; max-height: 54px; overflow: hidden; }
+  .lookup-state { color: #b7bcc3; font-size: 12px; line-height: 1.35; }
   .ctrls { position: fixed; bottom: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 5px; background: #111; border-top: 1px solid #333; z-index: 100; }
   .ctrls button { padding: 4px 10px; background: #333; color: #ccc; border: 1px solid #555; border-radius: 3px; cursor: pointer; font-size: 12px; }
   .ctrls button:hover { background: #444; }

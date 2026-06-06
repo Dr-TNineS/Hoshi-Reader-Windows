@@ -1,6 +1,6 @@
 <script lang="ts">
   import { countChars, createWalker, getTotalChars, rawOffsetForReaderChars, textEndOffsets } from "../reader";
-  import type { ReaderProgress } from "../types";
+  import type { ReaderProgress, ReaderSelection, ReaderSelectionRect } from "../types";
 
   let {
     content = "",
@@ -16,9 +16,14 @@
     chapterStartChars = 0,
     totalBookChars = 0,
     onProgressChange = (_progress: ReaderProgress) => {},
+    onSelectionChange = (_selection: ReaderSelection | null) => {},
   } = $props();
 
   const PAGE_EPSILON = 1;
+  const MAX_SELECTION_TEXT = 80;
+  const MAX_HOVER_SELECTION_TEXT = 16;
+  const SHIFT_HOVER_DELAY_MS = 45;
+  const SCAN_BOUNDARY_PATTERN = /[\s\u3000\u3001\u3002\uff01\uff1f\uff08\uff09\u300c\u300d\u300e\u300f\u3010\u3011\u2014\u2026.,!?;:()[\]{}"'<>/\\|]/u;
 
   let containerEl: HTMLDivElement = $state()!;
   let contentEl: HTMLDivElement = $state()!;
@@ -34,6 +39,10 @@
   let bookReadChars = $state(0);
   let bookPercent = $state(0);
   let scrollTailTop = $state(0);
+  let hasActiveSelection = false;
+  let shiftKeyPressed = false;
+  let lastPointer: { x: number; y: number } | null = null;
+  let shiftHoverTimer: number | null = null;
   let layoutRun = 0;
   let contentMaxScroll = 0;
 
@@ -254,6 +263,283 @@
     };
   }
 
+  function selectionText(raw: string): string {
+    return raw.replace(/\s+/g, " ").trim().slice(0, MAX_SELECTION_TEXT);
+  }
+
+  function nodeInsideContent(node: Node | null): boolean {
+    if (!node || !contentEl) return false;
+    return contentEl.contains(node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement);
+  }
+
+  function unionRects(rects: DOMRect[]): ReaderSelectionRect | null {
+    const visibleRects = rects.filter((rect) => rect.width > 0 && rect.height > 0);
+    if (visibleRects.length === 0) return null;
+
+    const left = Math.min(...visibleRects.map((rect) => rect.left));
+    const top = Math.min(...visibleRects.map((rect) => rect.top));
+    const right = Math.max(...visibleRects.map((rect) => rect.right));
+    const bottom = Math.max(...visibleRects.map((rect) => rect.bottom));
+
+    return {
+      x: left,
+      y: top,
+      width: right - left,
+      height: bottom - top,
+    };
+  }
+
+  function readCurrentSelection(): ReaderSelection | null {
+    if (!contentEl) return null;
+
+    const selection = window.getSelection();
+    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
+    if (!nodeInsideContent(selection.anchorNode) || !nodeInsideContent(selection.focusNode)) return null;
+
+    const text = selectionText(selection.toString());
+    if (!text) return null;
+
+    const range = selection.getRangeAt(0);
+    const rect = unionRects(Array.from(range.getClientRects()));
+    if (!rect) return null;
+
+    return { text, rect, chapterIndex };
+  }
+
+  function isScanBoundary(char: string): boolean {
+    return SCAN_BOUNDARY_PATTERN.test(char);
+  }
+
+  function isJapaneseCodePoint(codePoint: number | undefined): boolean {
+    if (codePoint === undefined) return false;
+    return (
+      (codePoint >= 0x3040 && codePoint <= 0x309f) ||
+      (codePoint >= 0x30a0 && codePoint <= 0x30ff) ||
+      (codePoint >= 0x4e00 && codePoint <= 0x9fff) ||
+      (codePoint >= 0x3400 && codePoint <= 0x4dbf) ||
+      (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+      (codePoint >= 0xff66 && codePoint <= 0xff9f)
+    );
+  }
+
+  function previousCodePointOffset(text: string, offset: number): number {
+    if (offset <= 0) return 0;
+    const first = offset - 1;
+    const previous = text.charCodeAt(first);
+    if (first > 0 && previous >= 0xdc00 && previous <= 0xdfff) {
+      const lead = text.charCodeAt(first - 1);
+      if (lead >= 0xd800 && lead <= 0xdbff) return first - 1;
+    }
+    return first;
+  }
+
+  function expandTokenStart(text: string, offset: number): number {
+    const codePoint = text.codePointAt(offset);
+    if (isJapaneseCodePoint(codePoint)) return offset;
+
+    let start = offset;
+    while (start > 0) {
+      const previous = previousCodePointOffset(text, start);
+      const char = String.fromCodePoint(text.codePointAt(previous) ?? 0);
+      if (isScanBoundary(char) || isJapaneseCodePoint(text.codePointAt(previous))) break;
+      start = previous;
+    }
+    return start;
+  }
+
+  function rectContains(rect: DOMRect, x: number, y: number): boolean {
+    return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+  }
+
+  function rangeContainsPoint(range: Range, x: number, y: number): boolean {
+    const rects = Array.from(range.getClientRects());
+    if (rects.length > 0) return rects.some((rect) => rectContains(rect, x, y));
+    const rect = range.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0 && rectContains(rect, x, y);
+  }
+
+  function caretRangeFromPoint(x: number, y: number): Range | null {
+    const doc = document as Document & {
+      caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
+      caretRangeFromPoint?: (x: number, y: number) => Range | null;
+    };
+
+    const position = doc.caretPositionFromPoint?.(x, y);
+    if (position) {
+      const range = document.createRange();
+      range.setStart(position.offsetNode, position.offset);
+      range.collapse(true);
+      return range;
+    }
+
+    const range = doc.caretRangeFromPoint?.(x, y);
+    if (range) return range;
+
+    const target = document.elementFromPoint(x, y);
+    const root = target?.closest("p, div, span, ruby") ?? contentEl;
+    if (!root || !contentEl?.contains(root)) return null;
+
+    const walker = createWalker(root);
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      const text = node.textContent ?? "";
+      for (let offset = 0; offset < text.length;) {
+        const char = String.fromCodePoint(text.codePointAt(offset) ?? 0);
+        const end = Math.min(text.length, offset + char.length);
+        const charRange = document.createRange();
+        charRange.setStart(node, offset);
+        charRange.setEnd(node, end);
+        const hit = rangeContainsPoint(charRange, x, y);
+        charRange.detach();
+        if (hit) {
+          const collapsed = document.createRange();
+          collapsed.setStart(node, offset);
+          collapsed.collapse(true);
+          return collapsed;
+        }
+        offset = end;
+      }
+    }
+
+    return null;
+  }
+
+  function characterAtPoint(x: number, y: number): { node: Text; offset: number } | null {
+    const range = caretRangeFromPoint(x, y);
+    if (!range) return null;
+
+    const node = range.startContainer;
+    if (node.nodeType !== Node.TEXT_NODE || !nodeInsideContent(node)) return null;
+
+    const textNode = node as Text;
+    const text = textNode.textContent ?? "";
+    const caret = range.startOffset;
+
+    for (const offset of [caret, caret - 1, caret + 1]) {
+      if (offset < 0 || offset >= text.length) continue;
+
+      const char = String.fromCodePoint(text.codePointAt(offset) ?? 0);
+      const charRange = document.createRange();
+      charRange.setStart(textNode, offset);
+      charRange.setEnd(textNode, Math.min(text.length, offset + char.length));
+      const hit = rangeContainsPoint(charRange, x, y);
+      charRange.detach();
+
+      if (hit && !isScanBoundary(char)) return { node: textNode, offset };
+    }
+
+    return null;
+  }
+
+  function paragraphRoot(node: Node): Node {
+    const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node as Element;
+    return element?.closest("p, div, section, article") ?? contentEl;
+  }
+
+  function selectTextFromPoint(x: number, y: number): ReaderSelection | null {
+    const target = document.elementFromPoint(x, y);
+    if (!target || !contentEl?.contains(target)) return null;
+    if (target.closest("a[data-epub-href], img, image, svg")) {
+      clearSelection();
+      return null;
+    }
+
+    const hit = characterAtPoint(x, y);
+    if (!hit) {
+      clearSelection();
+      return null;
+    }
+
+    const root = paragraphRoot(hit.node);
+    const walker = createWalker(root);
+    walker.currentNode = hit.node;
+
+    let text = "";
+    let node: Text | null = hit.node;
+    let offset = expandTokenStart(hit.node.textContent ?? "", hit.offset);
+    const ranges: Range[] = [];
+
+    while (node && text.length < MAX_HOVER_SELECTION_TEXT) {
+      const content = node.textContent ?? "";
+      const start = offset;
+
+      while (offset < content.length && text.length < MAX_HOVER_SELECTION_TEXT) {
+        const char = String.fromCodePoint(content.codePointAt(offset) ?? 0);
+        if (isScanBoundary(char)) break;
+        text += char;
+        offset += char.length;
+      }
+
+      if (offset > start) {
+        const range = document.createRange();
+        range.setStart(node, start);
+        range.setEnd(node, offset);
+        ranges.push(range);
+      }
+
+      if (offset < content.length || text.length >= MAX_HOVER_SELECTION_TEXT) break;
+
+      const next = walker.nextNode();
+      node = next?.nodeType === Node.TEXT_NODE ? next as Text : null;
+      offset = 0;
+    }
+
+    text = selectionText(text);
+    if (!text || ranges.length === 0) {
+      clearSelection();
+      return null;
+    }
+
+    const visibleSelection = window.getSelection();
+    visibleSelection?.removeAllRanges();
+    const visibleRange = document.createRange();
+    visibleRange.setStart(ranges[0].startContainer, ranges[0].startOffset);
+    const lastRange = ranges[ranges.length - 1];
+    visibleRange.setEnd(lastRange.endContainer, lastRange.endOffset);
+    visibleSelection?.addRange(visibleRange);
+
+    const rect = unionRects(ranges.flatMap((range) => Array.from(range.getClientRects())));
+    ranges.forEach((range) => range.detach());
+    visibleRange.detach();
+    if (!rect) {
+      clearSelection();
+      return null;
+    }
+
+    const selection = { text, rect, chapterIndex };
+    hasActiveSelection = true;
+    onSelectionChange(selection);
+    return selection;
+  }
+
+  function emitSelection() {
+    requestAnimationFrame(() => {
+      const selection = readCurrentSelection();
+      hasActiveSelection = !!selection;
+      onSelectionChange(selection);
+    });
+  }
+
+  function clearSelection() {
+    if (shiftHoverTimer !== null) {
+      window.clearTimeout(shiftHoverTimer);
+      shiftHoverTimer = null;
+    }
+    window.getSelection()?.removeAllRanges();
+    hasActiveSelection = false;
+    onSelectionChange(null);
+  }
+
+  function scheduleShiftHoverLookup() {
+    if (!shiftKeyPressed || !lastPointer) return;
+    if (shiftHoverTimer !== null) window.clearTimeout(shiftHoverTimer);
+    shiftHoverTimer = window.setTimeout(() => {
+      shiftHoverTimer = null;
+      if (!shiftKeyPressed || !lastPointer) return;
+      selectTextFromPoint(lastPointer.x, lastPointer.y);
+    }, SHIFT_HOVER_DELAY_MS);
+  }
+
   function logReaderGeometry(reason: string) {
     if (!readerDebugEnabled() || !containerEl || !contentEl) return;
 
@@ -336,6 +622,7 @@
 
   function goPage(page: number) {
     if (!containerEl) return;
+    clearSelection();
     currentPage = Math.max(0, Math.min(page, totalPages - 1));
     const scrollTarget = pageScrollFor(currentPage);
     lastSnappedScroll = scrollTarget;
@@ -382,7 +669,10 @@
 
   function handleKey(e: KeyboardEvent) {
     const ctrl = e.ctrlKey || e.metaKey;
-    if (ctrl && e.key === "ArrowLeft") {
+    if (e.key === "Shift") {
+      shiftKeyPressed = true;
+      scheduleShiftHoverLookup();
+    } else if (ctrl && e.key === "ArrowLeft") {
       e.preventDefault();
       onNextChapter();
     } else if (ctrl && e.key === "ArrowRight") {
@@ -395,7 +685,21 @@
       e.preventDefault();
       nextPage();
     } else if (e.key === "Escape") {
+      if (hasActiveSelection) {
+        e.preventDefault();
+        clearSelection();
+        return;
+      }
       onBackToShelf();
+    }
+  }
+
+  function handleKeyUp(e: KeyboardEvent) {
+    if (e.key !== "Shift") return;
+    shiftKeyPressed = false;
+    if (shiftHoverTimer !== null) {
+      window.clearTimeout(shiftHoverTimer);
+      shiftHoverTimer = null;
     }
   }
 
@@ -410,12 +714,32 @@
     onNavigateHref(href);
   }
 
+  function handlePointerDown(e: PointerEvent) {
+    if (e.target instanceof Element && e.target.closest("a[data-epub-href]")) return;
+    if (hasActiveSelection) clearSelection();
+  }
+
+  function handlePointerMove(e: PointerEvent) {
+    lastPointer = { x: e.clientX, y: e.clientY };
+    if (shiftKeyPressed) scheduleShiftHoverLookup();
+  }
+
+  function handleWindowBlur() {
+    shiftKeyPressed = false;
+    if (shiftHoverTimer !== null) {
+      window.clearTimeout(shiftHoverTimer);
+      shiftHoverTimer = null;
+    }
+  }
+
   $effect.pre(() => {
     if (content !== activeContent) {
       activeContent = content;
       layoutReady = false;
       initializing = true;
       scrollTailTop = 0;
+      clearSelection();
+      lastPointer = null;
       layoutRun += 1;
     }
   });
@@ -425,7 +749,20 @@
     if (!el) return;
 
     el.addEventListener("click", handleContentClick);
-    return () => el.removeEventListener("click", handleContentClick);
+    el.addEventListener("pointerdown", handlePointerDown);
+    el.addEventListener("pointermove", handlePointerMove);
+    el.addEventListener("pointerup", emitSelection);
+    el.addEventListener("keyup", emitSelection);
+    document.addEventListener("selectionchange", emitSelection);
+    return () => {
+      el.removeEventListener("click", handleContentClick);
+      el.removeEventListener("pointerdown", handlePointerDown);
+      el.removeEventListener("pointermove", handlePointerMove);
+      el.removeEventListener("pointerup", emitSelection);
+      el.removeEventListener("keyup", emitSelection);
+      document.removeEventListener("selectionchange", emitSelection);
+      handleWindowBlur();
+    };
   });
 
   $effect(() => {
@@ -475,7 +812,7 @@
   });
 </script>
 
-<svelte:window onkeydown={handleKey} />
+<svelte:window onkeydown={handleKey} onkeyup={handleKeyUp} onblur={handleWindowBlur} />
 
 <div class="rc">
   <div class="rh">
