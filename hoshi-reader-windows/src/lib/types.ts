@@ -36,3 +36,12 @@ export interface ChapterInfo {
   chapter_count: number;
 }
 
+export interface ReaderProgress {
+  chapterIndex: number;
+  chapterProgress: number;
+  chapterReadChars: number;
+  bookReadChars: number;
+  totalBookChars: number;
+  percent: number;
+}
+

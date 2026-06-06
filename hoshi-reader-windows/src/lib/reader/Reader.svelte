@@ -1,14 +1,6 @@
 <script lang="ts">
   import { countChars, createWalker, getTotalChars } from "../reader";
-
-  type ReaderProgress = {
-    chapterIndex: number;
-    chapterProgress: number;
-    chapterReadChars: number;
-    bookReadChars: number;
-    totalBookChars: number;
-    percent: number;
-  };
+  import type { ReaderProgress } from "../types";
 
   let {
     content = "",
