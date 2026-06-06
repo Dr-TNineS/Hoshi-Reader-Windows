@@ -2,7 +2,7 @@
 
 本文件记录 `hoshi-reader-windows` 的仓库级协作规则。内容应保持简洁、长期有效，并且只针对当前 Windows/Tauri 代码库。
 
-`STATUS.md` 是当前工程状态快照，不是 agent 指令来源。可以用它快速了解项目现状，但做重要判断前必须回到当前代码核实。
+`STATUS.md` 只是文档索引和当前优先级提示，不是 agent 指令来源。详细状态、路线图和行为基线应优先查阅 `docs/` 下的对应文档；做重要判断前必须回到当前代码核实。
 
 ## 工作原则
 
@@ -14,7 +14,7 @@
 - 改动行为前，先检查相关 frontend、Rust command、storage 边界，不要依赖早期项目笔记或记忆。
 - Hoshi Reader Android 和 Hoshi Reader Mac 只能在任务明确需要时作为事实对照；不要默认继承它们的产品定位或架构。
 - 修改范围应贴合当前任务。除非用户明确要求一个完整切片，否则不要把 reader、storage、dictionary、settings、packaging 改动混在一起。
-- 如果实现改动导致 `STATUS.md` 不准确，应在同一任务里同步更新 `STATUS.md`。
+- 如果实现改动导致 `docs/` 下的状态、路线图或行为基线不准确，应在同一任务里同步更新最小相关文档；`STATUS.md` 只保留索引级信息。
 - 文档里不确定或未验证的项目事实必须标注为 `unknown` / `not verified`，不要猜。
 
 ## 架构基线
@@ -73,8 +73,9 @@
 
 ## 文档规则
 
-- `STATUS.md` 记录当前工程状态：已实现功能、stub、known issues、risk areas、validation commands、next candidates。
-- `STATUS.md` 不应包含 agent 指令、产品定位或长期战略判断。
+- `docs/PROJECT_STATUS.md` 记录当前工程状态：已实现功能、stub、known issues、risk areas 和 validation commands。
+- `docs/TODO.md` 记录短交接和下一步；`docs/LOOKUP_ROADMAP.md` 记录 lookup 切片；`docs/READER_ENTRY_CHARACTERIZATION.md` 和 `docs/reader-layout-baseline.md` 记录 reader 行为基线。
+- `STATUS.md` 只保留文档索引和当前优先级提示；如与 `docs/` 内容重合，保留 `docs/` 下的详细版本。
 - `AGENTS.md` 记录未来 agent 需要长期遵守的仓库级规则。
 - 长调查日志、临时 debugging 细节、一次性决策不应写入 `AGENTS.md`。
 - 如果从 bug 中沉淀规则，只写能防止同类问题复发的最小可复用指令。
