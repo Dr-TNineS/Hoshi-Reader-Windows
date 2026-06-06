@@ -15,6 +15,28 @@ export function countChars(text: string): number {
   return Array.from(normalizeText(text)).length;
 }
 
+export function textEndOffsets(text: string): number[] {
+  const offsets: number[] = [];
+  let rawOffset = 0;
+  for (const ch of text) {
+    rawOffset += ch.length;
+    if (countChars(ch) > 0) offsets.push(rawOffset);
+  }
+  return offsets;
+}
+
+export function rawOffsetForReaderChars(text: string, targetChars: number): number {
+  if (targetChars <= 0) return 0;
+  let rawOffset = 0;
+  let chars = 0;
+  for (const ch of text) {
+    rawOffset += ch.length;
+    if (countChars(ch) > 0) chars += 1;
+    if (chars >= targetChars) return rawOffset;
+  }
+  return text.length;
+}
+
 export function normalizeText(text: string): string {
   return text.replace(new RegExp(CJK_REGEX.source.replace(/^\[/, "[^"), "gimu"), "");
 }

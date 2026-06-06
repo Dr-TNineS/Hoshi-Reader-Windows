@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { countChars, createWalker, getTotalChars } from "../reader";
+  import { countChars, createWalker, getTotalChars, rawOffsetForReaderChars, textEndOffsets } from "../reader";
   import type { ReaderProgress } from "../types";
 
   let {
@@ -119,16 +119,6 @@
     return nodes;
   }
 
-  function textEndOffsets(text: string): number[] {
-    const offsets: number[] = [];
-    let rawOffset = 0;
-    for (const ch of text) {
-      rawOffset += ch.length;
-      if (countChars(ch) > 0) offsets.push(rawOffset);
-    }
-    return offsets;
-  }
-
   function rangeRectsForText(node: Text, endOffset: number): DOMRect[] {
     const range = document.createRange();
     range.setStart(node, 0);
@@ -171,18 +161,6 @@
     if (!containerEl || !contentEl) return 0;
     const viewportTop = containerEl.getBoundingClientRect().top;
     return textNodes().reduce((total, node) => total + countTextBeforeViewport(node, viewportTop), 0);
-  }
-
-  function rawOffsetForReaderChars(text: string, targetChars: number): number {
-    if (targetChars <= 0) return 0;
-    let rawOffset = 0;
-    let chars = 0;
-    for (const ch of text) {
-      rawOffset += ch.length;
-      if (countChars(ch) > 0) chars += 1;
-      if (chars >= targetChars) return rawOffset;
-    }
-    return text.length;
   }
 
   function scrollForChapterProgress(progress: number): number {
