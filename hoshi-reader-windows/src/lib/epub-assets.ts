@@ -125,6 +125,8 @@ function replaceSingleImageSvgs(doc: Document, chapterPath: string) {
 
 export function resolveChapterAssets(html: string, chapterPath: string | null): string {
   if (!chapterPath) return html;
+  // Strip self-closing <script/> tags that break HTML parsing (e.g. Kobo XHTML)
+  html = html.replace(/<script\b[^>]*\/>/gi, '');
   const doc = new DOMParser().parseFromString(html, "text/html");
   doc.querySelectorAll("[src]").forEach((el) => rewriteUrlAttribute(el, "src", chapterPath));
   doc.querySelectorAll("[srcset]").forEach((el) => rewriteSrcsetAttribute(el, chapterPath));
