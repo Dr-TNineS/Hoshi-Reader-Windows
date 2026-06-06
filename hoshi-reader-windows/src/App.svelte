@@ -3,10 +3,19 @@
   import { open } from "@tauri-apps/plugin-dialog";
   import { resolveChapterAssets } from "./lib/epub-assets";
   import Reader from "./lib/reader/Reader.svelte";
-  import { clearSession, clampUnit, loadBooks, loadSession, saveReadingProgress } from "./lib/storage";
+  import {
+    bookRecordKey,
+    bookRecordPath,
+    clearSession,
+    clampUnit,
+    loadBooks,
+    loadSession,
+    mergeLibraryBooks,
+    saveReadingProgress,
+  } from "./lib/storage";
   import { findChapterIndex, flattenToc } from "./lib/toc";
   import type { EpubMeta, ReaderProgress } from "./lib/types";
-  import type { BookRecord } from "./lib/storage";
+  import type { BookLocator, BookRecord, LibraryBookRecord } from "./lib/storage";
 
   function clampChapter(chapter: number, total: number): number {
     return Math.max(0, Math.min(chapter, Math.max(0, total - 1)));
@@ -16,7 +25,7 @@
   let meta = $state<EpubMeta | null>(null);
   let chapterHtml = $state("");
   let chapterIndex = $state(0);
-  let currentBookPath = $state("");
+  let currentBookLocator = $state<BookLocator | null>(null);
   let books = $state<BookRecord[]>(loadBooks());
   let startAtEnd = $state(false);
   let readerInitialProgress = $state(0);
@@ -25,6 +34,7 @@
   let error = $state("");
   let debug = $state("");
   let triedRestore = false;
+  let triedLibraryLoad = false;
 
   let tocEntries = $derived(meta ? flattenToc(meta.toc, meta) : []);
   let chapterBookInfo = $derived(meta?.book_info.chapter_info[chapterIndex] ?? null);
@@ -39,7 +49,7 @@
     if (session && view === "bookshelf" && isTauriRuntime()) {
       (async () => {
         try {
-          await openBookPath(session.path, session.chapter, "Restoring...", session.chapterProgress ?? 0);
+          await openBookLocator(session, session.chapter, "Restoring...", session.chapterProgress ?? 0);
           debug = "Restored";
         } catch (e) {
           clearSession();
@@ -50,17 +60,32 @@
     }
   });
 
+  $effect(() => {
+    if (triedLibraryLoad) return;
+    triedLibraryLoad = true;
+    if (!isTauriRuntime()) return;
+
+    (async () => {
+      try {
+        const libraryBooks = await invoke<LibraryBookRecord[]>("library_list_books");
+        books = mergeLibraryBooks(books, libraryBooks);
+      } catch (e) {
+        console.warn("Library list failed", e);
+      }
+    })();
+  });
+
   function saveProgress(
-    path: string,
+    locator: BookLocator,
     bookMeta: EpubMeta,
     chapter: number,
     progress: ReaderProgress | null = currentReaderProgress,
     chapterProgressFallback = 0,
   ) {
-    books = saveReadingProgress(books, path, bookMeta, chapter, progress, chapterProgressFallback);
+    books = saveReadingProgress(books, locator, bookMeta, chapter, progress, chapterProgressFallback);
   }
 
-  async function openBookPath(path: string, chapter = 0, status = "Opening...", chapterProgress = 0) {
+  async function openBookLocator(locator: BookLocator, chapter = 0, status = "Opening...", chapterProgress = 0) {
     error = "";
     debug = status;
     if (!isTauriRuntime()) {
@@ -69,12 +94,22 @@
       return;
     }
 
-    currentBookPath = path;
-    meta = await invoke<EpubMeta>("epub_open", { path });
+    currentBookLocator = locator;
+    if (locator.bookId) {
+      meta = await invoke<EpubMeta>("library_open_book", { bookId: locator.bookId });
+    } else if (locator.path) {
+      meta = await invoke<EpubMeta>("epub_open", { path: locator.path });
+    } else {
+      throw new Error("Book record has no library id or file path.");
+    }
     const safeChapter = clampChapter(chapter, meta.spine.length);
     await loadChapter(safeChapter, chapterProgress);
-    saveProgress(path, meta, safeChapter, null, chapterProgress);
+    saveProgress(locator, meta, safeChapter, null, chapterProgress);
     view = "reader";
+  }
+
+  async function openBookPath(path: string, chapter = 0, status = "Opening...", chapterProgress = 0) {
+    await openBookLocator({ path }, chapter, status, chapterProgress);
   }
 
   async function openBook() {
@@ -87,7 +122,13 @@
         debug = "Cancelled";
         return;
       }
-      await openBookPath(selected, 0);
+      debug = "Importing...";
+      const imported = await invoke<LibraryBookRecord>("library_import_epub", { sourcePath: selected });
+      await openBookLocator({
+        bookId: imported.bookId,
+        sourcePath: imported.sourcePath,
+        libraryPath: imported.libraryPath,
+      }, 0);
     } catch (e) {
       error = String(e);
       debug = "Err";
@@ -97,7 +138,7 @@
   async function continueBook(book: BookRecord) {
     try {
       startAtEnd = false;
-      await openBookPath(book.path, book.chapter, "Loading...", book.chapterProgress ?? 0);
+      await openBookLocator(book, book.chapter, "Loading...", book.chapterProgress ?? 0);
     } catch (e) {
       error = String(e);
       debug = "Err";
@@ -117,7 +158,7 @@
       ]);
       chapterHtml = resolveChapterAssets(rawHtml, chapterPath);
       chapterIndex = safeIndex;
-      if (currentBookPath) saveProgress(currentBookPath, meta, safeIndex, null, readerInitialProgress);
+      if (currentBookLocator) saveProgress(currentBookLocator, meta, safeIndex, null, readerInitialProgress);
       debug = `Ch${safeIndex + 1}/${meta.spine.length}`;
     } catch (e) {
       error = String(e);
@@ -164,9 +205,9 @@
   }
 
   function handleReaderProgress(progress: ReaderProgress) {
-    if (!meta || !currentBookPath || progress.chapterIndex !== chapterIndex) return;
+    if (!meta || !currentBookLocator || progress.chapterIndex !== chapterIndex) return;
     currentReaderProgress = progress;
-    saveProgress(currentBookPath, meta, chapterIndex, progress);
+    saveProgress(currentBookLocator, meta, chapterIndex, progress);
   }
 
   function progressLabel(book: BookRecord): string {
@@ -202,11 +243,11 @@
           <p class="empty">No recent books yet.</p>
         {:else}
           <div class="book-list">
-            {#each books as book (book.path)}
+            {#each books as book (bookRecordKey(book))}
               <button class="book-row" onclick={() => continueBook(book)}>
                 <span class="book-title">{book.title}</span>
                 <span class="book-meta">{progressLabel(book)} | {openedLabel(book.lastOpened)}</span>
-                <span class="book-path">{book.path}</span>
+                <span class="book-path">{bookRecordPath(book)}</span>
               </button>
             {/each}
           </div>

@@ -4,8 +4,28 @@ const BOOKS_KEY = "hoshi_books";
 const SESSION_KEY = "hoshi_session";
 const MAX_BOOKS = 12;
 
+export type LibraryBookRecord = {
+  bookId: string;
+  title: string | null;
+  sourcePath: string;
+  libraryPath: string;
+  contentHash: string;
+  sizeBytes: number;
+  importedAt: number;
+};
+
+export type BookLocator = {
+  bookId?: string;
+  path?: string;
+  sourcePath?: string;
+  libraryPath?: string;
+};
+
 export type SavedSession = {
-  path: string;
+  bookId?: string;
+  path?: string;
+  sourcePath?: string;
+  libraryPath?: string;
   chapter: number;
   chapterProgress?: number;
   bookReadChars?: number;
@@ -14,7 +34,10 @@ export type SavedSession = {
 };
 
 export type BookRecord = {
-  path: string;
+  bookId?: string;
+  path?: string;
+  sourcePath?: string;
+  libraryPath?: string;
   title: string;
   chapter: number;
   totalChapters: number;
@@ -38,6 +61,15 @@ function fileName(path: string): string {
   return path.split(/[\\/]/).pop()?.replace(/\.epub$/i, "") || "Untitled";
 }
 
+function locatorKey(locator: BookLocator): string {
+  if (locator.bookId) return `library:${locator.bookId}`;
+  return `path:${locator.path ?? ""}`;
+}
+
+function displayPath(locator: BookLocator): string {
+  return locator.sourcePath || locator.path || locator.libraryPath || "";
+}
+
 function clampChapter(chapter: number, total: number): number {
   return Math.max(0, Math.min(chapter, Math.max(0, total - 1)));
 }
@@ -59,9 +91,42 @@ export function clearSession() {
   localStorage.removeItem(SESSION_KEY);
 }
 
+export function bookRecordKey(book: BookRecord): string {
+  return locatorKey(book);
+}
+
+export function bookRecordPath(book: BookRecord): string {
+  return displayPath(book);
+}
+
+export function locatorFromLibraryBook(book: LibraryBookRecord): BookLocator {
+  return {
+    bookId: book.bookId,
+    sourcePath: book.sourcePath,
+    libraryPath: book.libraryPath,
+  };
+}
+
+export function mergeLibraryBooks(books: BookRecord[], libraryBooks: LibraryBookRecord[]): BookRecord[] {
+  const existingKeys = new Set(books.map(bookRecordKey));
+  const importedRecords = libraryBooks
+    .filter((book) => !existingKeys.has(locatorKey(locatorFromLibraryBook(book))))
+    .map((book) => ({
+      bookId: book.bookId,
+      sourcePath: book.sourcePath,
+      libraryPath: book.libraryPath,
+      title: book.title || fileName(book.sourcePath || book.libraryPath),
+      chapter: 0,
+      totalChapters: 0,
+      lastOpened: book.importedAt * 1000,
+    }));
+
+  return [...books, ...importedRecords].slice(0, MAX_BOOKS);
+}
+
 export function saveReadingProgress(
   books: BookRecord[],
-  path: string,
+  locator: BookLocator,
   bookMeta: EpubMeta,
   chapter: number,
   progress: ReaderProgress | null,
@@ -80,7 +145,10 @@ export function saveReadingProgress(
   const percent = totalCharacters > 0 ? (bookReadChars / totalCharacters) * 100 : 0;
 
   localStorage.setItem(SESSION_KEY, JSON.stringify({
-    path,
+    bookId: locator.bookId,
+    path: locator.path,
+    sourcePath: locator.sourcePath,
+    libraryPath: locator.libraryPath,
     chapter: safeChapter,
     chapterProgress,
     bookReadChars,
@@ -89,8 +157,11 @@ export function saveReadingProgress(
   }));
 
   const record: BookRecord = {
-    path,
-    title: bookMeta.title || fileName(path),
+    bookId: locator.bookId,
+    path: locator.path,
+    sourcePath: locator.sourcePath,
+    libraryPath: locator.libraryPath,
+    title: bookMeta.title || fileName(displayPath(locator)),
     chapter: safeChapter,
     totalChapters,
     lastOpened: Date.now(),
@@ -99,9 +170,10 @@ export function saveReadingProgress(
     totalCharacters,
     percent,
   };
+  const key = locatorKey(locator);
   const nextBooks = [
     record,
-    ...books.filter((book) => book.path !== path),
+    ...books.filter((book) => bookRecordKey(book) !== key),
   ].slice(0, MAX_BOOKS);
   localStorage.setItem(BOOKS_KEY, JSON.stringify(nextBooks));
   return nextBooks;

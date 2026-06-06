@@ -1,5 +1,6 @@
 mod dict;
 mod epub;
+mod library;
 
 use dict::commands::DictState;
 use epub::commands::EpubState;
@@ -19,6 +20,9 @@ pub fn run() {
             epub::commands::epub_get_chapter_path,
             epub::commands::epub_read_chapter,
             epub::commands::epub_close,
+            library::library_import_epub,
+            library::library_list_books,
+            library::library_open_book,
             dict::commands::dict_lookup,
             dict::commands::dict_status,
         ])
