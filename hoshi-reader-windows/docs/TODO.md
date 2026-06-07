@@ -15,8 +15,8 @@ This file is the short operational handoff for future agents. Keep detailed stat
 
 ## Current Priorities
 
-1. Treat the current reader lookup slices in `docs/LOOKUP_ROADMAP.md` as complete.
-   - Next recommended work: verify real hoshidicts import/lookup with CMake/C++ tooling and real dictionary data, or plan a new focused slice.
+1. Treat the current reader lookup implementation slices in `docs/LOOKUP_ROADMAP.md` as complete.
+   - Next recommended work: execute Slice 6 from `docs/REAL_LOOKUP_VALIDATION_PLAN.md`.
 2. Preserve the bookshelf/import/reader/session main path described in `docs/READER_ENTRY_CHARACTERIZATION.md`.
 3. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 4. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.

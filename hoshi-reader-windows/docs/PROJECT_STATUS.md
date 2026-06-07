@@ -119,6 +119,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Legacy bookshelf records still depend on original EPUB paths.
 - Future dictionary integration:
   - Real lookup depends on hoshidicts build/link success and imported dictionary data.
+  - Real lookup validation is tracked in `docs/REAL_LOOKUP_VALIDATION_PLAN.md`.
 
 ## Validation Commands
 
@@ -133,5 +134,6 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 
 - `docs/TODO.md`
 - `docs/LOOKUP_ROADMAP.md`
+- `docs/REAL_LOOKUP_VALIDATION_PLAN.md`
 - `docs/READER_ENTRY_CHARACTERIZATION.md`
 - `docs/reader-layout-baseline.md`
