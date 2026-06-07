@@ -16,16 +16,15 @@ This file is the short operational handoff for future agents. Keep detailed stat
 ## Current Priorities
 
 1. Treat the current reader lookup implementation slices in `docs/LOOKUP_ROADMAP.md` as complete.
-   - Slice 6 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete with a linked-build blocker documented.
-   - Next recommended work: resolve the hoshidicts/utfcpp compatibility issue before Slice 7.
+   - Slice 6 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including a passing VS developer-shell linked build.
+   - Next recommended work: execute Slice 7 from `docs/REAL_LOOKUP_VALIDATION_PLAN.md` with a real Yomitan dictionary zip.
 2. Preserve the bookshelf/import/reader/session main path described in `docs/READER_ENTRY_CHARACTERIZATION.md`.
 3. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 4. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
 
 ## Active Blockers
 
-- Real hoshidicts import/lookup validation is blocked on the checked-out `third_party/hoshidicts` calling `utf8::utf32to8` / `utf8::utf8to32` overloads missing from its checked-out `external/utfcpp` headers.
-- Slice 7 also needs a real dictionary zip after the linked importer builds.
+- Slice 7 needs a real Yomitan dictionary zip; do not add dictionary zips or imported dictionary data to git.
 - Real lookup result UX still needs manual verification with linked hoshidicts and real dictionary data.
 - Reader behavior still lacks automated visual regression coverage.
 

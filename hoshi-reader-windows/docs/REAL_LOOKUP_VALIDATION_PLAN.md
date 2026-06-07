@@ -22,10 +22,11 @@ Validated on 2026-06-07:
 - Visual Studio 2022 Build Tools, MSVC 14.44, Windows SDK 10.0.26100.0, VS-bundled CMake, and VS-bundled Ninja are installed locally.
 - A plain `cargo check` from `src-tauri` passes in the normal shell and falls back with `hoshidicts backend disabled: cmake was not found in PATH`.
 - A VS developer-shell linked check reaches the hoshidicts CMake build after HSW build fixes for Windows verbatim paths and MSVC UTF-8 source handling.
-- The remaining linked-build blocker is inside `third_party/hoshidicts`: `src/text_processor/text_processor.cpp` calls `utf8::utf32to8` / `utf8::utf8to32` overloads that are not present in the checked-out `external/utfcpp` headers.
+- Follow-up HSW build fixes force-include `external/utfcpp/source/utf8/cpp11.h` for the hoshidicts MSVC build and avoid a C API `Deinflector` name collision with hoshidicts.
+- A VS developer-shell linked `cargo check` now passes with hoshidicts linked.
 - Temporary validation build directories were removed after the slice.
 
-Next-slice adjustment: Slice 7 requires a linked hoshidicts importer, so real dictionary import validation should wait until the hoshidicts/utfcpp compatibility issue is resolved or the user approves changing the third-party checkout.
+Next-slice adjustment: Slice 7 is no longer blocked by the linked build. It still requires a real Yomitan dictionary zip, which must remain out of git.
 
 ## Slice 6: Toolchain Readiness & Linked Build
 

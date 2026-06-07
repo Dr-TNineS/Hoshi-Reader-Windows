@@ -9,7 +9,7 @@ extern "C" {
 #endif
 
 typedef struct DictQuery DictQuery;
-typedef struct Deinflector Deinflector;
+typedef struct DictDeinflector DictDeinflector;
 typedef struct LookupEngine LookupEngine;
 
 typedef struct {
@@ -48,10 +48,10 @@ int dict_query_add_term_dict(DictQuery* q, const char* path);
 int dict_query_add_freq_dict(DictQuery* q, const char* path);
 int dict_query_add_pitch_dict(DictQuery* q, const char* path);
 
-Deinflector* deinflector_create(void);
-void deinflector_destroy(Deinflector* d);
+DictDeinflector* deinflector_create(void);
+void deinflector_destroy(DictDeinflector* d);
 
-LookupEngine* lookup_engine_create(DictQuery* q, Deinflector* d);
+LookupEngine* lookup_engine_create(DictQuery* q, DictDeinflector* d);
 void lookup_engine_destroy(LookupEngine* e);
 int lookup_engine_lookup(LookupEngine* e, const char* text, int max_results, int scan_length, ResultCallback cb, void* user_data);
 

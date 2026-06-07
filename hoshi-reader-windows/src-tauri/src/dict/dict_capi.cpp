@@ -9,13 +9,13 @@ struct DictQuery {
     DictionaryQuery inner;
 };
 
-struct Deinflector {
+struct DictDeinflector {
     ::Deinflector inner;
 };
 
 struct LookupEngine {
-    DictionaryQuery* query;
-    ::Deinflector* deinflector;
+    DictQuery* query;
+    DictDeinflector* deinflector;
     ::Lookup* inner;
 };
 
@@ -175,15 +175,15 @@ int dict_query_add_pitch_dict(DictQuery* q, const char* path) {
     }
 }
 
-Deinflector* deinflector_create(void) {
-    return new Deinflector();
+DictDeinflector* deinflector_create(void) {
+    return new DictDeinflector();
 }
 
-void deinflector_destroy(Deinflector* d) {
+void deinflector_destroy(DictDeinflector* d) {
     delete d;
 }
 
-LookupEngine* lookup_engine_create(DictQuery* q, Deinflector* d) {
+LookupEngine* lookup_engine_create(DictQuery* q, DictDeinflector* d) {
     auto* e = new LookupEngine();
     e->query = q;
     e->deinflector = d;

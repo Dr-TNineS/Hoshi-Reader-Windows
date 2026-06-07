@@ -31,10 +31,22 @@ fn try_link_hoshidicts() -> Result<(), String> {
         .canonicalize()
         .map_err(|e| format!("cannot resolve hoshidicts dir: {e}"))?;
     let hoshidicts_dir = cmake_compatible_path(hoshidicts_dir);
+    let utfcpp_cpp11_header = hoshidicts_dir
+        .join("external")
+        .join("utfcpp")
+        .join("source")
+        .join("utf8")
+        .join("cpp11.h");
     if !hoshidicts_dir.join("CMakeLists.txt").is_file() {
         return Err(format!(
             "hoshidicts CMakeLists.txt was not found at {}",
             hoshidicts_dir.display()
+        ));
+    }
+    if !utfcpp_cpp11_header.is_file() {
+        return Err(format!(
+            "utfcpp cpp11.h was not found at {}",
+            utfcpp_cpp11_header.display()
         ));
     }
 
@@ -54,9 +66,10 @@ fn try_link_hoshidicts() -> Result<(), String> {
         .arg(&build_dir)
         .arg(format!("-DCMAKE_BUILD_TYPE={profile}"));
     #[cfg(windows)]
-    configure
-        .arg("-DCMAKE_C_FLAGS_INIT=/utf-8")
-        .arg("-DCMAKE_CXX_FLAGS_INIT=/utf-8");
+    configure.arg("-DCMAKE_C_FLAGS_INIT=/utf-8").arg(format!(
+        "-DCMAKE_CXX_FLAGS_INIT=/utf-8 /FI\"{}\"",
+        utfcpp_cpp11_header.display()
+    ));
     run(&mut configure)?;
     run(Command::new(&cmake)
         .arg("--build")
@@ -77,6 +90,8 @@ fn try_link_hoshidicts() -> Result<(), String> {
                 .join("source"),
         )
         .include(hoshidicts_dir.join("external").join("xxHash"))
+        .flag_if_supported("/utf-8")
+        .flag_if_supported("/EHsc")
         .flag_if_supported("/std:c++latest")
         .flag_if_supported("-std=c++23")
         .compile("dict_capi_bridge");

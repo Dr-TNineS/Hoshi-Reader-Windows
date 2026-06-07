@@ -74,12 +74,13 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Dictionary import uses zip content hash as stable `dict_id` and records successful imports in the manifest.
   - `DictResult` includes rules, source dictionary, frequency entries, and pitch entries.
   - Local VS Build Tools, MSVC, Windows SDK, VS-bundled CMake, and VS-bundled Ninja can drive the hoshidicts CMake configure path from a VS developer shell.
+  - VS developer-shell linked `cargo check` passes with hoshidicts linked.
 
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata is still JSON.
 - No verified real hoshidicts link/import/lookup flow on this machine.
-- Linked hoshidicts build currently reaches third-party compilation, then fails because `third_party/hoshidicts/src/text_processor/text_processor.cpp` expects `utf8::utf32to8` / `utf8::utf8to32` overloads missing from the checked-out `external/utfcpp` headers.
+- Real dictionary import still needs validation with a real Yomitan dictionary zip.
 - Real lookup result UX has not been manually verified with linked hoshidicts and real dictionary data on this machine.
 - No dictionary management/settings UI.
 - No real Anki integration; only the frontend payload boundary exists.
@@ -92,7 +93,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 
 - Legacy path-only bookshelf records may fail if the original EPUB is moved, renamed, or deleted.
 - On shells without CMake/C++ build tools in `PATH`, the hoshidicts backend and importer remain unavailable.
-- On this machine, a VS developer shell can reach hoshidicts compilation, but the checked-out hoshidicts/utfcpp combination does not currently compile.
+- On this machine, linked hoshidicts checks require a VS developer shell or equivalent `PATH` containing CMake and MSVC tools.
 - Without imported dictionaries in the app data manifest, `dict_status` reports `noDictionaries`.
 - Reader layout correctness for arbitrary EPUBs is not fully verified.
 - Rust-side character counts and frontend DOM-based progress need further cross-validation.
