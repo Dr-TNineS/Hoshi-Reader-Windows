@@ -23,6 +23,9 @@ pub fn run() {
             library::library_list_books,
             library::library_open_book,
             dict::commands::dictionary_import_yomitan_zip,
+            dict::commands::dictionary_list,
+            dict::commands::dictionary_set_enabled,
+            dict::commands::dictionary_set_order,
             dict::commands::dict_lookup,
             dict::commands::dict_status,
         ])

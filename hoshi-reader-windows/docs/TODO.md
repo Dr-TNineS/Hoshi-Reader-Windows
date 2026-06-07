@@ -17,7 +17,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
 
 1. Continue reader lookup work from `docs/LOOKUP_ROADMAP.md`.
    - Execute only one remaining slice at a time.
-   - Next recommended slice: Slice 1, Dictionary Status & Manifest.
+   - Next recommended slice: Slice 3, Real Lookup Result Shape.
 2. Preserve the bookshelf/import/reader/session main path described in `docs/READER_ENTRY_CHARACTERIZATION.md`.
 3. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 4. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
@@ -25,7 +25,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
 ## Active Blockers
 
 - Real hoshidicts import/lookup validation is blocked on a local CMake/C++ toolchain and a real dictionary zip.
-- Dictionary management is still missing manifest/config support.
+- Real lookup result shape still lacks frequency/pitch return data in `DictResult`.
 - Reader behavior still lacks automated visual regression coverage.
 
 ## Required Validation

@@ -57,20 +57,24 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Popup prefers left/right side placement beside the selected text, with top/bottom fallback.
   - Popup clears on page/chapter changes, TOC jumps, shelf return, close, and Escape.
 - Dictionary backend:
-  - `dict_status` and `dict_lookup` commands exist.
-  - On startup, dictionary state scans app data `dictionaries/imported/*`.
+  - `dict_status` returns structured dictionary status: ready, no dictionaries, engine unavailable, or error.
+  - `dict_lookup` command exists.
+  - `dictionary_list` returns imported dictionaries from the manifest.
+  - On startup, dictionary state reads enabled term dictionaries from the manifest.
+  - Dictionary enabled/order changes are persisted and rebuild dictionary runtime state.
+  - Enabled manifest entries load term, frequency, and pitch roles based on imported counts.
+  - Dictionary manifest lives at app data `dictionaries/manifest.json`.
   - Valid imported hoshidicts term directories contain `.hoshidicts_1`, `index.json`, `hash.table`, and `blobs.bin`.
   - `build.rs` attempts to compile/link `third_party/hoshidicts` and the current C API bridge when CMake/C++ tools exist.
   - `HSW_HOSHIDICTS_DIR` can override the default local hoshidicts path.
   - Bookshelf has a minimal `Import Dictionary` entry for Yomitan `.zip` files.
-  - Dictionary import uses zip content hash as stable `dict_id`.
+  - Dictionary import uses zip content hash as stable `dict_id` and records successful imports in the manifest.
 
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata is still JSON.
-- No dictionary manifest/config for enabled/order/type management.
+- No full frequency/pitch result shape in `DictResult`.
 - No verified real hoshidicts link/import/lookup flow on this machine.
-- No full frequency/pitch result shape in the frontend.
 - No dictionary management/settings UI.
 - No Anki integration.
 - No sync implementation.

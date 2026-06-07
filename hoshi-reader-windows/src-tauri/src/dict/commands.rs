@@ -1,8 +1,9 @@
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
 #[cfg(hoshi_dicts_linked)]
@@ -45,12 +46,56 @@ pub struct DictImportSummary {
     pub reused: bool,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictionaryStatus {
+    pub status: DictionaryStatusKind,
+    pub message: String,
+    pub loaded_count: usize,
+    pub imported_count: usize,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+#[allow(dead_code)]
+pub enum DictionaryStatusKind {
+    Ready,
+    NoDictionaries,
+    EngineUnavailable,
+    Error,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct DictionaryManifestEntry {
+    pub dict_id: String,
+    pub title: String,
+    pub kind: String,
+    pub enabled: bool,
+    pub order: usize,
+    pub internal_path: String,
+    pub term_count: usize,
+    pub meta_count: usize,
+    pub freq_count: usize,
+    pub pitch_count: usize,
+    pub media_count: usize,
+    pub last_imported: u64,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct DictionaryManifest {
+    dictionaries: Vec<DictionaryManifestEntry>,
+}
+
 #[derive(Default)]
 struct DictRuntime {
     #[cfg(hoshi_dicts_linked)]
     backend: Option<DictBackend>,
-    loaded_term_dicts: Vec<PathBuf>,
+    loaded_dictionaries: usize,
+    imported_count: usize,
     error: Option<String>,
+    manifest_error: Option<String>,
 }
 
 pub struct DictState {
@@ -72,7 +117,10 @@ impl DictState {
 }
 
 #[tauri::command]
-pub fn dict_lookup(text: String, state: tauri::State<DictState>) -> Result<Vec<DictResult>, String> {
+pub fn dict_lookup(
+    text: String,
+    state: tauri::State<DictState>,
+) -> Result<Vec<DictResult>, String> {
     let runtime = state.runtime.lock().unwrap();
     if text.trim().is_empty() {
         return Ok(Vec::new());
@@ -94,17 +142,97 @@ pub fn dict_lookup(text: String, state: tauri::State<DictState>) -> Result<Vec<D
 }
 
 #[tauri::command]
-pub fn dict_status(state: tauri::State<DictState>) -> bool {
+pub fn dict_status(state: tauri::State<DictState>) -> DictionaryStatus {
+    let runtime = state.runtime.lock().unwrap();
+    runtime_status(&runtime)
+}
+
+#[tauri::command]
+pub fn dictionary_list(app: AppHandle) -> Result<Vec<DictionaryManifestEntry>, String> {
+    Ok(read_dictionary_manifest(&dictionary_manifest_path(&app)?)?.dictionaries)
+}
+
+#[tauri::command]
+pub fn dictionary_set_enabled(
+    dict_id: String,
+    enabled: bool,
+    app: AppHandle,
+    state: tauri::State<DictState>,
+) -> Result<DictionaryStatus, String> {
+    let manifest_path = dictionary_manifest_path(&app)?;
+    set_dictionary_enabled(&manifest_path, &dict_id, enabled)?;
+    state.initialize(&app);
+    let runtime = state.runtime.lock().unwrap();
+    Ok(runtime_status(&runtime))
+}
+
+#[tauri::command]
+pub fn dictionary_set_order(
+    dict_ids: Vec<String>,
+    app: AppHandle,
+    state: tauri::State<DictState>,
+) -> Result<Vec<DictionaryManifestEntry>, String> {
+    let manifest_path = dictionary_manifest_path(&app)?;
+    let entries = set_dictionary_order(&manifest_path, &dict_ids)?;
+    state.initialize(&app);
+    Ok(entries)
+}
+
+fn runtime_status(runtime: &DictRuntime) -> DictionaryStatus {
+    if let Some(error) = &runtime.manifest_error {
+        return DictionaryStatus {
+            status: DictionaryStatusKind::Error,
+            message: error.clone(),
+            loaded_count: 0,
+            imported_count: runtime.imported_count,
+        };
+    }
+
+    if runtime.imported_count == 0 {
+        return DictionaryStatus {
+            status: DictionaryStatusKind::NoDictionaries,
+            message: "No imported dictionaries found.".into(),
+            loaded_count: 0,
+            imported_count: 0,
+        };
+    }
+
+    if runtime.loaded_dictionaries == 0 {
+        return DictionaryStatus {
+            status: DictionaryStatusKind::NoDictionaries,
+            message: runtime_error(runtime),
+            loaded_count: 0,
+            imported_count: runtime.imported_count,
+        };
+    }
+
     #[cfg(hoshi_dicts_linked)]
     {
-        let runtime = state.runtime.lock().unwrap();
-        runtime.backend.is_some()
+        if runtime.backend.is_some() {
+            return DictionaryStatus {
+                status: DictionaryStatusKind::Ready,
+                message: format!("{} dictionary loaded.", runtime.loaded_dictionaries),
+                loaded_count: runtime.loaded_dictionaries,
+                imported_count: runtime.imported_count,
+            };
+        }
+
+        DictionaryStatus {
+            status: DictionaryStatusKind::Error,
+            message: runtime_error(runtime),
+            loaded_count: 0,
+            imported_count: runtime.imported_count,
+        }
     }
 
     #[cfg(not(hoshi_dicts_linked))]
     {
-        let _ = state;
-        false
+        DictionaryStatus {
+            status: DictionaryStatusKind::EngineUnavailable,
+            message: runtime_error(runtime),
+            loaded_count: 0,
+            imported_count: runtime.imported_count,
+        }
     }
 }
 
@@ -124,25 +252,54 @@ fn import_yomitan_zip(
 ) -> Result<DictImportSummary, String> {
     let source = PathBuf::from(zip_path);
     if !source.is_file() {
-        return Err(format!("Dictionary zip does not exist: {}", source.display()));
+        return Err(format!(
+            "Dictionary zip does not exist: {}",
+            source.display()
+        ));
     }
 
     let dict_id = dictionary_zip_id(&source)?;
+    let manifest_path = dictionary_manifest_path(app)?;
     let imported_root = imported_dictionary_root(app)?;
     let final_dir = imported_root.join(&dict_id);
 
     if is_hoshidicts_term_dir(&final_dir) {
+        let existing = read_dictionary_manifest(&manifest_path)?
+            .dictionaries
+            .into_iter()
+            .find(|dictionary| dictionary.dict_id == dict_id)
+            .map(Ok)
+            .unwrap_or_else(|| {
+                upsert_dictionary_manifest_entry(
+                    &manifest_path,
+                    DictionaryManifestEntry {
+                        dict_id: dict_id.clone(),
+                        title: read_imported_dictionary_title(&final_dir)
+                            .unwrap_or_else(|| "Imported Dictionary".into()),
+                        kind: "term".into(),
+                        enabled: true,
+                        order: 0,
+                        internal_path: final_dir.to_string_lossy().into_owned(),
+                        term_count: 0,
+                        meta_count: 0,
+                        freq_count: 0,
+                        pitch_count: 0,
+                        media_count: 0,
+                        last_imported: current_unix_time(),
+                    },
+                )
+            })?;
         state.initialize(app);
         let runtime = state.runtime.lock().unwrap();
         return Ok(DictImportSummary {
             dict_id,
-            title: read_imported_dictionary_title(&final_dir).unwrap_or_else(|| "Imported Dictionary".into()),
-            dictionary_path: final_dir.to_string_lossy().into_owned(),
-            term_count: 0,
-            meta_count: 0,
-            freq_count: 0,
-            pitch_count: 0,
-            media_count: 0,
+            title: existing.title,
+            dictionary_path: existing.internal_path,
+            term_count: existing.term_count,
+            meta_count: existing.meta_count,
+            freq_count: existing.freq_count,
+            pitch_count: existing.pitch_count,
+            media_count: existing.media_count,
             ready: dict_runtime_ready(&runtime),
             reused: true,
         });
@@ -150,7 +307,15 @@ fn import_yomitan_zip(
 
     #[cfg(hoshi_dicts_linked)]
     {
-        import_yomitan_zip_linked(&source, &imported_root, &final_dir, &dict_id, app, state)
+        import_yomitan_zip_linked(
+            &source,
+            &manifest_path,
+            &imported_root,
+            &final_dir,
+            &dict_id,
+            app,
+            state,
+        )
     }
 
     #[cfg(not(hoshi_dicts_linked))]
@@ -163,8 +328,8 @@ fn import_yomitan_zip(
 }
 
 fn initialize_runtime(app: &AppHandle) -> DictRuntime {
-    let imported_root = match imported_dictionary_root(app) {
-        Ok(root) => root,
+    let manifest_path = match dictionary_manifest_path(app) {
+        Ok(path) => path,
         Err(error) => {
             return DictRuntime {
                 error: Some(error),
@@ -172,37 +337,45 @@ fn initialize_runtime(app: &AppHandle) -> DictRuntime {
             }
         }
     };
-    let term_dirs = match find_term_dictionary_dirs(&imported_root) {
-        Ok(dirs) => dirs,
+    let manifest = match read_dictionary_manifest(&manifest_path) {
+        Ok(manifest) => manifest,
         Err(error) => {
             return DictRuntime {
-                error: Some(error),
+                error: Some(error.clone()),
+                manifest_error: Some(error),
                 ..DictRuntime::default()
             }
         }
     };
+    let imported_count = manifest.dictionaries.len();
+    let load_plan = enabled_dictionary_load_plan(&manifest);
 
-    if term_dirs.is_empty() {
+    if !load_plan.iter().any(|entry| entry.use_term) {
         return DictRuntime {
-            loaded_term_dicts: term_dirs,
-            error: Some(format!(
-                "No imported hoshidicts term dictionaries found in {}",
-                imported_root.display()
-            )),
+            loaded_dictionaries: 0,
+            imported_count,
+            error: if imported_count == 0 {
+                Some("No imported dictionaries found.".into())
+            } else {
+                Some("No enabled term dictionaries found in dictionary manifest.".into())
+            },
             ..DictRuntime::default()
         };
     }
 
     #[cfg(hoshi_dicts_linked)]
     {
-        match DictBackend::load(&term_dirs) {
+        match DictBackend::load(&load_plan) {
             Ok(backend) => DictRuntime {
                 backend: Some(backend),
-                loaded_term_dicts: term_dirs,
+                loaded_dictionaries: load_plan.len(),
+                imported_count,
                 error: None,
+                manifest_error: None,
             },
             Err(error) => DictRuntime {
-                loaded_term_dicts: term_dirs,
+                loaded_dictionaries: 0,
+                imported_count,
                 error: Some(error),
                 ..DictRuntime::default()
             },
@@ -212,8 +385,10 @@ fn initialize_runtime(app: &AppHandle) -> DictRuntime {
     #[cfg(not(hoshi_dicts_linked))]
     {
         DictRuntime {
-            loaded_term_dicts: term_dirs,
+            loaded_dictionaries: load_plan.len(),
+            imported_count,
             error: Some("Dictionary engine not linked. Install CMake/C++ build tools and rebuild HSW with hoshidicts.".into()),
+            manifest_error: None,
         }
     }
 }
@@ -232,16 +407,195 @@ fn dict_runtime_ready(runtime: &DictRuntime) -> bool {
 }
 
 fn imported_dictionary_root(app: &AppHandle) -> Result<PathBuf, String> {
-    let root = app
-        .path()
-        .app_data_dir()
-        .map_err(|e| format!("Cannot resolve app data dir: {e}"))?
-        .join("dictionaries")
-        .join("imported");
+    let root = dictionary_data_root(app)?.join("imported");
     fs::create_dir_all(&root).map_err(|e| format!("Cannot create dictionary dir: {e}"))?;
     Ok(root)
 }
 
+fn dictionary_data_root(app: &AppHandle) -> Result<PathBuf, String> {
+    let root = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| format!("Cannot resolve app data dir: {e}"))?
+        .join("dictionaries");
+    fs::create_dir_all(&root).map_err(|e| format!("Cannot create dictionary data dir: {e}"))?;
+    Ok(root)
+}
+
+fn dictionary_manifest_path(app: &AppHandle) -> Result<PathBuf, String> {
+    Ok(dictionary_data_root(app)?.join("manifest.json"))
+}
+
+fn read_dictionary_manifest(path: &Path) -> Result<DictionaryManifest, String> {
+    if !path.exists() {
+        return Ok(DictionaryManifest::default());
+    }
+
+    let content =
+        fs::read_to_string(path).map_err(|e| format!("Cannot read dictionary manifest: {e}"))?;
+    serde_json::from_str::<DictionaryManifest>(&content)
+        .map_err(|e| format!("Cannot parse dictionary manifest: {e}"))
+}
+
+fn write_dictionary_manifest(path: &Path, manifest: &DictionaryManifest) -> Result<(), String> {
+    if let Some(parent) = path.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Cannot create dictionary manifest dir: {e}"))?;
+    }
+    let content = serde_json::to_string_pretty(manifest)
+        .map_err(|e| format!("Cannot serialize dictionary manifest: {e}"))?;
+    fs::write(path, content).map_err(|e| format!("Cannot write dictionary manifest: {e}"))
+}
+
+fn upsert_dictionary_manifest_entry(
+    path: &Path,
+    mut entry: DictionaryManifestEntry,
+) -> Result<DictionaryManifestEntry, String> {
+    let mut manifest = read_dictionary_manifest(path)?;
+    let existing_order = manifest
+        .dictionaries
+        .iter()
+        .find(|dictionary| dictionary.dict_id == entry.dict_id)
+        .map(|dictionary| dictionary.order);
+
+    if let Some(order) = existing_order {
+        entry.order = order;
+        if let Some(existing) = manifest
+            .dictionaries
+            .iter_mut()
+            .find(|dictionary| dictionary.dict_id == entry.dict_id)
+        {
+            *existing = entry.clone();
+        }
+    } else {
+        entry.order = manifest
+            .dictionaries
+            .iter()
+            .map(|dictionary| dictionary.order)
+            .max()
+            .map(|order| order + 1)
+            .unwrap_or(0);
+        manifest.dictionaries.push(entry.clone());
+    }
+    manifest
+        .dictionaries
+        .sort_by_key(|dictionary| dictionary.order);
+    write_dictionary_manifest(path, &manifest)?;
+    Ok(entry)
+}
+
+fn set_dictionary_enabled(path: &Path, dict_id: &str, enabled: bool) -> Result<(), String> {
+    let mut manifest = read_dictionary_manifest(path)?;
+    let Some(entry) = manifest
+        .dictionaries
+        .iter_mut()
+        .find(|dictionary| dictionary.dict_id == dict_id)
+    else {
+        return Err(format!("Dictionary not found: {dict_id}"));
+    };
+
+    entry.enabled = enabled;
+    write_dictionary_manifest(path, &manifest)
+}
+
+fn set_dictionary_order(
+    path: &Path,
+    dict_ids: &[String],
+) -> Result<Vec<DictionaryManifestEntry>, String> {
+    let mut manifest = read_dictionary_manifest(path)?;
+    validate_dictionary_order_ids(&manifest, dict_ids)?;
+
+    for (order, dict_id) in dict_ids.iter().enumerate() {
+        if let Some(entry) = manifest
+            .dictionaries
+            .iter_mut()
+            .find(|dictionary| &dictionary.dict_id == dict_id)
+        {
+            entry.order = order;
+        }
+    }
+    manifest
+        .dictionaries
+        .sort_by_key(|dictionary| dictionary.order);
+    write_dictionary_manifest(path, &manifest)?;
+    Ok(manifest.dictionaries)
+}
+
+fn validate_dictionary_order_ids(
+    manifest: &DictionaryManifest,
+    dict_ids: &[String],
+) -> Result<(), String> {
+    if dict_ids.len() != manifest.dictionaries.len() {
+        return Err("Dictionary order must include every dictionary exactly once.".into());
+    }
+
+    let mut sorted_requested = dict_ids.to_vec();
+    sorted_requested.sort();
+    let duplicate = sorted_requested
+        .windows(2)
+        .find(|pair| pair[0] == pair[1])
+        .map(|pair| pair[0].clone());
+    if let Some(dict_id) = duplicate {
+        return Err(format!("Dictionary order contains duplicate id: {dict_id}"));
+    }
+
+    let mut existing = manifest
+        .dictionaries
+        .iter()
+        .map(|dictionary| dictionary.dict_id.clone())
+        .collect::<Vec<_>>();
+    existing.sort();
+
+    if sorted_requested != existing {
+        let unknown = sorted_requested
+            .iter()
+            .find(|dict_id| !existing.contains(dict_id))
+            .cloned();
+        if let Some(dict_id) = unknown {
+            return Err(format!("Dictionary not found: {dict_id}"));
+        }
+        return Err("Dictionary order must include every dictionary exactly once.".into());
+    }
+
+    Ok(())
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct DictionaryLoadEntry {
+    path: PathBuf,
+    use_term: bool,
+    use_freq: bool,
+    use_pitch: bool,
+}
+
+fn enabled_dictionary_load_plan(manifest: &DictionaryManifest) -> Vec<DictionaryLoadEntry> {
+    let mut entries = manifest
+        .dictionaries
+        .iter()
+        .filter(|entry| entry.enabled)
+        .collect::<Vec<_>>();
+    entries.sort_by_key(|entry| entry.order);
+    entries
+        .into_iter()
+        .filter_map(|entry| {
+            let path = PathBuf::from(&entry.internal_path);
+            if !is_hoshidicts_term_dir(&path) {
+                return None;
+            }
+            let use_term = entry.term_count > 0 || entry.kind == "term";
+            let use_freq = entry.freq_count > 0;
+            let use_pitch = entry.pitch_count > 0;
+            (use_term || use_freq || use_pitch).then_some(DictionaryLoadEntry {
+                path,
+                use_term,
+                use_freq,
+                use_pitch,
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
 fn find_term_dictionary_dirs(root: &Path) -> Result<Vec<PathBuf>, String> {
     if !root.exists() {
         return Ok(Vec::new());
@@ -267,7 +621,7 @@ fn is_hoshidicts_term_dir(path: &Path) -> bool {
 
 fn runtime_error(runtime: &DictRuntime) -> String {
     runtime.error.clone().unwrap_or_else(|| {
-        if runtime.loaded_term_dicts.is_empty() {
+        if runtime.loaded_dictionaries == 0 {
             "Dictionary backend is not ready: no imported dictionaries loaded.".into()
         } else {
             "Dictionary backend is not ready.".into()
@@ -275,10 +629,30 @@ fn runtime_error(runtime: &DictRuntime) -> String {
     })
 }
 
+fn current_unix_time() -> u64 {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
 fn dictionary_zip_id(path: &Path) -> Result<String, String> {
     let bytes = fs::read(path).map_err(|e| format!("Cannot read dictionary zip: {e}"))?;
     let hash = Sha256::digest(bytes);
     Ok(hash[..8].iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+#[allow(dead_code)]
+fn dictionary_kind_from_counts(term_count: usize, freq_count: usize, pitch_count: usize) -> String {
+    if term_count > 0 {
+        "term".into()
+    } else if freq_count > 0 {
+        "freq".into()
+    } else if pitch_count > 0 {
+        "pitch".into()
+    } else {
+        "unknown".into()
+    }
 }
 
 #[derive(serde::Deserialize)]
@@ -295,6 +669,7 @@ fn read_imported_dictionary_title(path: &Path) -> Option<String> {
 #[cfg(hoshi_dicts_linked)]
 fn import_yomitan_zip_linked(
     source: &Path,
+    manifest_path: &Path,
     imported_root: &Path,
     final_dir: &Path,
     dict_id: &str,
@@ -311,8 +686,12 @@ fn import_yomitan_zip_linked(
     fs::create_dir_all(&staging_root)
         .map_err(|e| format!("Cannot create dictionary import staging dir: {e}"))?;
 
-    let source_c = CString::new(source.to_string_lossy().as_bytes())
-        .map_err(|_| format!("Dictionary zip path contains an interior NUL: {}", source.display()))?;
+    let source_c = CString::new(source.to_string_lossy().as_bytes()).map_err(|_| {
+        format!(
+            "Dictionary zip path contains an interior NUL: {}",
+            source.display()
+        )
+    })?;
     let staging_c = CString::new(staging_root.to_string_lossy().as_bytes()).map_err(|_| {
         format!(
             "Dictionary import staging path contains an interior NUL: {}",
@@ -330,9 +709,8 @@ fn import_yomitan_zip_linked(
         errors_json: ptr::null(),
     };
 
-    let status = unsafe {
-        ffi::dict_import_yomitan_zip(source_c.as_ptr(), staging_c.as_ptr(), 0, &mut raw)
-    };
+    let status =
+        unsafe { ffi::dict_import_yomitan_zip(source_c.as_ptr(), staging_c.as_ptr(), 0, &mut raw) };
     if status != 0 {
         let _ = fs::remove_dir_all(&staging_root);
         return Err("Dictionary import failed.".into());
@@ -375,21 +753,40 @@ fn import_yomitan_zip_linked(
         .map_err(|e| format!("Cannot move imported dictionary into library: {e}"))?;
     let _ = fs::remove_dir_all(&staging_root);
 
+    let entry = upsert_dictionary_manifest_entry(
+        manifest_path,
+        DictionaryManifestEntry {
+            dict_id: dict_id.to_string(),
+            title: if title.trim().is_empty() {
+                read_imported_dictionary_title(final_dir)
+                    .unwrap_or_else(|| "Imported Dictionary".into())
+            } else {
+                title
+            },
+            kind: dictionary_kind_from_counts(summary_counts.0, summary_counts.2, summary_counts.3),
+            enabled: true,
+            order: 0,
+            internal_path: final_dir.to_string_lossy().into_owned(),
+            term_count: summary_counts.0,
+            meta_count: summary_counts.1,
+            freq_count: summary_counts.2,
+            pitch_count: summary_counts.3,
+            media_count: summary_counts.4,
+            last_imported: current_unix_time(),
+        },
+    )?;
+
     state.initialize(app);
     let runtime = state.runtime.lock().unwrap();
     Ok(DictImportSummary {
-        dict_id: dict_id.to_string(),
-        title: if title.trim().is_empty() {
-            read_imported_dictionary_title(final_dir).unwrap_or_else(|| "Imported Dictionary".into())
-        } else {
-            title
-        },
-        dictionary_path: final_dir.to_string_lossy().into_owned(),
-        term_count: summary_counts.0,
-        meta_count: summary_counts.1,
-        freq_count: summary_counts.2,
-        pitch_count: summary_counts.3,
-        media_count: summary_counts.4,
+        dict_id: entry.dict_id,
+        title: entry.title,
+        dictionary_path: entry.internal_path,
+        term_count: entry.term_count,
+        meta_count: entry.meta_count,
+        freq_count: entry.freq_count,
+        pitch_count: entry.pitch_count,
+        media_count: entry.media_count,
         ready: dict_runtime_ready(&runtime),
         reused: false,
     })
@@ -404,9 +801,9 @@ fn find_single_imported_dictionary_dir(staging_root: &Path) -> Result<PathBuf, S
         .filter(|path| is_hoshidicts_term_dir(path))
         .collect::<Vec<_>>();
     dirs.sort();
-    dirs.into_iter()
-        .next()
-        .ok_or_else(|| "Dictionary import did not create a valid hoshidicts term dictionary.".into())
+    dirs.into_iter().next().ok_or_else(|| {
+        "Dictionary import did not create a valid hoshidicts term dictionary.".into()
+    })
 }
 
 #[cfg(hoshi_dicts_linked)]
@@ -436,19 +833,40 @@ unsafe impl Send for DictBackend {}
 
 #[cfg(hoshi_dicts_linked)]
 impl DictBackend {
-    fn load(term_dirs: &[PathBuf]) -> Result<Self, String> {
+    fn load(load_plan: &[DictionaryLoadEntry]) -> Result<Self, String> {
         unsafe {
             let query = ffi::dict_query_create();
             if query.is_null() {
                 return Err("Cannot create dictionary query.".into());
             }
 
-            for dir in term_dirs {
-                let path = CString::new(dir.to_string_lossy().as_bytes())
-                    .map_err(|_| format!("Dictionary path contains an interior NUL: {}", dir.display()))?;
-                if ffi::dict_query_add_term_dict(query, path.as_ptr()) != 0 {
+            for entry in load_plan {
+                let path = CString::new(entry.path.to_string_lossy().as_bytes()).map_err(|_| {
+                    format!(
+                        "Dictionary path contains an interior NUL: {}",
+                        entry.path.display()
+                    )
+                })?;
+                if entry.use_term && ffi::dict_query_add_term_dict(query, path.as_ptr()) != 0 {
                     ffi::dict_query_destroy(query);
-                    return Err(format!("Cannot load term dictionary: {}", dir.display()));
+                    return Err(format!(
+                        "Cannot load term dictionary: {}",
+                        entry.path.display()
+                    ));
+                }
+                if entry.use_freq && ffi::dict_query_add_freq_dict(query, path.as_ptr()) != 0 {
+                    ffi::dict_query_destroy(query);
+                    return Err(format!(
+                        "Cannot load frequency dictionary: {}",
+                        entry.path.display()
+                    ));
+                }
+                if entry.use_pitch && ffi::dict_query_add_pitch_dict(query, path.as_ptr()) != 0 {
+                    ffi::dict_query_destroy(query);
+                    return Err(format!(
+                        "Cannot load pitch dictionary: {}",
+                        entry.path.display()
+                    ));
                 }
             }
 
@@ -520,7 +938,8 @@ unsafe extern "C" fn collect_lookup_results(
     for index in 0..count {
         let result = &*results.add(index as usize);
         let glossary_json = c_string(result.term.glossary_json);
-        let glossary = serde_json::from_str::<Vec<GlossaryEntry>>(&glossary_json).unwrap_or_default();
+        let glossary =
+            serde_json::from_str::<Vec<GlossaryEntry>>(&glossary_json).unwrap_or_default();
         out.push(DictResult {
             expression: c_string(result.term.expression),
             reading: c_string(result.term.reading),
@@ -543,17 +962,46 @@ unsafe fn c_string(value: *const std::ffi::c_char) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::time::{SystemTime, UNIX_EPOCH};
 
-    #[test]
-    fn finds_only_imported_hoshidicts_term_dirs() {
-        let root = std::env::temp_dir().join(format!(
-            "hoshi_dict_test_{}",
+    fn temp_path(name: &str) -> PathBuf {
+        std::env::temp_dir().join(format!(
+            "hoshi_dict_test_{name}_{}",
             SystemTime::now()
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_nanos()
-        ));
+        ))
+    }
+
+    fn manifest_entry(dict_id: &str, order: usize) -> DictionaryManifestEntry {
+        DictionaryManifestEntry {
+            dict_id: dict_id.into(),
+            title: format!("Dictionary {dict_id}"),
+            kind: "term".into(),
+            enabled: true,
+            order,
+            internal_path: format!("dictionaries/imported/{dict_id}"),
+            term_count: 10,
+            meta_count: 1,
+            freq_count: 2,
+            pitch_count: 3,
+            media_count: 4,
+            last_imported: 123,
+        }
+    }
+
+    fn create_valid_dictionary_dir(root: &Path, name: &str) -> PathBuf {
+        let dir = root.join(name);
+        fs::create_dir_all(&dir).unwrap();
+        for file in [".hoshidicts_1", "index.json", "hash.table", "blobs.bin"] {
+            fs::write(dir.join(file), "").unwrap();
+        }
+        dir
+    }
+
+    #[test]
+    fn finds_only_imported_hoshidicts_term_dirs() {
+        let root = temp_path("term_dirs");
         let valid = root.join("valid");
         let invalid = root.join("invalid");
         fs::create_dir_all(&valid).unwrap();
@@ -567,5 +1015,284 @@ mod tests {
         assert_eq!(dirs, vec![valid]);
 
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn missing_manifest_reads_as_empty() {
+        let root = temp_path("missing_manifest");
+        let path = root.join("manifest.json");
+
+        let manifest = read_dictionary_manifest(&path).unwrap();
+        assert!(manifest.dictionaries.is_empty());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn corrupt_manifest_returns_clear_error() {
+        let root = temp_path("corrupt_manifest");
+        let path = root.join("manifest.json");
+        fs::create_dir_all(&root).unwrap();
+        fs::write(&path, "{not-json").unwrap();
+
+        let error = read_dictionary_manifest(&path).unwrap_err();
+        assert!(error.starts_with("Cannot parse dictionary manifest:"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn upsert_manifest_entry_adds_and_lists_dictionary() {
+        let root = temp_path("manifest_upsert");
+        let path = root.join("manifest.json");
+
+        let entry = upsert_dictionary_manifest_entry(&path, manifest_entry("abc", 0)).unwrap();
+        assert_eq!(entry.dict_id, "abc");
+        assert_eq!(entry.order, 0);
+
+        let manifest = read_dictionary_manifest(&path).unwrap();
+        assert_eq!(manifest.dictionaries, vec![entry]);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn upsert_manifest_entry_reuses_existing_order() {
+        let root = temp_path("manifest_reuse");
+        let path = root.join("manifest.json");
+
+        upsert_dictionary_manifest_entry(&path, manifest_entry("abc", 0)).unwrap();
+        upsert_dictionary_manifest_entry(&path, manifest_entry("def", 0)).unwrap();
+        let mut updated = manifest_entry("abc", 99);
+        updated.title = "Updated".into();
+        updated.term_count = 42;
+        let entry = upsert_dictionary_manifest_entry(&path, updated).unwrap();
+
+        let manifest = read_dictionary_manifest(&path).unwrap();
+        assert_eq!(entry.order, 0);
+        assert_eq!(manifest.dictionaries.len(), 2);
+        assert_eq!(manifest.dictionaries[0].title, "Updated");
+        assert_eq!(manifest.dictionaries[0].term_count, 42);
+        assert_eq!(manifest.dictionaries[1].dict_id, "def");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn load_plan_filters_disabled_entries_and_preserves_order() {
+        let root = temp_path("load_plan_order");
+        let first = create_valid_dictionary_dir(&root, "first");
+        let second = create_valid_dictionary_dir(&root, "second");
+        let disabled = create_valid_dictionary_dir(&root, "disabled");
+        let missing = root.join("missing");
+        let manifest = DictionaryManifest {
+            dictionaries: vec![
+                DictionaryManifestEntry {
+                    internal_path: second.to_string_lossy().into_owned(),
+                    order: 2,
+                    ..manifest_entry("second", 2)
+                },
+                DictionaryManifestEntry {
+                    internal_path: disabled.to_string_lossy().into_owned(),
+                    enabled: false,
+                    order: 0,
+                    ..manifest_entry("disabled", 0)
+                },
+                DictionaryManifestEntry {
+                    internal_path: first.to_string_lossy().into_owned(),
+                    order: 1,
+                    ..manifest_entry("first", 1)
+                },
+                DictionaryManifestEntry {
+                    internal_path: missing.to_string_lossy().into_owned(),
+                    order: 3,
+                    ..manifest_entry("missing", 3)
+                },
+            ],
+        };
+
+        let plan = enabled_dictionary_load_plan(&manifest);
+        assert_eq!(
+            plan.iter()
+                .map(|entry| entry.path.clone())
+                .collect::<Vec<_>>(),
+            vec![first, second]
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn load_plan_maps_dictionary_roles_from_counts_and_legacy_kind() {
+        let root = temp_path("load_plan_roles");
+        let term = create_valid_dictionary_dir(&root, "term");
+        let freq = create_valid_dictionary_dir(&root, "freq");
+        let pitch = create_valid_dictionary_dir(&root, "pitch");
+        let legacy = create_valid_dictionary_dir(&root, "legacy");
+        let manifest = DictionaryManifest {
+            dictionaries: vec![
+                DictionaryManifestEntry {
+                    internal_path: term.to_string_lossy().into_owned(),
+                    term_count: 1,
+                    freq_count: 2,
+                    pitch_count: 3,
+                    kind: "term".into(),
+                    order: 0,
+                    ..manifest_entry("term", 0)
+                },
+                DictionaryManifestEntry {
+                    internal_path: freq.to_string_lossy().into_owned(),
+                    term_count: 0,
+                    freq_count: 2,
+                    pitch_count: 0,
+                    kind: "freq".into(),
+                    order: 1,
+                    ..manifest_entry("freq", 1)
+                },
+                DictionaryManifestEntry {
+                    internal_path: pitch.to_string_lossy().into_owned(),
+                    term_count: 0,
+                    freq_count: 0,
+                    pitch_count: 3,
+                    kind: "pitch".into(),
+                    order: 2,
+                    ..manifest_entry("pitch", 2)
+                },
+                DictionaryManifestEntry {
+                    internal_path: legacy.to_string_lossy().into_owned(),
+                    term_count: 0,
+                    freq_count: 0,
+                    pitch_count: 0,
+                    kind: "term".into(),
+                    order: 3,
+                    ..manifest_entry("legacy", 3)
+                },
+            ],
+        };
+
+        let plan = enabled_dictionary_load_plan(&manifest);
+        assert_eq!(plan.len(), 4);
+        assert_eq!(
+            (plan[0].use_term, plan[0].use_freq, plan[0].use_pitch),
+            (true, true, true)
+        );
+        assert_eq!(
+            (plan[1].use_term, plan[1].use_freq, plan[1].use_pitch),
+            (false, true, false)
+        );
+        assert_eq!(
+            (plan[2].use_term, plan[2].use_freq, plan[2].use_pitch),
+            (false, false, true)
+        );
+        assert_eq!(
+            (plan[3].use_term, plan[3].use_freq, plan[3].use_pitch),
+            (true, false, false)
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn set_dictionary_enabled_updates_manifest() {
+        let root = temp_path("set_enabled");
+        let path = root.join("manifest.json");
+        upsert_dictionary_manifest_entry(&path, manifest_entry("abc", 0)).unwrap();
+
+        set_dictionary_enabled(&path, "abc", false).unwrap();
+        let manifest = read_dictionary_manifest(&path).unwrap();
+        assert!(!manifest.dictionaries[0].enabled);
+
+        let error = set_dictionary_enabled(&path, "missing", true).unwrap_err();
+        assert_eq!(error, "Dictionary not found: missing");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn set_dictionary_order_reorders_and_rejects_invalid_ids() {
+        let root = temp_path("set_order");
+        let path = root.join("manifest.json");
+        upsert_dictionary_manifest_entry(&path, manifest_entry("abc", 0)).unwrap();
+        upsert_dictionary_manifest_entry(&path, manifest_entry("def", 0)).unwrap();
+        upsert_dictionary_manifest_entry(&path, manifest_entry("ghi", 0)).unwrap();
+
+        let ordered =
+            set_dictionary_order(&path, &["ghi".into(), "abc".into(), "def".into()]).unwrap();
+        assert_eq!(
+            ordered
+                .iter()
+                .map(|entry| entry.dict_id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["ghi", "abc", "def"]
+        );
+
+        let duplicate =
+            set_dictionary_order(&path, &["ghi".into(), "abc".into(), "abc".into()]).unwrap_err();
+        assert_eq!(duplicate, "Dictionary order contains duplicate id: abc");
+
+        let unknown = set_dictionary_order(&path, &["ghi".into(), "abc".into(), "missing".into()])
+            .unwrap_err();
+        assert_eq!(unknown, "Dictionary not found: missing");
+
+        let missing = set_dictionary_order(&path, &["ghi".into(), "abc".into()]).unwrap_err();
+        assert_eq!(
+            missing,
+            "Dictionary order must include every dictionary exactly once."
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn kind_from_counts_prefers_term_then_freq_then_pitch() {
+        assert_eq!(dictionary_kind_from_counts(1, 1, 1), "term");
+        assert_eq!(dictionary_kind_from_counts(0, 1, 1), "freq");
+        assert_eq!(dictionary_kind_from_counts(0, 0, 1), "pitch");
+        assert_eq!(dictionary_kind_from_counts(0, 0, 0), "unknown");
+    }
+
+    #[test]
+    fn runtime_status_reports_no_dictionaries() {
+        let status = runtime_status(&DictRuntime::default());
+        assert_eq!(status.status, DictionaryStatusKind::NoDictionaries);
+        assert_eq!(status.imported_count, 0);
+        assert_eq!(status.loaded_count, 0);
+    }
+
+    #[test]
+    fn runtime_status_reports_manifest_error() {
+        let status = runtime_status(&DictRuntime {
+            manifest_error: Some("Cannot parse dictionary manifest: test".into()),
+            ..DictRuntime::default()
+        });
+        assert_eq!(status.status, DictionaryStatusKind::Error);
+        assert!(status.message.contains("Cannot parse dictionary manifest"));
+    }
+
+    #[cfg(not(hoshi_dicts_linked))]
+    #[test]
+    fn runtime_status_reports_engine_unavailable_with_imports() {
+        let status = runtime_status(&DictRuntime {
+            imported_count: 1,
+            loaded_dictionaries: 1,
+            error: Some("Dictionary engine not linked.".into()),
+            ..DictRuntime::default()
+        });
+        assert_eq!(status.status, DictionaryStatusKind::EngineUnavailable);
+        assert_eq!(status.imported_count, 1);
+    }
+
+    #[test]
+    fn runtime_status_reports_no_enabled_term_dictionary() {
+        let status = runtime_status(&DictRuntime {
+            imported_count: 1,
+            error: Some("No enabled term dictionaries found in dictionary manifest.".into()),
+            ..DictRuntime::default()
+        });
+        assert_eq!(status.status, DictionaryStatusKind::NoDictionaries);
+        assert_eq!(
+            status.message,
+            "No enabled term dictionaries found in dictionary manifest."
+        );
     }
 }

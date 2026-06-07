@@ -10,8 +10,8 @@ This plan only continues the HSW Windows implementation. Do not modify HSA, `hos
 
 ## Progress
 
-- [ ] Slice 1: Dictionary Status & Manifest
-- [ ] Slice 2: Query Rebuild & Dictionary Types
+- [x] Slice 1: Dictionary Status & Manifest
+- [x] Slice 2: Query Rebuild & Dictionary Types
 - [ ] Slice 3: Real Lookup Result Shape
 - [ ] Slice 4: Popup Result UX
 - [ ] Slice 5: Anki Boundary Prep

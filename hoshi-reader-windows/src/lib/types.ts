@@ -83,3 +83,27 @@ export interface DictImportSummary {
   ready: boolean;
   reused: boolean;
 }
+
+export type DictionaryStatusKind = "ready" | "noDictionaries" | "engineUnavailable" | "error";
+
+export interface DictionaryStatus {
+  status: DictionaryStatusKind;
+  message: string;
+  loadedCount: number;
+  importedCount: number;
+}
+
+export interface DictionaryManifestEntry {
+  dictId: string;
+  title: string;
+  kind: string;
+  enabled: boolean;
+  order: number;
+  internalPath: string;
+  termCount: number;
+  metaCount: number;
+  freqCount: number;
+  pitchCount: number;
+  mediaCount: number;
+  lastImported: number;
+}

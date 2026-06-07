@@ -14,7 +14,7 @@
     saveReadingProgress,
   } from "./lib/storage";
   import { findChapterIndex, flattenToc } from "./lib/toc";
-  import type { DictImportSummary, DictResult, EpubMeta, ReaderProgress, ReaderSelection } from "./lib/types";
+  import type { DictImportSummary, DictResult, DictionaryStatus, EpubMeta, ReaderProgress, ReaderSelection } from "./lib/types";
   import type { BookLocator, BookRecord, LibraryBookRecord } from "./lib/storage";
 
   function clampChapter(chapter: number, total: number): number {
@@ -307,11 +307,11 @@
     }
 
     try {
-      const ready = await invoke<boolean>("dict_status");
+      const status = await invoke<DictionaryStatus>("dict_status");
       if (requestId !== lookupRequestId) return;
-      if (!ready) {
+      if (status.status !== "ready") {
         lookupState = "error";
-        lookupError = "Dictionary backend not ready.";
+        lookupError = status.message;
         return;
       }
 
