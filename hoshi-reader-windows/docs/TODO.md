@@ -16,14 +16,16 @@ This file is the short operational handoff for future agents. Keep detailed stat
 ## Current Priorities
 
 1. Treat the current reader lookup implementation slices in `docs/LOOKUP_ROADMAP.md` as complete.
-   - Next recommended work: execute Slice 6 from `docs/REAL_LOOKUP_VALIDATION_PLAN.md`.
+   - Slice 6 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete with a linked-build blocker documented.
+   - Next recommended work: resolve the hoshidicts/utfcpp compatibility issue before Slice 7.
 2. Preserve the bookshelf/import/reader/session main path described in `docs/READER_ENTRY_CHARACTERIZATION.md`.
 3. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 4. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
 
 ## Active Blockers
 
-- Real hoshidicts import/lookup validation is blocked on a local CMake/C++ toolchain and a real dictionary zip.
+- Real hoshidicts import/lookup validation is blocked on the checked-out `third_party/hoshidicts` calling `utf8::utf32to8` / `utf8::utf8to32` overloads missing from its checked-out `external/utfcpp` headers.
+- Slice 7 also needs a real dictionary zip after the linked importer builds.
 - Real lookup result UX still needs manual verification with linked hoshidicts and real dictionary data.
 - Reader behavior still lacks automated visual regression coverage.
 

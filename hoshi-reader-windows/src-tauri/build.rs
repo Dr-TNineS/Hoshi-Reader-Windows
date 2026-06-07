@@ -21,10 +21,16 @@ fn try_link_hoshidicts() -> Result<(), String> {
     let manifest_dir = PathBuf::from(env::var("CARGO_MANIFEST_DIR").map_err(|e| e.to_string())?);
     let hoshidicts_dir = env::var_os("HSW_HOSHIDICTS_DIR")
         .map(PathBuf::from)
-        .unwrap_or_else(|| manifest_dir.join("..").join("third_party").join("hoshidicts"));
+        .unwrap_or_else(|| {
+            manifest_dir
+                .join("..")
+                .join("third_party")
+                .join("hoshidicts")
+        });
     let hoshidicts_dir = hoshidicts_dir
         .canonicalize()
         .map_err(|e| format!("cannot resolve hoshidicts dir: {e}"))?;
+    let hoshidicts_dir = cmake_compatible_path(hoshidicts_dir);
     if !hoshidicts_dir.join("CMakeLists.txt").is_file() {
         return Err(format!(
             "hoshidicts CMakeLists.txt was not found at {}",
@@ -40,29 +46,36 @@ fn try_link_hoshidicts() -> Result<(), String> {
         "Debug"
     };
 
-    run(
-        Command::new(&cmake)
-            .arg("-S")
-            .arg(&hoshidicts_dir)
-            .arg("-B")
-            .arg(&build_dir)
-            .arg(format!("-DCMAKE_BUILD_TYPE={profile}")),
-    )?;
-    run(
-        Command::new(&cmake)
-            .arg("--build")
-            .arg(&build_dir)
-            .arg("--config")
-            .arg(profile)
-            .arg("--target")
-            .arg("hoshidicts"),
-    )?;
+    let mut configure = Command::new(&cmake);
+    configure
+        .arg("-S")
+        .arg(&hoshidicts_dir)
+        .arg("-B")
+        .arg(&build_dir)
+        .arg(format!("-DCMAKE_BUILD_TYPE={profile}"));
+    #[cfg(windows)]
+    configure
+        .arg("-DCMAKE_C_FLAGS_INIT=/utf-8")
+        .arg("-DCMAKE_CXX_FLAGS_INIT=/utf-8");
+    run(&mut configure)?;
+    run(Command::new(&cmake)
+        .arg("--build")
+        .arg(&build_dir)
+        .arg("--config")
+        .arg(profile)
+        .arg("--target")
+        .arg("hoshidicts"))?;
 
     cc::Build::new()
         .cpp(true)
         .file(manifest_dir.join("src").join("dict").join("dict_capi.cpp"))
         .include(hoshidicts_dir.join("include"))
-        .include(hoshidicts_dir.join("external").join("utfcpp").join("source"))
+        .include(
+            hoshidicts_dir
+                .join("external")
+                .join("utfcpp")
+                .join("source"),
+        )
         .include(hoshidicts_dir.join("external").join("xxHash"))
         .flag_if_supported("/std:c++latest")
         .flag_if_supported("-std=c++23")
@@ -85,6 +98,20 @@ fn try_link_hoshidicts() -> Result<(), String> {
     }
     println!("cargo:rustc-cfg=hoshi_dicts_linked");
     Ok(())
+}
+
+fn cmake_compatible_path(path: PathBuf) -> PathBuf {
+    #[cfg(windows)]
+    {
+        let text = path.to_string_lossy();
+        if let Some(stripped) = text.strip_prefix(r"\\?\UNC\") {
+            return PathBuf::from(format!(r"\\{stripped}"));
+        }
+        if let Some(stripped) = text.strip_prefix(r"\\?\") {
+            return PathBuf::from(stripped);
+        }
+    }
+    path
 }
 
 fn find_program(name: &str) -> Option<PathBuf> {
@@ -120,7 +147,10 @@ fn collect_static_libraries(root: &Path) -> Result<Vec<PathBuf>, String> {
     let mut libraries = Vec::new();
     collect_static_libraries_inner(root, &mut libraries)?;
     if libraries.is_empty() {
-        return Err(format!("no static libraries found under {}", root.display()));
+        return Err(format!(
+            "no static libraries found under {}",
+            root.display()
+        ));
     }
     Ok(libraries)
 }
@@ -131,7 +161,10 @@ fn collect_static_libraries_inner(dir: &Path, libraries: &mut Vec<PathBuf>) -> R
         let path = entry.path();
         if path.is_dir() {
             collect_static_libraries_inner(&path, libraries)?;
-        } else if matches!(path.extension().and_then(|value| value.to_str()), Some("lib" | "a")) {
+        } else if matches!(
+            path.extension().and_then(|value| value.to_str()),
+            Some("lib" | "a")
+        ) {
             libraries.push(path);
         }
     }
