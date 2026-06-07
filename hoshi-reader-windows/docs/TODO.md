@@ -17,15 +17,15 @@ This file is the short operational handoff for future agents. Keep detailed stat
 
 1. Treat the current reader lookup implementation slices in `docs/LOOKUP_ROADMAP.md` as complete.
    - Slice 6 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including a passing VS developer-shell linked build.
-   - Next recommended work: execute Slice 7 from `docs/REAL_LOOKUP_VALIDATION_PLAN.md` with a real Yomitan dictionary zip.
+   - Slice 7 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including a real JMdict Yomitan import, manifest verification, and linked runtime lookup check.
+   - Next recommended work: execute Slice 8 from `docs/REAL_LOOKUP_VALIDATION_PLAN.md` with the Tauri app, a real EPUB, and imported dictionary data.
 2. Preserve the bookshelf/import/reader/session main path described in `docs/READER_ENTRY_CHARACTERIZATION.md`.
 3. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 4. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
 
 ## Active Blockers
 
-- Slice 7 needs a real Yomitan dictionary zip; do not add dictionary zips or imported dictionary data to git.
-- Real lookup result UX still needs manual verification with linked hoshidicts and real dictionary data.
+- Slice 8 still needs direct Tauri runtime verification of file-dialog dictionary import and reader popup lookup with real dictionary data.
 - Reader behavior still lacks automated visual regression coverage.
 
 ## Required Validation

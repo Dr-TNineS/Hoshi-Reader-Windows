@@ -52,11 +52,12 @@ fn try_link_hoshidicts() -> Result<(), String> {
 
     let out_dir = PathBuf::from(env::var("OUT_DIR").map_err(|e| e.to_string())?);
     let build_dir = out_dir.join("hoshidicts-build");
-    let profile = if env::var("PROFILE").unwrap_or_default() == "release" {
-        "Release"
-    } else {
-        "Debug"
-    };
+    let profile =
+        if cfg!(target_env = "msvc") || env::var("PROFILE").unwrap_or_default() == "release" {
+            "Release"
+        } else {
+            "Debug"
+        };
 
     let mut configure = Command::new(&cmake);
     configure

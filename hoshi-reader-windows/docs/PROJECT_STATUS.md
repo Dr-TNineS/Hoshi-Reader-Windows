@@ -75,13 +75,13 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - `DictResult` includes rules, source dictionary, frequency entries, and pitch entries.
   - Local VS Build Tools, MSVC, Windows SDK, VS-bundled CMake, and VS-bundled Ninja can drive the hoshidicts CMake configure path from a VS developer shell.
   - VS developer-shell linked `cargo check` passes with hoshidicts linked.
+  - Linked backend validation imported a real JMdict English Yomitan zip, wrote the dictionary manifest, loaded the runtime backend, and returned real results for `lookup("学校")`.
 
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata is still JSON.
-- No verified real hoshidicts link/import/lookup flow on this machine.
-- Real dictionary import still needs validation with a real Yomitan dictionary zip.
-- Real lookup result UX has not been manually verified with linked hoshidicts and real dictionary data on this machine.
+- Direct Tauri UI/file-dialog dictionary import has not been manually verified with real dictionary data on this machine.
+- Real lookup result UX has not been manually verified in the reader popup with linked hoshidicts and real dictionary data on this machine.
 - No dictionary management/settings UI.
 - No real Anki integration; only the frontend payload boundary exists.
 - No sync implementation.

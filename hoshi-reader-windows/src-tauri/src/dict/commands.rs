@@ -1410,4 +1410,118 @@ mod tests {
             "No enabled term dictionaries found in dictionary manifest."
         );
     }
+
+    #[cfg(hoshi_dicts_linked)]
+    #[test]
+    #[ignore]
+    fn imports_real_yomitan_zip_and_loads_runtime() {
+        use std::ptr;
+
+        let zip_path =
+            std::env::var("HSW_REAL_YOMITAN_ZIP").expect("HSW_REAL_YOMITAN_ZIP is required");
+        let source = PathBuf::from(zip_path);
+        assert!(source.is_file(), "real dictionary zip must exist");
+
+        let root = temp_path("real_yomitan_import");
+        let staging_root = root.join("staging");
+        let imported_root = root.join("imported");
+        let manifest_path = root.join("manifest.json");
+        fs::create_dir_all(&staging_root).unwrap();
+        fs::create_dir_all(&imported_root).unwrap();
+
+        let source_c = CString::new(source.to_string_lossy().as_bytes()).unwrap();
+        let staging_c = CString::new(staging_root.to_string_lossy().as_bytes()).unwrap();
+        let mut raw = ffi::DictImportResultC {
+            success: 0,
+            title: ptr::null(),
+            term_count: 0,
+            meta_count: 0,
+            freq_count: 0,
+            pitch_count: 0,
+            media_count: 0,
+            errors_json: ptr::null(),
+        };
+
+        let status = unsafe {
+            ffi::dict_import_yomitan_zip(source_c.as_ptr(), staging_c.as_ptr(), 0, &mut raw)
+        };
+        assert_eq!(status, 0);
+        assert_eq!(raw.success, 1);
+
+        let title = unsafe { c_string(raw.title) };
+        let counts = (
+            raw.term_count,
+            raw.meta_count,
+            raw.freq_count,
+            raw.pitch_count,
+            raw.media_count,
+        );
+        unsafe {
+            ffi::free_import_result(&mut raw);
+        }
+        assert!(counts.0 > 0, "real dictionary must contain terms");
+
+        let imported_dir = find_single_imported_dictionary_dir(&staging_root).unwrap();
+        assert!(is_hoshidicts_term_dir(&imported_dir));
+        let dict_id = dictionary_zip_id(&source).unwrap();
+        let final_dir = imported_root.join(&dict_id);
+        fs::rename(&imported_dir, &final_dir).unwrap();
+        let _ = fs::remove_dir_all(&staging_root);
+
+        for file in [".hoshidicts_1", "index.json", "hash.table", "blobs.bin"] {
+            assert!(final_dir.join(file).is_file(), "{file} should exist");
+        }
+
+        let first = upsert_dictionary_manifest_entry(
+            &manifest_path,
+            DictionaryManifestEntry {
+                dict_id: dict_id.clone(),
+                title: if title.trim().is_empty() {
+                    read_imported_dictionary_title(&final_dir)
+                        .unwrap_or_else(|| "Imported Dictionary".into())
+                } else {
+                    title
+                },
+                kind: dictionary_kind_from_counts(counts.0, counts.2, counts.3),
+                enabled: true,
+                order: 0,
+                internal_path: final_dir.to_string_lossy().into_owned(),
+                term_count: counts.0,
+                meta_count: counts.1,
+                freq_count: counts.2,
+                pitch_count: counts.3,
+                media_count: counts.4,
+                last_imported: current_unix_time(),
+            },
+        )
+        .unwrap();
+        let second = upsert_dictionary_manifest_entry(&manifest_path, first.clone()).unwrap();
+        assert_eq!(first.dict_id, second.dict_id);
+        assert_eq!(second.order, 0);
+
+        let manifest = read_dictionary_manifest(&manifest_path).unwrap();
+        assert_eq!(manifest.dictionaries.len(), 1);
+        assert_eq!(manifest.dictionaries[0].dict_id, dict_id);
+        assert!(manifest.dictionaries[0].enabled);
+        assert_eq!(manifest.dictionaries[0].kind, "term");
+        assert_eq!(manifest.dictionaries[0].internal_path, first.internal_path);
+        assert_eq!(manifest.dictionaries[0].term_count, counts.0);
+        assert!(manifest.dictionaries[0].last_imported > 0);
+
+        let plan = enabled_dictionary_load_plan(&manifest);
+        assert_eq!(plan.len(), 1);
+        let backend = DictBackend::load(&plan).expect("linked runtime loads real dictionary");
+        let results = backend.lookup("学校").expect("real lookup succeeds");
+        assert!(!results.is_empty(), "real lookup should return results");
+
+        eprintln!("title={}", first.title);
+        eprintln!("dict_id={}", first.dict_id);
+        eprintln!(
+            "counts term={} meta={} freq={} pitch={} media={}",
+            counts.0, counts.1, counts.2, counts.3, counts.4
+        );
+        eprintln!("lookup_results={}", results.len());
+
+        let _ = fs::remove_dir_all(root);
+    }
 }

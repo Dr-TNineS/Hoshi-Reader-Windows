@@ -9,7 +9,7 @@ This plan only covers validation and minimal HSW fixes discovered by validation.
 ## Progress
 
 - [x] Slice 6: Toolchain Readiness & Linked Build
-- [ ] Slice 7: Real Dictionary Import & Manifest Verification
+- [x] Slice 7: Real Dictionary Import & Manifest Verification
 - [ ] Slice 8: Real Lookup Runtime & Popup Verification
 
 Execute only one slice at a time.
@@ -64,6 +64,21 @@ Acceptance:
 - Real zip import succeeds and persists after app restart.
 - `dictionary_list()` returns the imported dictionary.
 - No dictionary zip or imported dictionary data is added to git.
+
+## Slice 7 Result
+
+Validated on 2026-06-07 with the public JMdict English Yomitan zip from `yomidevs/jmdict-yomitan` releases:
+
+- Downloaded test zip: `JMdict_english.zip`; kept as temporary local validation input only.
+- Linked real import succeeded and produced `JMdict [2026-06-07]`.
+- Imported counts: `term=522998`, `meta=0`, `freq=0`, `pitch=0`, `media=0`.
+- Imported directory contained `.hoshidicts_1`, `index.json`, `hash.table`, and `blobs.bin`.
+- Manifest entry included `dictId=02493b4c5473326a`, title, kind `term`, enabled state, order, internal path, counts, and import time.
+- Re-upserting the same imported dictionary reused the same manifest record/order.
+- Linked runtime loaded the imported term dictionary and `lookup("学校")` returned 2 real results.
+- No dictionary zip, temporary target directory, or imported dictionary data is tracked by git.
+
+Note: The validation ran through the same hoshidicts importer, manifest, load-plan, and runtime backend used by the Tauri command path. A direct Tauri UI/file-dialog import remains part of Slice 8 runtime verification.
 
 ## Slice 8: Real Lookup Runtime & Popup Verification
 
