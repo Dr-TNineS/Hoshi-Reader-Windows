@@ -23,12 +23,38 @@ pub struct DictResult {
     pub glossary: Vec<GlossaryEntry>,
     pub matched: String,
     pub deinflected: String,
+    pub rules: String,
+    pub dictionary: String,
+    pub frequencies: Vec<FrequencyEntry>,
+    pub pitches: Vec<PitchEntry>,
 }
 
 #[derive(Debug, Clone, Serialize, serde::Deserialize)]
 pub struct GlossaryEntry {
     pub dict: String,
     pub text: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FrequencyEntry {
+    pub dictionary: String,
+    pub items: Vec<FrequencyItem>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct FrequencyItem {
+    pub value: i32,
+    pub display_value: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct PitchEntry {
+    pub dictionary: String,
+    pub positions: Vec<i32>,
+    pub transcriptions: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -655,6 +681,16 @@ fn dictionary_kind_from_counts(term_count: usize, freq_count: usize, pitch_count
     }
 }
 
+#[allow(dead_code)]
+fn parse_frequency_entries(json: &str) -> Vec<FrequencyEntry> {
+    serde_json::from_str::<Vec<FrequencyEntry>>(json).unwrap_or_default()
+}
+
+#[allow(dead_code)]
+fn parse_pitch_entries(json: &str) -> Vec<PitchEntry> {
+    serde_json::from_str::<Vec<PitchEntry>>(json).unwrap_or_default()
+}
+
 #[derive(serde::Deserialize)]
 struct ImportedDictionaryIndex {
     title: Option<String>,
@@ -940,12 +976,18 @@ unsafe extern "C" fn collect_lookup_results(
         let glossary_json = c_string(result.term.glossary_json);
         let glossary =
             serde_json::from_str::<Vec<GlossaryEntry>>(&glossary_json).unwrap_or_default();
+        let frequencies_json = c_string(result.term.frequencies_json);
+        let pitches_json = c_string(result.term.pitches_json);
         out.push(DictResult {
             expression: c_string(result.term.expression),
             reading: c_string(result.term.reading),
             glossary,
             matched: c_string(result.matched),
             deinflected: c_string(result.deinflected),
+            rules: c_string(result.term.rules),
+            dictionary: c_string(result.term.dict_name),
+            frequencies: parse_frequency_entries(&frequencies_json),
+            pitches: parse_pitch_entries(&pitches_json),
         });
     }
 }
@@ -1249,6 +1291,79 @@ mod tests {
         assert_eq!(dictionary_kind_from_counts(0, 1, 1), "freq");
         assert_eq!(dictionary_kind_from_counts(0, 0, 1), "pitch");
         assert_eq!(dictionary_kind_from_counts(0, 0, 0), "unknown");
+    }
+
+    #[test]
+    fn parses_frequency_entries() {
+        let parsed = parse_frequency_entries(
+            r#"[{"dictionary":"freq-a","items":[{"value":1,"displayValue":"ichi"},{"value":42,"displayValue":"42"}]}]"#,
+        );
+
+        assert_eq!(
+            parsed,
+            vec![FrequencyEntry {
+                dictionary: "freq-a".into(),
+                items: vec![
+                    FrequencyItem {
+                        value: 1,
+                        display_value: "ichi".into(),
+                    },
+                    FrequencyItem {
+                        value: 42,
+                        display_value: "42".into(),
+                    },
+                ],
+            }]
+        );
+    }
+
+    #[test]
+    fn parses_pitch_entries() {
+        let parsed = parse_pitch_entries(
+            r#"[{"dictionary":"pitch-a","positions":[1,2],"transcriptions":["ア","イ"]}]"#,
+        );
+
+        assert_eq!(
+            parsed,
+            vec![PitchEntry {
+                dictionary: "pitch-a".into(),
+                positions: vec![1, 2],
+                transcriptions: vec!["ア".into(), "イ".into()],
+            }]
+        );
+    }
+
+    #[test]
+    fn invalid_lookup_metadata_json_returns_empty_entries() {
+        assert!(parse_frequency_entries("{not-json").is_empty());
+        assert!(parse_pitch_entries("{not-json").is_empty());
+    }
+
+    #[test]
+    fn dict_result_shape_includes_lookup_metadata() {
+        let result = DictResult {
+            expression: "学校".into(),
+            reading: "がっこう".into(),
+            glossary: vec![GlossaryEntry {
+                dict: "dict-a".into(),
+                text: "school".into(),
+            }],
+            matched: "学校".into(),
+            deinflected: "学校".into(),
+            rules: "n".into(),
+            dictionary: "dict-a".into(),
+            frequencies: parse_frequency_entries(
+                r#"[{"dictionary":"freq-a","items":[{"value":10,"displayValue":"10"}]}]"#,
+            ),
+            pitches: parse_pitch_entries(
+                r#"[{"dictionary":"pitch-a","positions":[1],"transcriptions":["ガッコー"]}]"#,
+            ),
+        };
+
+        assert_eq!(result.rules, "n");
+        assert_eq!(result.dictionary, "dict-a");
+        assert_eq!(result.frequencies[0].items[0].display_value, "10");
+        assert_eq!(result.pitches[0].positions, vec![1]);
     }
 
     #[test]

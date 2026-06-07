@@ -69,6 +69,26 @@ export interface DictResult {
   glossary: GlossaryEntry[];
   matched: string;
   deinflected: string;
+  rules: string;
+  dictionary: string;
+  frequencies: FrequencyEntry[];
+  pitches: PitchEntry[];
+}
+
+export interface FrequencyEntry {
+  dictionary: string;
+  items: FrequencyItem[];
+}
+
+export interface FrequencyItem {
+  value: number;
+  displayValue: string;
+}
+
+export interface PitchEntry {
+  dictionary: string;
+  positions: number[];
+  transcriptions: string[];
 }
 
 export interface DictImportSummary {

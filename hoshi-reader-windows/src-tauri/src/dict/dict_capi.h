@@ -17,6 +17,8 @@ typedef struct {
     const char* reading;
     const char* rules;
     const char* glossary_json;
+    const char* frequencies_json;
+    const char* pitches_json;
     const char* dict_name;
 } TermResultC;
 

@@ -33,7 +33,9 @@
   let readerSelection = $state<ReaderSelection | null>(null);
   let lookupPopEl: HTMLElement | null = $state(null);
   let lookupPopupSize = $state({ width: 306, height: 154 });
-  let lookupState = $state<"idle" | "loading" | "ready" | "empty" | "error">("idle");
+  type LookupState = "idle" | "loading" | "ready" | "empty" | "error" | "noDictionaries" | "engineUnavailable";
+
+  let lookupState = $state<LookupState>("idle");
   let lookupError = $state("");
   let lookupResults = $state<DictResult[]>([]);
   let lookupRequestId = 0;
@@ -245,6 +247,56 @@
     lookupRequestId += 1;
   }
 
+  function lookupStatusMessage(status: DictionaryStatus): string {
+    if (status.status === "noDictionaries") return status.message || "No dictionaries are imported yet.";
+    if (status.status === "engineUnavailable") {
+      return status.message || "Dictionary engine unavailable. Check CMake/C++ tooling and hoshidicts linkage.";
+    }
+    return status.message || "Dictionary status could not be read.";
+  }
+
+  function lookupStateForStatus(status: DictionaryStatus): LookupState {
+    if (status.status === "noDictionaries") return "noDictionaries";
+    if (status.status === "engineUnavailable") return "engineUnavailable";
+    if (status.status === "error") return "error";
+    return "ready";
+  }
+
+  function formatLookupMatch(result: DictResult): string {
+    if (result.matched && result.deinflected && result.matched !== result.deinflected) {
+      return `${result.matched} -> ${result.deinflected}`;
+    }
+    return result.matched || result.deinflected || "";
+  }
+
+  function frequencyLabel(result: DictResult): string {
+    const entry = result.frequencies.find((frequency) => frequency.items.length > 0);
+    if (!entry) return "";
+
+    const values = entry.items
+      .slice(0, 3)
+      .map((item) => item.displayValue || String(item.value))
+      .filter(Boolean);
+    if (values.length === 0) return "";
+    return `${entry.dictionary}: ${values.join(", ")}`;
+  }
+
+  function pitchLabel(result: DictResult): string {
+    const entry = result.pitches.find((pitch) => pitch.positions.length > 0 || pitch.transcriptions.length > 0);
+    if (!entry) return "";
+
+    const details = [
+      entry.positions.length > 0 ? `pitch ${entry.positions.join(", ")}` : "",
+      entry.transcriptions.slice(0, 2).join(", "),
+    ].filter(Boolean);
+    if (details.length === 0) return "";
+    return `${entry.dictionary}: ${details.join(" | ")}`;
+  }
+
+  function resultDictionaryLabel(result: DictResult): string {
+    return result.dictionary || result.glossary[0]?.dict || result.frequencies[0]?.dictionary || result.pitches[0]?.dictionary || "";
+  }
+
   async function importDictionary() {
     try {
       dictionaryStatus = "Importing dictionary...";
@@ -310,8 +362,8 @@
       const status = await invoke<DictionaryStatus>("dict_status");
       if (requestId !== lookupRequestId) return;
       if (status.status !== "ready") {
-        lookupState = "error";
-        lookupError = status.message;
+        lookupState = lookupStateForStatus(status);
+        lookupError = lookupStatusMessage(status);
         return;
       }
 
@@ -447,10 +499,17 @@
         <p class="lookup-text">{readerSelection.text}</p>
         {#if lookupState === "loading"}
           <p class="lookup-state">Looking up...</p>
+        {:else if lookupState === "noDictionaries"}
+          <div class="lookup-state-block">
+            <p class="lookup-state">{lookupError}</p>
+            <button class="lookup-action" onclick={importDictionary}>Import Dictionary</button>
+          </div>
+        {:else if lookupState === "engineUnavailable"}
+          <p class="lookup-state">{lookupError}</p>
         {:else if lookupState === "error"}
           <p class="lookup-state">{lookupError}</p>
         {:else if lookupState === "empty"}
-          <p class="lookup-state">No dictionary results.</p>
+          <p class="lookup-state">No dictionary results for "{readerSelection.text}".</p>
         {:else if lookupState === "ready"}
           <div class="lookup-results">
             {#each lookupResults.slice(0, 3) as result}
@@ -461,12 +520,28 @@
                     <span class="lookup-reading">{result.reading}</span>
                   {/if}
                 </div>
-                {#if result.matched || result.deinflected}
-                  <p class="lookup-match">{result.matched}{result.deinflected ? ` -> ${result.deinflected}` : ""}</p>
+                {#if resultDictionaryLabel(result)}
+                  <p class="lookup-meta">{resultDictionaryLabel(result)}</p>
                 {/if}
-                {#each result.glossary.slice(0, 2) as entry}
+                {#if formatLookupMatch(result) || result.rules}
+                  <div class="lookup-tags">
+                    {#if formatLookupMatch(result)}
+                      <span class="lookup-tag">{formatLookupMatch(result)}</span>
+                    {/if}
+                    {#if result.rules}
+                      <span class="lookup-tag">{result.rules}</span>
+                    {/if}
+                  </div>
+                {/if}
+                {#each result.glossary.slice(0, 3) as entry}
                   <p class="lookup-glossary"><span>{entry.dict}</span>{entry.text}</p>
                 {/each}
+                {#if frequencyLabel(result)}
+                  <p class="lookup-detail"><span>Freq</span>{frequencyLabel(result)}</p>
+                {/if}
+                {#if pitchLabel(result)}
+                  <p class="lookup-detail"><span>Pitch</span>{pitchLabel(result)}</p>
+                {/if}
               </section>
             {/each}
           </div>
@@ -542,18 +617,25 @@
   .toc-row.active { background: #315c50; color: #fff; }
   .toc-row:disabled { color: #686d72; cursor: default; }
   .toc-row:disabled:hover { background: transparent; }
-  .lookup-pop { position: fixed; z-index: 125; display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: #23262a; color: #e8eaed; border: 1px solid #4b5056; border-radius: 6px; box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42); }
+  .lookup-pop { position: fixed; z-index: 125; display: flex; flex-direction: column; gap: 8px; max-height: min(520px, calc(100vh - 92px)); padding: 10px 12px; background: #23262a; color: #e8eaed; border: 1px solid #4b5056; border-radius: 6px; box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42); overflow: hidden; }
   .lookup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #9aa0a6; font-size: 11px; text-transform: uppercase; }
   .lookup-head button { flex-shrink: 0; padding: 3px 8px; background: #33383e; color: #d7d9dc; border: 1px solid #555c64; border-radius: 3px; cursor: pointer; font-size: 11px; text-transform: none; }
   .lookup-text { color: #fff; font-size: 18px; line-height: 1.35; overflow-wrap: anywhere; max-height: 54px; overflow: hidden; }
-  .lookup-state { color: #b7bcc3; font-size: 12px; line-height: 1.35; }
-  .lookup-results { display: flex; flex-direction: column; gap: 8px; max-height: 220px; overflow-y: auto; padding-right: 2px; }
-  .lookup-result { display: flex; flex-direction: column; gap: 4px; padding-top: 8px; border-top: 1px solid #3c4043; }
-  .lookup-result-head { display: flex; align-items: baseline; gap: 8px; color: #fff; font-size: 16px; line-height: 1.25; }
-  .lookup-reading { color: #b7bcc3; font-size: 12px; }
-  .lookup-match { color: #8ab4f8; font-size: 11px; line-height: 1.3; }
+  .lookup-state-block { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
+  .lookup-state { color: #b7bcc3; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+  .lookup-action { padding: 5px 10px; background: #3b8f78; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .lookup-action:hover { background: #46a187; }
+  .lookup-results { display: flex; flex-direction: column; gap: 8px; max-height: min(360px, calc(100vh - 220px)); overflow-y: auto; padding-right: 2px; }
+  .lookup-result { display: flex; flex-direction: column; gap: 5px; padding-top: 8px; border-top: 1px solid #3c4043; min-width: 0; }
+  .lookup-result-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; color: #fff; font-size: 16px; line-height: 1.25; overflow-wrap: anywhere; }
+  .lookup-reading { color: #b7bcc3; font-size: 12px; overflow-wrap: anywhere; }
+  .lookup-meta { color: #81c995; font-size: 11px; line-height: 1.3; overflow-wrap: anywhere; }
+  .lookup-tags { display: flex; flex-wrap: wrap; gap: 4px; }
+  .lookup-tag { max-width: 100%; padding: 2px 6px; background: #30343a; color: #8ab4f8; border: 1px solid #454b52; border-radius: 4px; font-size: 11px; line-height: 1.25; overflow-wrap: anywhere; }
   .lookup-glossary { color: #d7d9dc; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
   .lookup-glossary span { margin-right: 6px; color: #81c995; font-size: 11px; }
+  .lookup-detail { color: #c8ccd1; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
+  .lookup-detail span { margin-right: 6px; color: #fdd663; }
   .ctrls { position: fixed; bottom: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 5px; background: #111; border-top: 1px solid #333; z-index: 100; }
   .ctrls button { padding: 4px 10px; background: #333; color: #ccc; border: 1px solid #555; border-radius: 3px; cursor: pointer; font-size: 12px; }
   .ctrls button:hover { background: #444; }

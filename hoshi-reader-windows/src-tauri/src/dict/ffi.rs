@@ -12,6 +12,8 @@ pub struct TermResultC {
     pub reading: *const std::ffi::c_char,
     pub rules: *const std::ffi::c_char,
     pub glossary_json: *const std::ffi::c_char,
+    pub frequencies_json: *const std::ffi::c_char,
+    pub pitches_json: *const std::ffi::c_char,
     pub dict_name: *const std::ffi::c_char,
 }
 
@@ -35,7 +37,13 @@ pub struct DictImportResultC {
     pub errors_json: *const std::ffi::c_char,
 }
 
-pub type ResultCallback = Option<unsafe extern "C" fn(results: *const LookupResultC, count: i32, user_data: *mut std::ffi::c_void)>;
+pub type ResultCallback = Option<
+    unsafe extern "C" fn(
+        results: *const LookupResultC,
+        count: i32,
+        user_data: *mut std::ffi::c_void,
+    ),
+>;
 
 #[allow(dead_code)]
 extern "C" {
@@ -48,8 +56,20 @@ extern "C" {
     pub fn deinflector_destroy(d: Deinflector);
     pub fn lookup_engine_create(q: DictQuery, d: Deinflector) -> LookupEngine;
     pub fn lookup_engine_destroy(e: LookupEngine);
-    pub fn lookup_engine_lookup(e: LookupEngine, text: *const std::ffi::c_char, max_results: i32, scan_length: i32, cb: ResultCallback, user_data: *mut std::ffi::c_void) -> i32;
-    pub fn dict_import_yomitan_zip(zip_path: *const std::ffi::c_char, output_dir: *const std::ffi::c_char, low_ram: i32, out: *mut DictImportResultC) -> i32;
+    pub fn lookup_engine_lookup(
+        e: LookupEngine,
+        text: *const std::ffi::c_char,
+        max_results: i32,
+        scan_length: i32,
+        cb: ResultCallback,
+        user_data: *mut std::ffi::c_void,
+    ) -> i32;
+    pub fn dict_import_yomitan_zip(
+        zip_path: *const std::ffi::c_char,
+        output_dir: *const std::ffi::c_char,
+        low_ram: i32,
+        out: *mut DictImportResultC,
+    ) -> i32;
     pub fn free_result(r: *mut TermResultC);
     pub fn free_import_result(r: *mut DictImportResultC);
 }

@@ -55,6 +55,8 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Supports Shift hover lookup trigger.
   - Supports holding Shift while moving the pointer to continuously rescan/select new text.
   - Popup prefers left/right side placement beside the selected text, with top/bottom fallback.
+  - Popup distinguishes loading, no dictionary, engine unavailable, empty, error, and ready states.
+  - Popup renders the current lookup result shape: expression, reading, source dictionary, matched/deinflected text, rules, glossary, frequency, and pitch.
   - Popup clears on page/chapter changes, TOC jumps, shelf return, close, and Escape.
 - Dictionary backend:
   - `dict_status` returns structured dictionary status: ready, no dictionaries, engine unavailable, or error.
@@ -69,12 +71,13 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - `HSW_HOSHIDICTS_DIR` can override the default local hoshidicts path.
   - Bookshelf has a minimal `Import Dictionary` entry for Yomitan `.zip` files.
   - Dictionary import uses zip content hash as stable `dict_id` and records successful imports in the manifest.
+  - `DictResult` includes rules, source dictionary, frequency entries, and pitch entries.
 
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata is still JSON.
-- No full frequency/pitch result shape in `DictResult`.
 - No verified real hoshidicts link/import/lookup flow on this machine.
+- Real lookup result UX has not been manually verified with linked hoshidicts and real dictionary data on this machine.
 - No dictionary management/settings UI.
 - No Anki integration.
 - No sync implementation.
@@ -86,7 +89,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 
 - Legacy path-only bookshelf records may fail if the original EPUB is moved, renamed, or deleted.
 - On machines without CMake/C++ build tools, the hoshidicts backend and importer remain unavailable.
-- Without app data dictionaries under `dictionaries/imported/*`, `dict_status` returns false.
+- Without imported dictionaries in the app data manifest, `dict_status` reports `noDictionaries`.
 - Reader layout correctness for arbitrary EPUBs is not fully verified.
 - Rust-side character counts and frontend DOM-based progress need further cross-validation.
 - Cover/image rendering depends on temporary extraction path mapping and asset URL rewriting.

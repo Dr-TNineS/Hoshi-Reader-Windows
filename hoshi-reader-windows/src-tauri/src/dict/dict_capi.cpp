@@ -76,6 +76,56 @@ static char* glossary_to_json(const std::vector<GlossaryEntry>& glossaries) {
     return result;
 }
 
+static char* frequencies_to_json(const std::vector<FrequencyEntry>& frequencies) {
+    std::string json = "[";
+    for (size_t i = 0; i < frequencies.size(); i++) {
+        if (i > 0) json += ",";
+        json += "{";
+        json += "\"dictionary\":";
+        append_json_string(json, frequencies[i].dict_name);
+        json += ",\"items\":[";
+        for (size_t j = 0; j < frequencies[i].frequencies.size(); j++) {
+            if (j > 0) json += ",";
+            json += "{";
+            json += "\"value\":";
+            json += std::to_string(frequencies[i].frequencies[j].value);
+            json += ",\"displayValue\":";
+            append_json_string(json, frequencies[i].frequencies[j].display_value);
+            json += "}";
+        }
+        json += "]}";
+    }
+    json += "]";
+    char* result = (char*)malloc(json.size() + 1);
+    memcpy(result, json.c_str(), json.size() + 1);
+    return result;
+}
+
+static char* pitches_to_json(const std::vector<PitchEntry>& pitches) {
+    std::string json = "[";
+    for (size_t i = 0; i < pitches.size(); i++) {
+        if (i > 0) json += ",";
+        json += "{";
+        json += "\"dictionary\":";
+        append_json_string(json, pitches[i].dict_name);
+        json += ",\"positions\":[";
+        for (size_t j = 0; j < pitches[i].pitch_positions.size(); j++) {
+            if (j > 0) json += ",";
+            json += std::to_string(pitches[i].pitch_positions[j]);
+        }
+        json += "],\"transcriptions\":[";
+        for (size_t j = 0; j < pitches[i].transcriptions.size(); j++) {
+            if (j > 0) json += ",";
+            append_json_string(json, pitches[i].transcriptions[j]);
+        }
+        json += "]}";
+    }
+    json += "]";
+    char* result = (char*)malloc(json.size() + 1);
+    memcpy(result, json.c_str(), json.size() + 1);
+    return result;
+}
+
 static void free_lookup_result(LookupResultC* r) {
     free((void*)r->matched);
     free((void*)r->deinflected);
@@ -160,6 +210,8 @@ int lookup_engine_lookup(LookupEngine* e, const char* text, int max_results, int
             cr.term.reading = strdup_c(r.term.reading);
             cr.term.rules = strdup_c(r.term.rules);
             cr.term.glossary_json = glossary_to_json(r.term.glossaries);
+            cr.term.frequencies_json = frequencies_to_json(r.term.frequencies);
+            cr.term.pitches_json = pitches_to_json(r.term.pitches);
             cr.term.dict_name = strdup_c(r.term.glossaries.empty() ? "" : r.term.glossaries[0].dict_name);
             cr.preprocessor_steps = r.preprocessor_steps;
             c_results.push_back(cr);
@@ -177,6 +229,8 @@ void free_result(TermResultC* r) {
     free((void*)r->reading);
     free((void*)r->rules);
     free((void*)r->glossary_json);
+    free((void*)r->frequencies_json);
+    free((void*)r->pitches_json);
     free((void*)r->dict_name);
 }
 

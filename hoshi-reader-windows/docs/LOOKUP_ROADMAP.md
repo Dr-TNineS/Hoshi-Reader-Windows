@@ -12,11 +12,11 @@ This plan only continues the HSW Windows implementation. Do not modify HSA, `hos
 
 - [x] Slice 1: Dictionary Status & Manifest
 - [x] Slice 2: Query Rebuild & Dictionary Types
-- [ ] Slice 3: Real Lookup Result Shape
-- [ ] Slice 4: Popup Result UX
+- [x] Slice 3: Real Lookup Result Shape
+- [x] Slice 4: Popup Result UX
 - [ ] Slice 5: Anki Boundary Prep
 
-All remaining slices are currently marked incomplete. Execute only one slice at a time.
+Execute only one slice at a time.
 
 ## How to use this file with Codex
 
