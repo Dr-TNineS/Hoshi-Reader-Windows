@@ -57,6 +57,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Popup prefers left/right side placement beside the selected text, with top/bottom fallback.
   - Popup distinguishes loading, no dictionary, engine unavailable, empty, error, and ready states.
   - Popup renders the current lookup result shape: expression, reading, source dictionary, matched/deinflected text, rules, glossary, frequency, and pitch.
+  - Popup has a disabled Anki boundary affordance and can build a typed lookup-to-Anki payload from the selected result and current book/chapter context.
   - Popup clears on page/chapter changes, TOC jumps, shelf return, close, and Escape.
 - Dictionary backend:
   - `dict_status` returns structured dictionary status: ready, no dictionaries, engine unavailable, or error.
@@ -79,7 +80,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - No verified real hoshidicts link/import/lookup flow on this machine.
 - Real lookup result UX has not been manually verified with linked hoshidicts and real dictionary data on this machine.
 - No dictionary management/settings UI.
-- No Anki integration.
+- No real Anki integration; only the frontend payload boundary exists.
 - No sync implementation.
 - No settings or appearance panel.
 - No verified app-owned cover thumbnail cache.

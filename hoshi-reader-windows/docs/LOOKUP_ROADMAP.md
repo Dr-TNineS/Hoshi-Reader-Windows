@@ -14,7 +14,7 @@ This plan only continues the HSW Windows implementation. Do not modify HSA, `hos
 - [x] Slice 2: Query Rebuild & Dictionary Types
 - [x] Slice 3: Real Lookup Result Shape
 - [x] Slice 4: Popup Result UX
-- [ ] Slice 5: Anki Boundary Prep
+- [x] Slice 5: Anki Boundary Prep
 
 Execute only one slice at a time.
 

@@ -15,9 +15,8 @@ This file is the short operational handoff for future agents. Keep detailed stat
 
 ## Current Priorities
 
-1. Continue reader lookup work from `docs/LOOKUP_ROADMAP.md`.
-   - Execute only one remaining slice at a time.
-   - Next recommended slice: Slice 5, Anki Boundary Prep.
+1. Treat the current reader lookup slices in `docs/LOOKUP_ROADMAP.md` as complete.
+   - Next recommended work: verify real hoshidicts import/lookup with CMake/C++ tooling and real dictionary data, or plan a new focused slice.
 2. Preserve the bookshelf/import/reader/session main path described in `docs/READER_ENTRY_CHARACTERIZATION.md`.
 3. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 4. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.

@@ -14,7 +14,7 @@
     saveReadingProgress,
   } from "./lib/storage";
   import { findChapterIndex, flattenToc } from "./lib/toc";
-  import type { DictImportSummary, DictResult, DictionaryStatus, EpubMeta, ReaderProgress, ReaderSelection } from "./lib/types";
+  import type { DictImportSummary, DictResult, DictionaryStatus, EpubMeta, LookupAnkiPayload, ReaderProgress, ReaderSelection } from "./lib/types";
   import type { BookLocator, BookRecord, LibraryBookRecord } from "./lib/storage";
 
   function clampChapter(chapter: number, total: number): number {
@@ -297,6 +297,33 @@
     return result.dictionary || result.glossary[0]?.dict || result.frequencies[0]?.dictionary || result.pitches[0]?.dictionary || "";
   }
 
+  function buildAnkiPayload(result: DictResult, resultIndex: number): LookupAnkiPayload {
+    return {
+      selectedText: readerSelection?.text ?? "",
+      resultIndex,
+      expression: result.expression,
+      reading: result.reading,
+      glossary: result.glossary,
+      dictionary: resultDictionaryLabel(result),
+      matched: result.matched,
+      deinflected: result.deinflected,
+      rules: result.rules,
+      sourceBook: {
+        title: meta?.title ?? null,
+        bookId: currentBookLocator?.bookId,
+        path: currentBookLocator?.path,
+        sourcePath: currentBookLocator?.sourcePath,
+        libraryPath: currentBookLocator?.libraryPath,
+      },
+      sourceChapter: {
+        chapterIndex,
+        chapterNumber: chapterIndex + 1,
+        totalChapters: meta?.spine.length ?? 0,
+        idref: meta?.spine[chapterIndex]?.idref ?? null,
+      },
+    };
+  }
+
   async function importDictionary() {
     try {
       dictionaryStatus = "Importing dictionary...";
@@ -512,7 +539,7 @@
           <p class="lookup-state">No dictionary results for "{readerSelection.text}".</p>
         {:else if lookupState === "ready"}
           <div class="lookup-results">
-            {#each lookupResults.slice(0, 3) as result}
+            {#each lookupResults.slice(0, 3) as result, resultIndex}
               <section class="lookup-result">
                 <div class="lookup-result-head">
                   <span>{result.expression}</span>
@@ -542,6 +569,13 @@
                 {#if pitchLabel(result)}
                   <p class="lookup-detail"><span>Pitch</span>{pitchLabel(result)}</p>
                 {/if}
+                <button
+                  class="lookup-anki"
+                  disabled
+                  title={`Payload prepared for ${buildAnkiPayload(result, resultIndex).sourceBook.title ?? "current book"}`}
+                >
+                  Anki not configured
+                </button>
               </section>
             {/each}
           </div>
@@ -636,6 +670,7 @@
   .lookup-glossary span { margin-right: 6px; color: #81c995; font-size: 11px; }
   .lookup-detail { color: #c8ccd1; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
   .lookup-detail span { margin-right: 6px; color: #fdd663; }
+  .lookup-anki { align-self: flex-start; margin-top: 2px; padding: 3px 7px; background: #2b2f34; color: #7f858c; border: 1px solid #444a51; border-radius: 4px; cursor: not-allowed; font-size: 11px; }
   .ctrls { position: fixed; bottom: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 5px; background: #111; border-top: 1px solid #333; z-index: 100; }
   .ctrls button { padding: 4px 10px; background: #333; color: #ccc; border: 1px solid #555; border-radius: 3px; cursor: pointer; font-size: 12px; }
   .ctrls button:hover { background: #444; }

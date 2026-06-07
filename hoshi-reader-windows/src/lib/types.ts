@@ -75,6 +75,35 @@ export interface DictResult {
   pitches: PitchEntry[];
 }
 
+export interface LookupAnkiPayload {
+  selectedText: string;
+  resultIndex: number;
+  expression: string;
+  reading: string;
+  glossary: GlossaryEntry[];
+  dictionary: string;
+  matched: string;
+  deinflected: string;
+  rules: string;
+  sourceBook: LookupAnkiSourceBook;
+  sourceChapter: LookupAnkiSourceChapter;
+}
+
+export interface LookupAnkiSourceBook {
+  title: string | null;
+  bookId?: string;
+  path?: string;
+  sourcePath?: string;
+  libraryPath?: string;
+}
+
+export interface LookupAnkiSourceChapter {
+  chapterIndex: number;
+  chapterNumber: number;
+  totalChapters: number;
+  idref: string | null;
+}
+
 export interface FrequencyEntry {
   dictionary: string;
   items: FrequencyItem[];
