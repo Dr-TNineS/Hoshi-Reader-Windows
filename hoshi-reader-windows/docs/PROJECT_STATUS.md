@@ -78,6 +78,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Linked backend validation imported a real JMdict English Yomitan zip, wrote the dictionary manifest, loaded the runtime backend, and returned real results for `lookup("学校")`.
   - Direct Tauri file-dialog import was verified with `jitendex-yomitan.zip`; the reader popup rendered real Jitendex results for text selected from a real `かがみの孤城` EPUB.
   - Dictionary importer exceptions from the C bridge are surfaced through the Rust command path instead of collapsing to only `Dictionary import failed.`
+  - `MK3Fix0213.zip` imports on Windows through a compatibility retry path that skips legacy-encoded media entries, preserves the original manifest title, and loads real lookup results.
 
 ## Not Implemented Or Not Verified
 
@@ -95,7 +96,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - On shells without CMake/C++ build tools in `PATH`, the hoshidicts backend and importer remain unavailable.
 - On this machine, linked hoshidicts checks require a VS developer shell or equivalent `PATH` containing CMake and MSVC tools.
 - Without imported dictionaries in the app data manifest, `dict_status` reports `noDictionaries`.
-- `MK3Fix0213.zip` currently fails linked import on Windows with `No mapping for the Unicode character exists in the target multi-byte code page`, likely due to non-Unicode zip entry names.
+- Compatibility dictionary imports that hit Windows code-page failures skip media entries, so affected dictionaries such as `MK3Fix0213.zip` currently import with `mediaCount=0`.
 - Reader layout correctness for arbitrary EPUBs is not fully verified.
 - Rust-side character counts and frontend DOM-based progress need further cross-validation.
 - Cover/image rendering depends on temporary extraction path mapping and asset URL rewriting.

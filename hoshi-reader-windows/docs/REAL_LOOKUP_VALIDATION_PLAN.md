@@ -11,6 +11,7 @@ This plan only covers validation and minimal HSW fixes discovered by validation.
 - [x] Slice 6: Toolchain Readiness & Linked Build
 - [x] Slice 7: Real Dictionary Import & Manifest Verification
 - [x] Slice 8: Real Lookup Runtime & Popup Verification
+- [x] Slice 9: MK3 Windows Import Encoding Compatibility
 
 Execute only one slice at a time.
 
@@ -114,6 +115,36 @@ Validated on 2026-06-08 with the Tauri runtime, a real Japanese EPUB, and a real
 - Temporary dictionary zips, target directories, and runtime logs remain local validation artifacts and are not tracked by git.
 
 Not separately re-verified in this slice: fast selection race behavior, Shift hover updates, TOC/chapter/shelf/Close/Esc clearing beyond the page-turn and shelf-return paths observed here, engine-unavailable, empty-result, and manifest-error popup states. These behaviors remain covered by existing implementation state and should get future focused UI automation/regression coverage.
+
+## Slice 9: MK3 Windows Import Encoding Compatibility
+
+Fix the user-provided `MK3Fix0213.zip` import failure without modifying `third_party/hoshidicts`.
+
+Key checks:
+
+- Reproduce the original linked importer failure on Windows.
+- Keep normal Yomitan imports on the original direct path.
+- On Windows code-page import failures, retry through an HSW-generated lookup-safe compatibility zip.
+- Preserve the user-facing manifest title from the original `index.json`.
+- Verify the resulting dictionary loads and returns real lookup results.
+
+Acceptance:
+
+- Original `MK3Fix0213.zip` imports through the linked HSW path.
+- The manifest title is `明鏡国語辞典 第三版`.
+- Runtime lookup returns real results.
+- No source zip, compatibility zip, target directory, or imported dictionary data is tracked by git.
+
+## Slice 9 Result
+
+Validated on 2026-06-08 with the original user-provided `MK3Fix0213.zip`:
+
+- The direct hoshidicts import still fails first with the Windows code-page error, confirming the compatibility path is needed.
+- HSW now retries those failures with a temporary lookup-safe zip that keeps only root-level Yomitan lookup files: `index.json`, `styles.css`, `term_bank_*.json`, `term_meta_bank_*.json`, and `tag_bank_*.json`.
+- The retry rewrites the temporary import title to ASCII so hoshidicts can create and load the import directory on Windows; the persisted manifest restores the original title `明鏡国語辞典 第三版`.
+- `MK3Fix0213.zip` imported successfully with `dict_id=93e8e532b599ba4a`, `term=140821`, `meta=0`, `freq=0`, `pitch=0`, `media=0`.
+- Linked runtime loaded the imported dictionary and `lookup("学校")` returned 2 real results.
+- Media count is intentionally `0` on the compatibility path because `gaiji/` and other media entries are skipped to avoid legacy filename encoding failures. Lookup remains usable; future work can map popup source names back to manifest titles if the internal ASCII title appears in result metadata.
 
 ## Validation Commands
 

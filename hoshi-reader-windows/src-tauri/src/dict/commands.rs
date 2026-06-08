@@ -10,6 +10,10 @@ use tauri::{AppHandle, Manager};
 use crate::dict::ffi;
 #[cfg(hoshi_dicts_linked)]
 use std::ffi::{c_void, CStr, CString};
+#[cfg(hoshi_dicts_linked)]
+use std::fs::File;
+#[cfg(hoshi_dicts_linked)]
+use std::io::{Read, Write};
 
 #[cfg(hoshi_dicts_linked)]
 const MAX_LOOKUP_RESULTS: i32 = 16;
@@ -712,8 +716,6 @@ fn import_yomitan_zip_linked(
     app: &AppHandle,
     state: &DictState,
 ) -> Result<DictImportSummary, String> {
-    use std::ptr;
-
     let staging_root = imported_root.join(format!(".importing-{dict_id}"));
     if staging_root.exists() {
         fs::remove_dir_all(&staging_root)
@@ -721,6 +723,116 @@ fn import_yomitan_zip_linked(
     }
     fs::create_dir_all(&staging_root)
         .map_err(|e| format!("Cannot create dictionary import staging dir: {e}"))?;
+
+    let mut attempt = run_linked_import_attempt(source, &staging_root)?;
+    let mut restored_title = None;
+    let mut lookup_safe_zip = None;
+
+    if !attempt.ok() && is_windows_code_page_import_error(&attempt.errors) {
+        let _ = fs::remove_dir_all(&staging_root);
+        fs::create_dir_all(&staging_root)
+            .map_err(|e| format!("Cannot recreate dictionary import staging dir: {e}"))?;
+
+        let safe_zip_path = imported_root.join(format!(".importing-{dict_id}.lookup-safe.zip"));
+        let safe_zip = create_lookup_safe_import_zip(source, &safe_zip_path, dict_id)?;
+        attempt = run_linked_import_attempt(&safe_zip.path, &staging_root)?;
+        restored_title = safe_zip.original_title;
+        lookup_safe_zip = Some(safe_zip.path);
+    }
+
+    if !attempt.ok() {
+        let _ = fs::remove_dir_all(&staging_root);
+        if let Some(path) = lookup_safe_zip {
+            let _ = fs::remove_file(path);
+        }
+        return Err(import_error_message(&attempt.errors));
+    }
+
+    let imported_dir = find_single_imported_dictionary_dir(&staging_root)?;
+    if final_dir.exists() {
+        fs::remove_dir_all(final_dir)
+            .map_err(|e| format!("Cannot replace existing dictionary dir: {e}"))?;
+    }
+    fs::rename(&imported_dir, final_dir)
+        .or_else(|_| {
+            copy_dir_all(&imported_dir, final_dir)?;
+            fs::remove_dir_all(&imported_dir)
+        })
+        .map_err(|e| format!("Cannot move imported dictionary into library: {e}"))?;
+    let _ = fs::remove_dir_all(&staging_root);
+    if let Some(path) = lookup_safe_zip {
+        let _ = fs::remove_file(path);
+    }
+
+    let entry = upsert_dictionary_manifest_entry(
+        manifest_path,
+        DictionaryManifestEntry {
+            dict_id: dict_id.to_string(),
+            title: if let Some(title) = restored_title {
+                title
+            } else if attempt.title.trim().is_empty() {
+                read_imported_dictionary_title(final_dir)
+                    .unwrap_or_else(|| "Imported Dictionary".into())
+            } else {
+                attempt.title
+            },
+            kind: dictionary_kind_from_counts(attempt.counts.0, attempt.counts.2, attempt.counts.3),
+            enabled: true,
+            order: 0,
+            internal_path: final_dir.to_string_lossy().into_owned(),
+            term_count: attempt.counts.0,
+            meta_count: attempt.counts.1,
+            freq_count: attempt.counts.2,
+            pitch_count: attempt.counts.3,
+            media_count: attempt.counts.4,
+            last_imported: current_unix_time(),
+        },
+    )?;
+
+    state.initialize(app);
+    let runtime = state.runtime.lock().unwrap();
+    Ok(DictImportSummary {
+        dict_id: entry.dict_id,
+        title: entry.title,
+        dictionary_path: entry.internal_path,
+        term_count: entry.term_count,
+        meta_count: entry.meta_count,
+        freq_count: entry.freq_count,
+        pitch_count: entry.pitch_count,
+        media_count: entry.media_count,
+        ready: dict_runtime_ready(&runtime),
+        reused: false,
+    })
+}
+
+#[cfg(hoshi_dicts_linked)]
+struct LinkedImportAttempt {
+    status: i32,
+    success: bool,
+    title: String,
+    counts: (usize, usize, usize, usize, usize),
+    errors: Vec<String>,
+}
+
+#[cfg(hoshi_dicts_linked)]
+impl LinkedImportAttempt {
+    fn ok(&self) -> bool {
+        self.status == 0 && self.success
+    }
+}
+
+#[cfg(hoshi_dicts_linked)]
+struct LookupSafeImportZip {
+    path: PathBuf,
+    original_title: Option<String>,
+}
+
+#[cfg(hoshi_dicts_linked)]
+fn run_linked_import_attempt(
+    source: &Path,
+    staging_root: &Path,
+) -> Result<LinkedImportAttempt, String> {
+    use std::ptr;
 
     let source_c = CString::new(source.to_string_lossy().as_bytes()).map_err(|_| {
         format!(
@@ -750,78 +862,131 @@ fn import_yomitan_zip_linked(
     let title = unsafe { c_string(raw.title) };
     let errors_json = unsafe { c_string(raw.errors_json) };
     let errors = serde_json::from_str::<Vec<String>>(&errors_json).unwrap_or_default();
-    let summary_counts = (
-        raw.term_count,
-        raw.meta_count,
-        raw.freq_count,
-        raw.pitch_count,
-        raw.media_count,
-    );
-    let success = raw.success != 0;
+    let attempt = LinkedImportAttempt {
+        status,
+        success: raw.success != 0,
+        title,
+        counts: (
+            raw.term_count,
+            raw.meta_count,
+            raw.freq_count,
+            raw.pitch_count,
+            raw.media_count,
+        ),
+        errors,
+    };
     unsafe {
         ffi::free_import_result(&mut raw);
     }
+    Ok(attempt)
+}
 
-    if status != 0 {
-        let _ = fs::remove_dir_all(&staging_root);
-        return Err(import_error_message(&errors));
+#[cfg(hoshi_dicts_linked)]
+fn is_windows_code_page_import_error(errors: &[String]) -> bool {
+    errors
+        .iter()
+        .any(|error| error.contains("Unicode character") || error.contains("multi-byte code page"))
+}
+
+#[cfg(hoshi_dicts_linked)]
+fn create_lookup_safe_import_zip(
+    source: &Path,
+    output: &Path,
+    dict_id: &str,
+) -> Result<LookupSafeImportZip, String> {
+    if let Some(parent) = output.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Cannot create dictionary compatibility zip dir: {e}"))?;
+    }
+    let input = File::open(source).map_err(|e| format!("Cannot open dictionary zip: {e}"))?;
+    let mut archive =
+        zip::ZipArchive::new(input).map_err(|e| format!("Cannot read dictionary zip: {e}"))?;
+    let output_file = File::create(output)
+        .map_err(|e| format!("Cannot create dictionary compatibility zip: {e}"))?;
+    let mut writer = zip::ZipWriter::new(output_file);
+    let options =
+        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+    let mut original_index_json = None;
+
+    for i in 0..archive.len() {
+        let mut file = archive
+            .by_index(i)
+            .map_err(|e| format!("Cannot read dictionary zip entry: {e}"))?;
+        let name = file.name().replace('\\', "/");
+        if !is_lookup_safe_yomitan_entry(&name) {
+            continue;
+        }
+
+        let mut bytes = Vec::new();
+        file.read_to_end(&mut bytes)
+            .map_err(|e| format!("Cannot read dictionary zip entry: {e}"))?;
+        if name == "index.json" {
+            let index_json = String::from_utf8(bytes)
+                .map_err(|e| format!("Dictionary index.json is not UTF-8: {e}"))?;
+            original_index_json = Some(index_json.clone());
+            bytes = rewrite_index_title_for_compat_import(&index_json, dict_id)?;
+        }
+
+        writer
+            .start_file(name, options)
+            .map_err(|e| format!("Cannot write dictionary compatibility zip entry: {e}"))?;
+        writer
+            .write_all(&bytes)
+            .map_err(|e| format!("Cannot write dictionary compatibility zip entry: {e}"))?;
     }
 
-    if !success {
-        let _ = fs::remove_dir_all(&staging_root);
-        return Err(import_error_message(&errors));
-    }
-
-    let imported_dir = find_single_imported_dictionary_dir(&staging_root)?;
-    if final_dir.exists() {
-        fs::remove_dir_all(final_dir)
-            .map_err(|e| format!("Cannot replace existing dictionary dir: {e}"))?;
-    }
-    fs::rename(&imported_dir, final_dir)
-        .or_else(|_| {
-            copy_dir_all(&imported_dir, final_dir)?;
-            fs::remove_dir_all(&imported_dir)
-        })
-        .map_err(|e| format!("Cannot move imported dictionary into library: {e}"))?;
-    let _ = fs::remove_dir_all(&staging_root);
-
-    let entry = upsert_dictionary_manifest_entry(
-        manifest_path,
-        DictionaryManifestEntry {
-            dict_id: dict_id.to_string(),
-            title: if title.trim().is_empty() {
-                read_imported_dictionary_title(final_dir)
-                    .unwrap_or_else(|| "Imported Dictionary".into())
-            } else {
-                title
-            },
-            kind: dictionary_kind_from_counts(summary_counts.0, summary_counts.2, summary_counts.3),
-            enabled: true,
-            order: 0,
-            internal_path: final_dir.to_string_lossy().into_owned(),
-            term_count: summary_counts.0,
-            meta_count: summary_counts.1,
-            freq_count: summary_counts.2,
-            pitch_count: summary_counts.3,
-            media_count: summary_counts.4,
-            last_imported: current_unix_time(),
-        },
-    )?;
-
-    state.initialize(app);
-    let runtime = state.runtime.lock().unwrap();
-    Ok(DictImportSummary {
-        dict_id: entry.dict_id,
-        title: entry.title,
-        dictionary_path: entry.internal_path,
-        term_count: entry.term_count,
-        meta_count: entry.meta_count,
-        freq_count: entry.freq_count,
-        pitch_count: entry.pitch_count,
-        media_count: entry.media_count,
-        ready: dict_runtime_ready(&runtime),
-        reused: false,
+    writer
+        .finish()
+        .map_err(|e| format!("Cannot finalize dictionary compatibility zip: {e}"))?;
+    let original_index_json = original_index_json
+        .ok_or_else(|| "Dictionary zip does not contain index.json.".to_string())?;
+    let original_title = serde_json::from_str::<ImportedDictionaryIndex>(
+        original_index_json.trim_start_matches('\u{feff}'),
+    )
+    .ok()
+    .and_then(|index| index.title)
+    .filter(|title| !title.trim().is_empty());
+    Ok(LookupSafeImportZip {
+        path: output.to_path_buf(),
+        original_title,
     })
+}
+
+#[cfg(hoshi_dicts_linked)]
+fn is_lookup_safe_yomitan_entry(name: &str) -> bool {
+    name == "index.json"
+        || name == "styles.css"
+        || is_numbered_yomitan_bank(name, "term_bank_", ".json")
+        || is_numbered_yomitan_bank(name, "term_meta_bank_", ".json")
+        || is_numbered_yomitan_bank(name, "tag_bank_", ".json")
+}
+
+#[cfg(hoshi_dicts_linked)]
+fn is_numbered_yomitan_bank(name: &str, prefix: &str, suffix: &str) -> bool {
+    let Some(number) = name
+        .strip_prefix(prefix)
+        .and_then(|rest| rest.strip_suffix(suffix))
+    else {
+        return false;
+    };
+    !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
+}
+
+#[cfg(hoshi_dicts_linked)]
+fn rewrite_index_title_for_compat_import(
+    index_json: &str,
+    dict_id: &str,
+) -> Result<Vec<u8>, String> {
+    let mut index =
+        serde_json::from_str::<serde_json::Value>(index_json.trim_start_matches('\u{feff}'))
+            .map_err(|e| format!("Cannot parse dictionary index.json: {e}"))?;
+    if let Some(object) = index.as_object_mut() {
+        object.insert(
+            "title".into(),
+            serde_json::Value::String(format!("hoshi-import-{dict_id}")),
+        );
+    }
+    serde_json::to_vec(&index).map_err(|e| format!("Cannot rewrite dictionary index metadata: {e}"))
 }
 
 #[cfg(hoshi_dicts_linked)]
@@ -1420,8 +1585,6 @@ mod tests {
     #[test]
     #[ignore]
     fn imports_real_yomitan_zip_and_loads_runtime() {
-        use std::ptr;
-
         let zip_path =
             std::env::var("HSW_REAL_YOMITAN_ZIP").expect("HSW_REAL_YOMITAN_ZIP is required");
         let source = PathBuf::from(zip_path);
@@ -1434,45 +1597,37 @@ mod tests {
         fs::create_dir_all(&staging_root).unwrap();
         fs::create_dir_all(&imported_root).unwrap();
 
-        let source_c = CString::new(source.to_string_lossy().as_bytes()).unwrap();
-        let staging_c = CString::new(staging_root.to_string_lossy().as_bytes()).unwrap();
-        let mut raw = ffi::DictImportResultC {
-            success: 0,
-            title: ptr::null(),
-            term_count: 0,
-            meta_count: 0,
-            freq_count: 0,
-            pitch_count: 0,
-            media_count: 0,
-            errors_json: ptr::null(),
-        };
+        let dict_id = dictionary_zip_id(&source).unwrap();
+        let mut attempt = run_linked_import_attempt(&source, &staging_root).unwrap();
+        let mut restored_title = None;
+        let mut lookup_safe_zip = None;
 
-        let status = unsafe {
-            ffi::dict_import_yomitan_zip(source_c.as_ptr(), staging_c.as_ptr(), 0, &mut raw)
-        };
-        let errors_json = unsafe { c_string(raw.errors_json) };
-        assert_eq!(status, 0, "importer failed: {errors_json}");
-        assert_eq!(raw.success, 1);
-
-        let title = unsafe { c_string(raw.title) };
-        let counts = (
-            raw.term_count,
-            raw.meta_count,
-            raw.freq_count,
-            raw.pitch_count,
-            raw.media_count,
-        );
-        unsafe {
-            ffi::free_import_result(&mut raw);
+        if !attempt.ok() && is_windows_code_page_import_error(&attempt.errors) {
+            let _ = fs::remove_dir_all(&staging_root);
+            fs::create_dir_all(&staging_root).unwrap();
+            let safe_zip_path = imported_root.join(format!(".importing-{dict_id}.lookup-safe.zip"));
+            let safe_zip =
+                create_lookup_safe_import_zip(&source, &safe_zip_path, &dict_id).unwrap();
+            attempt = run_linked_import_attempt(&safe_zip.path, &staging_root).unwrap();
+            restored_title = safe_zip.original_title;
+            lookup_safe_zip = Some(safe_zip.path);
         }
+        assert!(
+            attempt.ok(),
+            "importer failed: {}",
+            import_error_message(&attempt.errors)
+        );
+        let counts = attempt.counts;
         assert!(counts.0 > 0, "real dictionary must contain terms");
 
         let imported_dir = find_single_imported_dictionary_dir(&staging_root).unwrap();
         assert!(is_hoshidicts_term_dir(&imported_dir));
-        let dict_id = dictionary_zip_id(&source).unwrap();
         let final_dir = imported_root.join(&dict_id);
         fs::rename(&imported_dir, &final_dir).unwrap();
         let _ = fs::remove_dir_all(&staging_root);
+        if let Some(path) = lookup_safe_zip {
+            let _ = fs::remove_file(path);
+        }
 
         for file in [".hoshidicts_1", "index.json", "hash.table", "blobs.bin"] {
             assert!(final_dir.join(file).is_file(), "{file} should exist");
@@ -1482,11 +1637,13 @@ mod tests {
             &manifest_path,
             DictionaryManifestEntry {
                 dict_id: dict_id.clone(),
-                title: if title.trim().is_empty() {
+                title: if let Some(title) = restored_title {
+                    title
+                } else if attempt.title.trim().is_empty() {
                     read_imported_dictionary_title(&final_dir)
                         .unwrap_or_else(|| "Imported Dictionary".into())
                 } else {
-                    title
+                    attempt.title
                 },
                 kind: dictionary_kind_from_counts(counts.0, counts.2, counts.3),
                 enabled: true,
