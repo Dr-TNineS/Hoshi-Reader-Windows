@@ -747,11 +747,6 @@ fn import_yomitan_zip_linked(
 
     let status =
         unsafe { ffi::dict_import_yomitan_zip(source_c.as_ptr(), staging_c.as_ptr(), 0, &mut raw) };
-    if status != 0 {
-        let _ = fs::remove_dir_all(&staging_root);
-        return Err("Dictionary import failed.".into());
-    }
-
     let title = unsafe { c_string(raw.title) };
     let errors_json = unsafe { c_string(raw.errors_json) };
     let errors = serde_json::from_str::<Vec<String>>(&errors_json).unwrap_or_default();
@@ -767,13 +762,14 @@ fn import_yomitan_zip_linked(
         ffi::free_import_result(&mut raw);
     }
 
+    if status != 0 {
+        let _ = fs::remove_dir_all(&staging_root);
+        return Err(import_error_message(&errors));
+    }
+
     if !success {
         let _ = fs::remove_dir_all(&staging_root);
-        return Err(if errors.is_empty() {
-            "Dictionary import failed.".into()
-        } else {
-            errors.join("; ")
-        });
+        return Err(import_error_message(&errors));
     }
 
     let imported_dir = find_single_imported_dictionary_dir(&staging_root)?;
@@ -826,6 +822,15 @@ fn import_yomitan_zip_linked(
         ready: dict_runtime_ready(&runtime),
         reused: false,
     })
+}
+
+#[cfg(hoshi_dicts_linked)]
+fn import_error_message(errors: &[String]) -> String {
+    if errors.is_empty() {
+        "Dictionary import failed.".into()
+    } else {
+        errors.join("; ")
+    }
 }
 
 #[cfg(hoshi_dicts_linked)]
@@ -1445,7 +1450,8 @@ mod tests {
         let status = unsafe {
             ffi::dict_import_yomitan_zip(source_c.as_ptr(), staging_c.as_ptr(), 0, &mut raw)
         };
-        assert_eq!(status, 0);
+        let errors_json = unsafe { c_string(raw.errors_json) };
+        assert_eq!(status, 0, "importer failed: {errors_json}");
         assert_eq!(raw.success, 1);
 
         let title = unsafe { c_string(raw.title) };

@@ -10,7 +10,7 @@ This plan only covers validation and minimal HSW fixes discovered by validation.
 
 - [x] Slice 6: Toolchain Readiness & Linked Build
 - [x] Slice 7: Real Dictionary Import & Manifest Verification
-- [ ] Slice 8: Real Lookup Runtime & Popup Verification
+- [x] Slice 8: Real Lookup Runtime & Popup Verification
 
 Execute only one slice at a time.
 
@@ -99,6 +99,21 @@ Acceptance:
 - Real lookup returns and renders usable results.
 - Long results scroll inside the popup without breaking reader layout.
 - Docs are updated to state what was verified or why verification remains blocked.
+
+## Slice 8 Result
+
+Validated on 2026-06-08 with the Tauri runtime, a real Japanese EPUB, and a real imported Yomitan dictionary:
+
+- Started the linked Tauri dev app and Vite frontend, opened the real `かがみの孤城` EPUB from the app library, and verified the reader restored to the Japanese vertical layout.
+- Before dictionary import, selecting reader text showed the distinct no-dictionary popup state: `No imported dictionaries found.` with an `Import Dictionary` action.
+- Imported `jitendex-yomitan.zip` through the Tauri file-dialog path. The bookshelf status reported `Imported Jitendex.org [2026-06-06] (432643 terms, ready).`
+- With the same reader session, selecting text around `校を休み始...` opened a ready lookup popup.
+- The popup rendered a real result for `校` with reading `こう`, source `Jitendex.org [2026-06-06]`, matched text tag `校`, glossary content including `school`, a vertical scrollbar for long structured glossary content, and the disabled `Anki not configured` boundary.
+- Turning the reader page cleared the stale lookup popup.
+- The user-provided `MK3Fix0213.zip` was also checked through the linked importer and failed before import with `No mapping for the Unicode character exists in the target multi-byte code page.` The C bridge and Rust command path now preserve importer exception text so future UI failures surface the underlying reason instead of only `Dictionary import failed.`
+- Temporary dictionary zips, target directories, and runtime logs remain local validation artifacts and are not tracked by git.
+
+Not separately re-verified in this slice: fast selection race behavior, Shift hover updates, TOC/chapter/shelf/Close/Esc clearing beyond the page-turn and shelf-return paths observed here, engine-unavailable, empty-result, and manifest-error popup states. These behaviors remain covered by existing implementation state and should get future focused UI automation/regression coverage.
 
 ## Validation Commands
 

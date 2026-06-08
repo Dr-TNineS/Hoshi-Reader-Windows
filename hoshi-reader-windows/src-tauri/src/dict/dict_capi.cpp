@@ -4,6 +4,7 @@
 #include <vector>
 #include <cstring>
 #include <cstdlib>
+#include <exception>
 
 struct DictQuery {
     DictionaryQuery inner;
@@ -257,7 +258,14 @@ int dict_import_yomitan_zip(const char* zip_path, const char* output_dir, int lo
         errors_json += "]";
         out->errors_json = strdup_c(errors_json);
         return 0;
+    } catch (const std::exception& e) {
+        std::string errors_json = "[";
+        append_json_string(errors_json, e.what());
+        errors_json += "]";
+        out->errors_json = strdup_c(errors_json);
+        return -1;
     } catch (...) {
+        out->errors_json = strdup_c("[\"Unknown dictionary import error.\"]");
         return -1;
     }
 }

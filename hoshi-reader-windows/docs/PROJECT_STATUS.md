@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Project Status
 
-Last updated: 2026-06-07
+Last updated: 2026-06-08
 
 This file records current implementation facts for `hoshi-reader-windows`. It is not an agent rule file, product roadmap, or substitute for checking the current code.
 
@@ -76,12 +76,12 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Local VS Build Tools, MSVC, Windows SDK, VS-bundled CMake, and VS-bundled Ninja can drive the hoshidicts CMake configure path from a VS developer shell.
   - VS developer-shell linked `cargo check` passes with hoshidicts linked.
   - Linked backend validation imported a real JMdict English Yomitan zip, wrote the dictionary manifest, loaded the runtime backend, and returned real results for `lookup("学校")`.
+  - Direct Tauri file-dialog import was verified with `jitendex-yomitan.zip`; the reader popup rendered real Jitendex results for text selected from a real `かがみの孤城` EPUB.
+  - Dictionary importer exceptions from the C bridge are surfaced through the Rust command path instead of collapsing to only `Dictionary import failed.`
 
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata is still JSON.
-- Direct Tauri UI/file-dialog dictionary import has not been manually verified with real dictionary data on this machine.
-- Real lookup result UX has not been manually verified in the reader popup with linked hoshidicts and real dictionary data on this machine.
 - No dictionary management/settings UI.
 - No real Anki integration; only the frontend payload boundary exists.
 - No sync implementation.
@@ -95,6 +95,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - On shells without CMake/C++ build tools in `PATH`, the hoshidicts backend and importer remain unavailable.
 - On this machine, linked hoshidicts checks require a VS developer shell or equivalent `PATH` containing CMake and MSVC tools.
 - Without imported dictionaries in the app data manifest, `dict_status` reports `noDictionaries`.
+- `MK3Fix0213.zip` currently fails linked import on Windows with `No mapping for the Unicode character exists in the target multi-byte code page`, likely due to non-Unicode zip entry names.
 - Reader layout correctness for arbitrary EPUBs is not fully verified.
 - Rust-side character counts and frontend DOM-based progress need further cross-validation.
 - Cover/image rendering depends on temporary extraction path mapping and asset URL rewriting.

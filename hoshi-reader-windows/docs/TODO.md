@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Agent TODO
 
-Last updated: 2026-06-07
+Last updated: 2026-06-08
 
 This file is the short operational handoff for future agents. Keep detailed state in `docs/PROJECT_STATUS.md` and lookup-specific slice details in `docs/LOOKUP_ROADMAP.md`.
 
@@ -18,14 +18,15 @@ This file is the short operational handoff for future agents. Keep detailed stat
 1. Treat the current reader lookup implementation slices in `docs/LOOKUP_ROADMAP.md` as complete.
    - Slice 6 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including a passing VS developer-shell linked build.
    - Slice 7 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including a real JMdict Yomitan import, manifest verification, and linked runtime lookup check.
-   - Next recommended work: execute Slice 8 from `docs/REAL_LOOKUP_VALIDATION_PLAN.md` with the Tauri app, a real EPUB, and imported dictionary data.
+   - Slice 8 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including direct Tauri file-dialog import and reader popup lookup with real EPUB/dictionary data.
+   - Next recommended work: decide whether to prioritize the `MK3Fix0213.zip` Windows import encoding failure, dictionary management UI, or reader visual regression coverage.
 2. Preserve the bookshelf/import/reader/session main path described in `docs/READER_ENTRY_CHARACTERIZATION.md`.
 3. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 4. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
 
 ## Active Blockers
 
-- Slice 8 still needs direct Tauri runtime verification of file-dialog dictionary import and reader popup lookup with real dictionary data.
+- `MK3Fix0213.zip` fails in the linked importer on Windows with `No mapping for the Unicode character exists in the target multi-byte code page`; importer error text is now surfaced, but compatibility is not fixed.
 - Reader behavior still lacks automated visual regression coverage.
 
 ## Required Validation
