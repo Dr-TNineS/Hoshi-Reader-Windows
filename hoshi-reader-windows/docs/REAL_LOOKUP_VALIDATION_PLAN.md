@@ -12,6 +12,7 @@ This plan only covers validation and minimal HSW fixes discovered by validation.
 - [x] Slice 7: Real Dictionary Import & Manifest Verification
 - [x] Slice 8: Real Lookup Runtime & Popup Verification
 - [x] Slice 9: MK3 Windows Import Encoding Compatibility
+- [x] Slice 10: Compatibility Import Source Title Mapping
 
 Execute only one slice at a time.
 
@@ -145,6 +146,31 @@ Validated on 2026-06-08 with the original user-provided `MK3Fix0213.zip`:
 - `MK3Fix0213.zip` imported successfully with `dict_id=93e8e532b599ba4a`, `term=140821`, `meta=0`, `freq=0`, `pitch=0`, `media=0`.
 - Linked runtime loaded the imported dictionary and `lookup("学校")` returned 2 real results.
 - Media count is intentionally `0` on the compatibility path because `gaiji/` and other media entries are skipped to avoid legacy filename encoding failures. Lookup remains usable; future work can map popup source names back to manifest titles if the internal ASCII title appears in result metadata.
+
+## Slice 10: Compatibility Import Source Title Mapping
+
+Keep lookup result source labels user-facing after compatibility imports that use an internal ASCII title.
+
+Key checks:
+
+- Build title overrides from imported dictionary `index.json` titles to manifest titles.
+- Apply title overrides to term dictionary source, glossary dictionary, frequency dictionary, and pitch dictionary fields.
+- Keep behavior unchanged when the internal title already matches the manifest title.
+
+Acceptance:
+
+- Compatibility-imported dictionaries can keep ASCII internal hoshidicts titles while lookup responses return the original manifest title.
+- Unit tests cover title override application.
+- Linked and non-linked Rust builds remain clean.
+
+## Slice 10 Result
+
+Validated on 2026-06-08:
+
+- `dict_lookup` now applies runtime title overrides before returning results.
+- Runtime initialization builds overrides by comparing imported dictionary internal `index.json` titles with manifest titles.
+- Added a Rust unit test covering result dictionary, glossary, frequency, and pitch source-title mapping.
+- Ordinary imports keep their original direct title path because matching internal/manifest titles do not create overrides.
 
 ## Validation Commands
 

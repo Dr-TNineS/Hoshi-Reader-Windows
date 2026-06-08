@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
+use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::sync::Mutex;
@@ -122,6 +123,8 @@ struct DictionaryManifest {
 struct DictRuntime {
     #[cfg(hoshi_dicts_linked)]
     backend: Option<DictBackend>,
+    #[allow(dead_code)]
+    dictionary_title_overrides: HashMap<String, String>,
     loaded_dictionaries: usize,
     imported_count: usize,
     error: Option<String>,
@@ -162,7 +165,9 @@ pub fn dict_lookup(
             .backend
             .as_ref()
             .ok_or_else(|| runtime_error(&runtime))?;
-        return backend.lookup(&text);
+        let mut results = backend.lookup(&text)?;
+        apply_dictionary_title_overrides(&mut results, &runtime.dictionary_title_overrides);
+        return Ok(results);
     }
 
     #[cfg(not(hoshi_dicts_linked))]
@@ -379,11 +384,13 @@ fn initialize_runtime(app: &AppHandle) -> DictRuntime {
     };
     let imported_count = manifest.dictionaries.len();
     let load_plan = enabled_dictionary_load_plan(&manifest);
+    let dictionary_title_overrides = dictionary_title_overrides(&manifest);
 
     if !load_plan.iter().any(|entry| entry.use_term) {
         return DictRuntime {
             loaded_dictionaries: 0,
             imported_count,
+            dictionary_title_overrides,
             error: if imported_count == 0 {
                 Some("No imported dictionaries found.".into())
             } else {
@@ -400,6 +407,7 @@ fn initialize_runtime(app: &AppHandle) -> DictRuntime {
                 backend: Some(backend),
                 loaded_dictionaries: load_plan.len(),
                 imported_count,
+                dictionary_title_overrides,
                 error: None,
                 manifest_error: None,
             },
@@ -417,9 +425,52 @@ fn initialize_runtime(app: &AppHandle) -> DictRuntime {
         DictRuntime {
             loaded_dictionaries: load_plan.len(),
             imported_count,
+            dictionary_title_overrides,
             error: Some("Dictionary engine not linked. Install CMake/C++ build tools and rebuild HSW with hoshidicts.".into()),
             manifest_error: None,
         }
+    }
+}
+
+fn dictionary_title_overrides(manifest: &DictionaryManifest) -> HashMap<String, String> {
+    manifest
+        .dictionaries
+        .iter()
+        .filter_map(|entry| {
+            let internal_title =
+                read_imported_dictionary_title(&PathBuf::from(&entry.internal_path))?;
+            (internal_title != entry.title).then_some((internal_title, entry.title.clone()))
+        })
+        .collect()
+}
+
+#[allow(dead_code)]
+fn apply_dictionary_title_overrides(
+    results: &mut [DictResult],
+    overrides: &HashMap<String, String>,
+) {
+    if overrides.is_empty() {
+        return;
+    }
+
+    for result in results {
+        apply_title_override(&mut result.dictionary, overrides);
+        for glossary in &mut result.glossary {
+            apply_title_override(&mut glossary.dict, overrides);
+        }
+        for frequency in &mut result.frequencies {
+            apply_title_override(&mut frequency.dictionary, overrides);
+        }
+        for pitch in &mut result.pitches {
+            apply_title_override(&mut pitch.dictionary, overrides);
+        }
+    }
+}
+
+#[allow(dead_code)]
+fn apply_title_override(value: &mut String, overrides: &HashMap<String, String>) {
+    if let Some(title) = overrides.get(value) {
+        *value = title.clone();
     }
 }
 
@@ -1534,6 +1585,42 @@ mod tests {
         assert_eq!(result.dictionary, "dict-a");
         assert_eq!(result.frequencies[0].items[0].display_value, "10");
         assert_eq!(result.pitches[0].positions, vec![1]);
+    }
+
+    #[test]
+    fn dictionary_title_overrides_update_lookup_result_sources() {
+        let mut results = vec![DictResult {
+            expression: "学校".into(),
+            reading: "がっこう".into(),
+            glossary: vec![GlossaryEntry {
+                dict: "hoshi-import-abc".into(),
+                text: "school".into(),
+            }],
+            matched: "学校".into(),
+            deinflected: "学校".into(),
+            rules: String::new(),
+            dictionary: "hoshi-import-abc".into(),
+            frequencies: vec![FrequencyEntry {
+                dictionary: "hoshi-import-abc".into(),
+                items: vec![FrequencyItem {
+                    value: 1,
+                    display_value: "1".into(),
+                }],
+            }],
+            pitches: vec![PitchEntry {
+                dictionary: "hoshi-import-abc".into(),
+                positions: vec![1],
+                transcriptions: Vec::new(),
+            }],
+        }];
+        let overrides = HashMap::from([("hoshi-import-abc".into(), "明鏡国語辞典 第三版".into())]);
+
+        apply_dictionary_title_overrides(&mut results, &overrides);
+
+        assert_eq!(results[0].dictionary, "明鏡国語辞典 第三版");
+        assert_eq!(results[0].glossary[0].dict, "明鏡国語辞典 第三版");
+        assert_eq!(results[0].frequencies[0].dictionary, "明鏡国語辞典 第三版");
+        assert_eq!(results[0].pitches[0].dictionary, "明鏡国語辞典 第三版");
     }
 
     #[test]

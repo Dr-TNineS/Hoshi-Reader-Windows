@@ -79,6 +79,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Direct Tauri file-dialog import was verified with `jitendex-yomitan.zip`; the reader popup rendered real Jitendex results for text selected from a real `かがみの孤城` EPUB.
   - Dictionary importer exceptions from the C bridge are surfaced through the Rust command path instead of collapsing to only `Dictionary import failed.`
   - `MK3Fix0213.zip` imports on Windows through a compatibility retry path that skips legacy-encoded media entries, preserves the original manifest title, and loads real lookup results.
+  - Lookup responses map compatibility-import internal ASCII titles back to manifest titles for result, glossary, frequency, and pitch source labels.
 
 ## Not Implemented Or Not Verified
 
