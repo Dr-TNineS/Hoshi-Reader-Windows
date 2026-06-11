@@ -8,7 +8,4 @@ script = ""
 [[actions]]
 name = "运行"
 icon = "run"
-command = '''
-cd hoshi-reader-windows
-npx tauri dev
-'''
+command = "npx tauri dev"
