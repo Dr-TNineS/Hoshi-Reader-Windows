@@ -19,7 +19,7 @@ Hoshi Reader Windows is a Japanese EPUB reader for Windows desktop, built for im
 
 ### Reading
 
-- Vertical (纵書き) and horizontal (横書き) text with paginated layout.
+- Vertical (纵書き) text with paginated layout.
 - Keyboard navigation: arrow keys for pages, Ctrl/Meta for chapters.
 - Table of contents overlay and internal chapter-link navigation.
 - Escape to return to bookshelf.
@@ -34,6 +34,7 @@ Hoshi Reader Windows is a Japanese EPUB reader for Windows desktop, built for im
 ### Not Yet Implemented
 
 - Settings and appearance customization.
+- Horizontal (横書き) text with paginated layout.
 - Anki card mining (frontend boundary exists, not wired).
 - Sync, audiobook read-along, reading statistics.
 - Custom themes, fonts, and CSS.
@@ -83,7 +84,6 @@ Hoshi Reader Windows builds on this ecosystem:
 - [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android) and [Hoshi Reader iOS](https://github.com/Manhhao/Hoshi-Reader) as the reference implementations.
 - [hoshidicts](https://github.com/Manhhao/hoshidicts) for Yomitan dictionary support.
 - [Yomitan](https://github.com/yomidevs/yomitan) for dictionary format and lookup inspiration.
-- [Ankiconnect Android](https://github.com/KamWithK/AnkiconnectAndroid) for Anki payload boundary reference.
 - [ッツ Ebook Reader](https://github.com/ttu-ttu/ebook-reader) for reader experience inspiration.
 
 ## License
