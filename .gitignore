@@ -1,5 +1,40 @@
-ebook-reader/
-hoshi-reader-android/
-hoshi-reader-mac/
-hoshi-reader-original/
-hoshidicts/
+# Logs
+logs
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+node_modules
+dist
+dist-ssr
+*.local
+
+# Editor directories and files
+.vscode/*
+!.vscode/extensions.json
+.idea
+.DS_Store
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+
+# Local reference projects. Keep the README tracked, but keep copied
+# reference repositories out of HSW commits.
+reference/*
+!reference/README.md
+
+# Local third-party build inputs. hoshidicts is used by the dictionary
+# backend build path, but its source is not vendored into this repo.
+third_party/hoshidicts/
+
+# Large binary/dataset archives that should not be tracked
+*.zip
+
+# Local e-book test files
+*.epub
+

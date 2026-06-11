@@ -10,13 +10,5 @@ name = "运行"
 icon = "run"
 command = '''
 cd hoshi-reader-windows
-cmd /c npx.cmd tauri dev
-'''
-
-[[actions]]
-name = "1"
-icon = "tool"
-command = '''
-cd hoshi-reader-windows
 npx tauri dev
 '''
