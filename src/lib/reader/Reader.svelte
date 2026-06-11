@@ -1,4 +1,4 @@
-<script lang="ts">
+﻿<script lang="ts">
   import { countChars, createWalker, getTotalChars, rawOffsetForReaderChars, textEndOffsets } from "../reader";
   import type { ReaderProgress, ReaderSelection, ReaderSelectionRect } from "../types";
 
@@ -737,6 +737,26 @@
     clearShiftHoverTimer();
   }
 
+  function handleWheel(e: WheelEvent) {
+    if (Math.abs(e.deltaY) <= Math.abs(e.deltaX)) return;
+
+    e.preventDefault();
+    const ctrl = e.ctrlKey || e.metaKey;
+    if (e.deltaY > 0) {
+      if (ctrl) {
+        onNextChapter();
+        return;
+      }
+      nextPage();
+    } else if (e.deltaY < 0) {
+      if (ctrl) {
+        onPrevChapterDirect();
+        return;
+      }
+      prevPage();
+    }
+  }
+
   $effect.pre(() => {
     if (content !== activeContent) {
       activeContent = content;
@@ -749,6 +769,14 @@
     }
   });
 
+
+  $effect(() => {
+    const el = containerEl;
+    if (!el) return;
+
+    el.addEventListener("wheel", handleWheel, { passive: false });
+    return () => el.removeEventListener("wheel", handleWheel);
+  });
   $effect(() => {
     const el = contentEl;
     if (!el) return;
