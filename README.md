@@ -1,47 +1,81 @@
-# Svelte + TS + Vite
+﻿<div align="center">
 
-This template should help get you started developing with Svelte and TypeScript in Vite.
+# Hoshi Reader Windows
 
-## Recommended IDE Setup
+![Language](https://img.shields.io/github/languages/top/Dr-TNineS/Hoshi-Reader-Windows)
+![Platform](https://img.shields.io/badge/platform-Windows-blue)
+![License](https://img.shields.io/github/license/Dr-TNineS/Hoshi-Reader-Windows)
 
-[VS Code](https://code.visualstudio.com/) + [Svelte](https://marketplace.visualstudio.com/items?itemName=svelte.svelte-vscode).
+Hoshi Reader Windows is a Japanese EPUB reader with Yomitan dictionary support, made for immersion learning on Windows desktop.
 
-## Need an official Svelte framework?
+</div>
 
-Check out [SvelteKit](https://github.com/sveltejs/kit#readme), which is also powered by Vite. Deploy anywhere with its serverless-first approach and adapt to various platforms, with out of the box support for TypeScript, SCSS, and Less, and easily-added support for mdsvex, GraphQL, PostCSS, Tailwind CSS, and more.
+## Features
 
-## Technical considerations
+- **Vertical** (縦書き) and horizontal (横書き) text
+- Yomitan-compatible pop-up dictionary with **deinflection support**
+- Support for Yomitan term, frequency and pitch dictionaries
+- EPUB bookshelf with import and reading progress
+- Keyboard navigation and TOC overlay
+- App-owned EPUB library with content-based deduplication
 
-**Why use this over SvelteKit?**
+## Development
 
-- It brings its own routing solution which might not be preferable for some users.
-- It is first and foremost a framework that just happens to use Vite under the hood, not a Vite app.
+### Prerequisites
 
-This template contains as little as possible to get started with Vite + TypeScript + Svelte, while taking into account the developer experience with regards to HMR and intellisense. It demonstrates capabilities on par with the other `create-vite` templates and is a good starting point for beginners dipping their toes into a Vite + Svelte project.
+- [Node.js](https://nodejs.org/) 18+
+- [Rust](https://www.rust-lang.org/) 1.77+
+- [VS Build Tools](https://visualstudio.microsoft.com/downloads/) with C++ and CMake (for dictionary backend)
 
-Should you later need the extended capabilities and extensibility provided by SvelteKit, the template has been structured similarly to SvelteKit so that it is easy to migrate.
+### Setup
 
-**Why `global.d.ts` instead of `compilerOptions.types` inside `jsconfig.json` or `tsconfig.json`?**
-
-Setting `compilerOptions.types` shuts out all other types not explicitly listed in the configuration. Using triple-slash references keeps the default TypeScript setting of accepting type information from the entire workspace, while also adding `svelte` and `vite/client` type information.
-
-**Why include `.vscode/extensions.json`?**
-
-Other templates indirectly recommend extensions via the README, but this file allows VS Code to prompt the user to install the recommended extension upon opening the project.
-
-**Why enable `allowJs` in the TS template?**
-
-While `allowJs: false` would indeed prevent the use of `.js` files in the project, it does not prevent the use of JavaScript syntax in `.svelte` files. In addition, it would force `checkJs: false`, bringing the worst of both worlds: not being able to guarantee the entire codebase is TypeScript, and also having worse typechecking for the existing JavaScript. In addition, there are valid use cases in which a mixed codebase may be relevant.
-
-**Why is HMR not preserving my local component state?**
-
-HMR state preservation comes with a number of gotchas! It has been disabled by default in both `svelte-hmr` and `@sveltejs/vite-plugin-svelte` due to its often surprising behavior. You can read the details [here](https://github.com/rixo/svelte-hmr#svelte-hmr).
-
-If you have state that's important to retain within a component, consider creating an external store which would not be replaced by HMR.
-
-```ts
-// store.ts
-// An extremely simple external store
-import { writable } from 'svelte/store'
-export default writable(0)
+```bash
+git clone https://github.com/Dr-TNineS/Hoshi-Reader-Windows.git
+cd Hoshi-Reader-Windows
+npm install
 ```
+
+### Run
+
+```bash
+npx tauri dev
+```
+
+### Build
+
+```bash
+npx tauri build
+```
+
+## Libraries
+
+| Name | License |
+| :--- | :--- |
+| [hoshidicts](https://github.com/Manhhao/hoshidicts) | GPLv3 |
+| [rbook](https://github.com/philips77/rbook) | MIT |
+| [Tauri](https://github.com/tauri-apps/tauri) | Apache-2.0 / MIT |
+| [Svelte](https://github.com/sveltejs/svelte) | MIT |
+| [Vite](https://github.com/vitejs/vite) | MIT |
+
+## Attribution
+
+| Name | Description | License |
+| :--- | :--- | :--- |
+| [Yomitan](https://github.com/yomidevs/yomitan) | Various code from pop-up dictionary | GPLv3 |
+| [Hoshi Reader (iOS)](https://github.com/Manhhao/Hoshi-Reader) | Primary reference implementation | GPLv3 |
+| [永汁 Ebook Reader](https://github.com/ttu-ttu/ebook-reader) | Core reading experience inspiration | BSD-3 |
+| [Ankiconnect Android](https://github.com/KamWithK/AnkiconnectAndroid) | Local audio reference | GPLv3 |
+| [JMdict for Yomitan](https://github.com/yomidevs/jmdict-yomitan) | Recommended term dictionary | CC-BY-SA-4.0 |
+| [Jitendex](https://github.com/stephenmk/Jitendex) | Recommended J-E dictionary | CC-BY-SA-4.0 |
+
+## Special Thanks
+
+* **[TheMoeWay](https://learnjapanese.moe/)** — Enabling immersion-based Japanese learning.
+* **[Yomitan](https://github.com/yomidevs/yomitan)** — Primary inspiration for the pop-up dictionary.
+* **[Hoshi Reader (iOS)](https://github.com/Manhhao/Hoshi-Reader)** — Reference implementation this project is ported from.
+* **[永汁 Ebook Reader](https://github.com/ttu-ttu/ebook-reader)** — Inspiring the core reading experience.
+* **[星街すいせい (Hoshimachi Suisei)](https://www.youtube.com/@HoshimachiSuisei)** — For the name (星読み).
+
+## License
+
+Distributed under the GNU General Public License v3.0. See [LICENSE](LICENSE) for more information.
