@@ -134,6 +134,57 @@ async function waitForHeaderText(page, text) {
   );
 }
 
+async function visibleParagraphPoint(page) {
+  return await page.evaluate(() => {
+    const rv = document.querySelector(".rv");
+    const rct = document.querySelector(".rct");
+    if (!(rv instanceof HTMLElement) || !(rct instanceof HTMLElement)) {
+      throw new Error("Reader viewport/content elements not found.");
+    }
+
+    const viewport = rv.getBoundingClientRect();
+    for (const paragraph of rct.querySelectorAll("p")) {
+      const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        if (!node.textContent?.trim()) continue;
+
+        const text = node.textContent ?? "";
+        for (let offset = 0; offset < text.length; offset += 1) {
+          if (/\s/.test(text[offset])) continue;
+
+          const range = document.createRange();
+          range.setStart(node, offset);
+          range.setEnd(node, offset + 1);
+          const rect = Array.from(range.getClientRects()).find((candidate) => (
+            candidate.width > 0 &&
+            candidate.height > 0 &&
+            candidate.bottom > viewport.top + 10 &&
+            candidate.top < viewport.bottom - 10 &&
+            candidate.right > viewport.left + 10 &&
+            candidate.left < viewport.right - 10
+          ));
+          range.detach();
+
+          if (rect) {
+            return {
+              x: rect.left + rect.width / 2,
+              y: rect.top + rect.height / 2,
+              text: node.textContent.slice(0, 40),
+            };
+          }
+        }
+      }
+    }
+
+    throw new Error("No visible paragraph text found.");
+  });
+}
+
+async function probeSelectionText(page) {
+  return await page.locator(".probe-state").getAttribute("data-selection") ?? "";
+}
+
 async function main() {
   const vite = spawn(
     process.platform === "win32" ? "cmd.exe" : "npm",
@@ -164,6 +215,27 @@ async function main() {
       "Last page text top should align with the previous page.",
       desktop,
     );
+
+    const lookupPoint = await visibleParagraphPoint(page);
+    await page.keyboard.down("Shift");
+    await page.mouse.move(lookupPoint.x, lookupPoint.y);
+    await page.waitForFunction(() => {
+      const value = document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "";
+      return value.length > 0;
+    }, { timeout: 10000 });
+    await page.keyboard.up("Shift");
+    const shiftHoverSelection = await probeSelectionText(page);
+    assert(shiftHoverSelection.length > 0, "Shift hover should select reader text for lookup.", { lookupPoint, shiftHoverSelection });
+
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => (document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "") === "", { timeout: 10000 });
+    await page.mouse.move(lookupPoint.x - 8, lookupPoint.y - 8);
+    await page.mouse.down();
+    await page.mouse.move(lookupPoint.x + 28, lookupPoint.y + 28, { steps: 8 });
+    await page.mouse.up();
+    await page.waitForTimeout(120);
+    const dragSelection = await probeSelectionText(page);
+    assert(dragSelection === "", "Plain mouse text selection should not open lookup.", { lookupPoint, dragSelection });
 
     await page.locator(".rv").click();
     await page.keyboard.press("Control+ArrowLeft");

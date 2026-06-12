@@ -22,7 +22,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Slice 9 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including `MK3Fix0213.zip` Windows compatibility import and linked runtime lookup.
    - Slice 10 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including source-title mapping for compatibility imports.
    - Dictionary management UI is complete at the minimal bookshelf-panel level.
-   - Reader visual regression coverage now has a minimal automated probe for pagination geometry, final-page alignment, image rendering, narrow-window overflow, Ctrl chapter navigation, and page-boundary chapter navigation.
+   - Reader visual regression coverage now has a minimal automated probe for pagination geometry, final-page alignment, image rendering, Shift-hover lookup selection, plain mouse selection not opening lookup, narrow-window overflow, Ctrl chapter navigation, and page-boundary chapter navigation.
    - Lookup popup regression coverage now has a minimal automated probe for all visible popup states, glossary Shift hover nested lookup callback, result metadata, long-result scrolling, disabled Anki boundary, and narrow-window overflow.
    - Dictionary management UI coverage now has a minimal automated probe for empty/loading/error/ready states, counts, enable/order controls, actions, and narrow-window overflow.
    - Final linked real dictionary validation with local `MK3Fix0213.zip` passed on 2026-06-12: `dict_id=93e8e532b599ba4a`, `term=140821`, `media=0`, `lookup_results=2`.

@@ -53,11 +53,12 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - EPUB asset URL rewriting.
   - Basic image load/reflow handling, SVG cover replacement, gaiji image handling, and block image handling.
   - Reader progress based on visible text position.
-  - Reader visual probe fixture and `npm run check:reader-visual` cover baseline pagination geometry, final-page alignment, block image rendering, narrow-window overflow, Ctrl chapter navigation, and page-boundary chapter navigation.
+- Reader visual probe fixture and `npm run check:reader-visual` cover baseline pagination geometry, final-page alignment, block image rendering, Shift-hover lookup selection, plain mouse selection not opening lookup, narrow-window overflow, Ctrl chapter navigation, and page-boundary chapter navigation.
 - Reader selection and popup:
   - Captures selected reader text with rect and chapter index.
   - Supports Shift hover lookup trigger.
   - Supports holding Shift while moving the pointer to continuously rescan/select new text.
+  - Plain mouse text selection does not open the lookup popup; lookup selection is a deliberate Shift-hover path.
   - Popup prefers left/right side placement beside the selected text, with top/bottom fallback.
   - Popup distinguishes loading, no dictionary, engine unavailable, empty, error, and ready states.
   - Popup renders the current lookup result shape: expression, reading, source dictionary, matched/deinflected text, rules, glossary, frequency, and pitch.

@@ -289,23 +289,6 @@
     };
   }
 
-  function readCurrentSelection(): ReaderSelection | null {
-    if (!contentEl) return null;
-
-    const selection = window.getSelection();
-    if (!selection || selection.rangeCount === 0 || selection.isCollapsed) return null;
-    if (!nodeInsideContent(selection.anchorNode) || !nodeInsideContent(selection.focusNode)) return null;
-
-    const text = selectionText(selection.toString());
-    if (!text) return null;
-
-    const range = selection.getRangeAt(0);
-    const rect = unionRects(Array.from(range.getClientRects()));
-    if (!rect) return null;
-
-    return { text, rect, chapterIndex };
-  }
-
   function isScanBoundary(char: string): boolean {
     return SCAN_BOUNDARY_PATTERN.test(char);
   }
@@ -437,9 +420,9 @@
   }
 
   function selectTextFromPoint(x: number, y: number): ReaderSelection | null {
+    if (!contentEl) return null;
     const target = document.elementFromPoint(x, y);
-    if (!target || !contentEl?.contains(target)) return null;
-    if (target.closest("a[data-epub-href], img, image, svg")) {
+    if (target instanceof Element && contentEl.contains(target) && target.closest("a[data-epub-href], img, image, svg")) {
       clearSelection();
       return null;
     }
@@ -510,14 +493,6 @@
     hasActiveSelection = true;
     onSelectionChange(selection);
     return selection;
-  }
-
-  function emitSelection() {
-    requestAnimationFrame(() => {
-      const selection = readCurrentSelection();
-      hasActiveSelection = !!selection;
-      onSelectionChange(selection);
-    });
   }
 
   function clearSelection() {
@@ -778,22 +753,17 @@
     return () => el.removeEventListener("wheel", handleWheel);
   });
   $effect(() => {
-    const el = contentEl;
-    if (!el) return;
+    const content = contentEl;
+    const viewport = containerEl;
+    if (!content || !viewport) return;
 
-    el.addEventListener("click", handleContentClick);
-    el.addEventListener("pointerdown", handlePointerDown);
-    el.addEventListener("pointermove", handlePointerMove);
-    el.addEventListener("pointerup", emitSelection);
-    el.addEventListener("keyup", emitSelection);
-    document.addEventListener("selectionchange", emitSelection);
+    content.addEventListener("click", handleContentClick);
+    viewport.addEventListener("pointerdown", handlePointerDown);
+    viewport.addEventListener("pointermove", handlePointerMove);
     return () => {
-      el.removeEventListener("click", handleContentClick);
-      el.removeEventListener("pointerdown", handlePointerDown);
-      el.removeEventListener("pointermove", handlePointerMove);
-      el.removeEventListener("pointerup", emitSelection);
-      el.removeEventListener("keyup", emitSelection);
-      document.removeEventListener("selectionchange", emitSelection);
+      content.removeEventListener("click", handleContentClick);
+      viewport.removeEventListener("pointerdown", handlePointerDown);
+      viewport.removeEventListener("pointermove", handlePointerMove);
       handleWindowBlur();
     };
   });
