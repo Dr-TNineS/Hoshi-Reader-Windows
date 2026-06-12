@@ -1,6 +1,6 @@
 # HSW Reader Entry Characterization
 
-Last updated: 2026-06-07
+Last updated: 2026-06-12
 
 This checklist records the durable behavior baseline for the HSW bookshelf, EPUB import, reader entry, reader exit, and session restore path.
 
@@ -29,6 +29,7 @@ Use this before and after changes that touch bookshelf state, app-owned EPUB imp
 - A valid legacy session opens by original path.
 - Failed restore clears the stale session and leaves the user on the shelf with an error.
 - Returning to the shelf should stay on the shelf; restore should not immediately reopen the book again.
+- Existing browser `localStorage` session data is a one-time migration source for Tauri reading state.
 
 ## Reader Exit And Navigation
 
@@ -41,7 +42,8 @@ Use this before and after changes that touch bookshelf state, app-owned EPUB imp
 ## Progress Persistence
 
 - Reader progress includes chapter index, chapter progress, chapter read chars, book read chars, total book chars, and percent.
-- Progress is saved to `localStorage`.
+- In Tauri, progress is saved to app data `reading/state.json`.
+- Outside Tauri, `localStorage` remains the browser fallback.
 - Bookshelf rows show chapter progress and character/percentage progress when total character count is available.
 - Reopening a book should land close to the saved chapter progress.
 

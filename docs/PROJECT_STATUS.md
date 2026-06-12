@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Project Status
 
-Last updated: 2026-06-08
+Last updated: 2026-06-12
 
 This file records current implementation facts for `hoshi-reader-windows`. It is not an agent rule file, product roadmap, or substitute for checking the current code.
 
@@ -13,7 +13,8 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Stack: Tauri 2, Svelte 5, TypeScript, Vite, Rust.
 - Primary path: bookshelf -> import EPUB -> open reader -> select text -> lookup.
 - Imported EPUB files are copied into the app-owned library under Tauri app data.
-- Reading progress and session state still use browser `localStorage`.
+- Reading progress and session state are persisted in Tauri app data under `reading/state.json`.
+- Browser `localStorage` remains a non-Tauri fallback and one-time legacy migration source.
 - Local reference projects live under `reference/`; local hoshidicts build input lives under `third_party/hoshidicts`.
 
 ## Implemented
@@ -39,6 +40,8 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - EPUB import entry.
   - Resume from saved progress.
   - Tauri startup attempts to restore the last reader session.
+  - Tauri reading state stores recent books, progress, and session in `reading/state.json`.
+  - Existing `localStorage` recent books/session are merged into reading state once on startup.
   - Legacy path-only records remain compatible when the original file still exists.
 - Reader:
   - Japanese vertical paginated reading layout.
@@ -88,7 +91,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 
 ## Not Implemented Or Not Verified
 
-- No durable database; app-owned library metadata is still JSON.
+- No durable database; app-owned library metadata and reading state are still JSON.
 - No real Anki integration; only the frontend payload boundary exists.
 - No sync implementation.
 - No settings or appearance panel.
@@ -98,6 +101,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 ## Known Issues
 
 - Legacy path-only bookshelf records may fail if the original EPUB is moved, renamed, or deleted.
+- Legacy `localStorage` reading state is imported once and left in place; it is not deleted after migration.
 - On shells without CMake/C++ build tools in `PATH`, the hoshidicts backend and importer remain unavailable.
 - On this machine, linked hoshidicts checks require a VS developer shell or equivalent `PATH` containing CMake and MSVC tools.
 - Without imported dictionaries in the app data manifest, `dict_status` reports `noDictionaries`.
@@ -126,6 +130,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Asset and path handling:
   - EPUB assets depend on temporary extraction directories.
   - New app-owned books depend on copied EPUBs and manifest JSON.
+  - Reading progress/session depend on reading state JSON.
   - Legacy bookshelf records still depend on original EPUB paths.
 - Future dictionary integration:
   - Real lookup depends on hoshidicts build/link success and imported dictionary data.

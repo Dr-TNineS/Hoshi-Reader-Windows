@@ -7,14 +7,16 @@
   import { resultDictionaryLabel, type LookupState } from "./lib/lookup-popup";
   import Reader from "./lib/reader/Reader.svelte";
   import {
+    buildReadingProgressUpdate,
     bookRecordKey,
     bookRecordPath,
-    clearSession,
     clampUnit,
+    clearReadingSession,
+    importLegacyReadingState,
     loadBooks,
-    loadSession,
     mergeLibraryBooks,
-    saveReadingProgress,
+    persistReadingProgress,
+    upsertReadingProgressBook,
   } from "./lib/storage";
   import { findChapterIndex, flattenToc } from "./lib/toc";
   import type {
@@ -59,45 +61,41 @@
   let dictionaryListError = $state("");
   let dictionaryBusy = $state(false);
   let debug = $state("");
-  let triedRestore = false;
-  let triedLibraryLoad = false;
+  let triedStartup = false;
   let triedDictionaryList = false;
+  let progressSaveVersion = 0;
 
   let tocEntries = $derived(meta ? flattenToc(meta.toc, meta) : []);
   let chapterBookInfo = $derived(meta?.book_info.chapter_info[chapterIndex] ?? null);
 
-  // Restore the last reader session once on page load. Returning to the shelf
-  // should stay on the shelf, so this effect is intentionally one-shot.
+  // Initialize persisted reading state once. Returning to the shelf should stay
+  // on the shelf, so session restore remains intentionally one-shot.
   $effect(() => {
-    if (triedRestore) return;
-    triedRestore = true;
-
-    const session = loadSession();
-    if (session && view === "bookshelf" && isTauriRuntime()) {
-      (async () => {
-        try {
-          await openBookLocator(session, session.chapter, "Restoring...", session.chapterProgress ?? 0);
-          debug = "Restored";
-        } catch (e) {
-          clearSession();
-          error = String(e);
-          debug = "Restore failed";
-        }
-      })();
-    }
-  });
-
-  $effect(() => {
-    if (triedLibraryLoad) return;
-    triedLibraryLoad = true;
+    if (triedStartup) return;
+    triedStartup = true;
     if (!isTauriRuntime()) return;
 
     (async () => {
       try {
+        const readingState = await importLegacyReadingState(true);
+        books = readingState.books;
         const libraryBooks = await invoke<LibraryBookRecord[]>("library_list_books");
         books = mergeLibraryBooks(books, libraryBooks);
+
+        const session = readingState.session;
+        if (session && view === "bookshelf") {
+          try {
+            await openBookLocator(session, session.chapter, "Restoring...", session.chapterProgress ?? 0);
+            debug = "Restored";
+          } catch (e) {
+            await clearReadingSession(true);
+            error = String(e);
+            debug = "Restore failed";
+          }
+        }
       } catch (e) {
-        console.warn("Library list failed", e);
+        error = String(e);
+        debug = "Startup state failed";
       }
     })();
   });
@@ -116,7 +114,17 @@
     progress: ReaderProgress | null = currentReaderProgress,
     chapterProgressFallback = 0,
   ) {
-    books = saveReadingProgress(books, locator, bookMeta, chapter, progress, chapterProgressFallback);
+    const update = buildReadingProgressUpdate(locator, bookMeta, chapter, progress, chapterProgressFallback);
+    books = upsertReadingProgressBook(books, update.record);
+    const saveVersion = ++progressSaveVersion;
+    void persistReadingProgress(update.record, update.session, isTauriRuntime())
+      .then((savedBooks) => {
+        if (saveVersion !== progressSaveVersion) return;
+        books = savedBooks;
+      })
+      .catch((e) => {
+        error = String(e);
+      });
   }
 
   async function openBookLocator(locator: BookLocator, chapter = 0, status = "Opening...", chapterProgress = 0) {

@@ -1,3 +1,4 @@
+import { invoke } from "@tauri-apps/api/core";
 import type { EpubMeta, ReaderProgress } from "./types";
 
 const BOOKS_KEY = "hoshi_books";
@@ -48,6 +49,16 @@ export type BookRecord = {
   percent?: number;
 };
 
+export type ReadingState = {
+  books: BookRecord[];
+  session: SavedSession | null;
+};
+
+export type ReadingProgressUpdate = {
+  record: BookRecord;
+  session: SavedSession;
+};
+
 function readJson<T>(key: string, fallback: T): T {
   try {
     const raw = localStorage.getItem(key);
@@ -91,6 +102,40 @@ export function clearSession() {
   localStorage.removeItem(SESSION_KEY);
 }
 
+export async function importLegacyReadingState(useTauri: boolean): Promise<ReadingState> {
+  if (!useTauri) {
+    return {
+      books: loadBooks(),
+      session: loadSession(),
+    };
+  }
+
+  return invoke<ReadingState>("reading_import_legacy_state", {
+    books: loadBooks(),
+    session: loadSession(),
+  });
+}
+
+export async function loadReadingState(useTauri: boolean): Promise<ReadingState> {
+  if (!useTauri) {
+    return {
+      books: loadBooks(),
+      session: loadSession(),
+    };
+  }
+
+  return invoke<ReadingState>("reading_load_state");
+}
+
+export async function clearReadingSession(useTauri: boolean): Promise<void> {
+  if (!useTauri) {
+    clearSession();
+    return;
+  }
+
+  await invoke("reading_clear_session");
+}
+
 export function bookRecordKey(book: BookRecord): string {
   return locatorKey(book);
 }
@@ -124,14 +169,13 @@ export function mergeLibraryBooks(books: BookRecord[], libraryBooks: LibraryBook
   return [...books, ...importedRecords].slice(0, MAX_BOOKS);
 }
 
-export function saveReadingProgress(
-  books: BookRecord[],
+export function buildReadingProgressUpdate(
   locator: BookLocator,
   bookMeta: EpubMeta,
   chapter: number,
   progress: ReaderProgress | null,
   chapterProgressFallback = 0,
-): BookRecord[] {
+): ReadingProgressUpdate {
   const totalChapters = bookMeta.spine.length;
   const safeChapter = clampChapter(chapter, totalChapters);
   const chapterInfo = bookMeta.book_info.chapter_info[safeChapter];
@@ -144,7 +188,7 @@ export function saveReadingProgress(
     : Math.round((chapterInfo?.current_total ?? 0) + (chapterInfo?.chapter_count ?? 0) * chapterProgress);
   const percent = totalCharacters > 0 ? (bookReadChars / totalCharacters) * 100 : 0;
 
-  localStorage.setItem(SESSION_KEY, JSON.stringify({
+  const session: SavedSession = {
     bookId: locator.bookId,
     path: locator.path,
     sourcePath: locator.sourcePath,
@@ -154,7 +198,7 @@ export function saveReadingProgress(
     bookReadChars,
     totalCharacters,
     percent,
-  }));
+  };
 
   const record: BookRecord = {
     bookId: locator.bookId,
@@ -170,11 +214,29 @@ export function saveReadingProgress(
     totalCharacters,
     percent,
   };
-  const key = locatorKey(locator);
-  const nextBooks = [
+
+  return { record, session };
+}
+
+export function upsertReadingProgressBook(books: BookRecord[], record: BookRecord): BookRecord[] {
+  const key = bookRecordKey(record);
+  return [
     record,
     ...books.filter((book) => bookRecordKey(book) !== key),
   ].slice(0, MAX_BOOKS);
+}
+
+export async function persistReadingProgress(
+  record: BookRecord,
+  session: SavedSession,
+  useTauri: boolean,
+): Promise<BookRecord[]> {
+  if (useTauri) {
+    return invoke<BookRecord[]>("reading_save_progress", { record, session });
+  }
+
+  const nextBooks = upsertReadingProgressBook(loadBooks(), record);
+  localStorage.setItem(SESSION_KEY, JSON.stringify(session));
   localStorage.setItem(BOOKS_KEY, JSON.stringify(nextBooks));
   return nextBooks;
 }

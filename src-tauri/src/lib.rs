@@ -1,6 +1,7 @@
 mod dict;
 mod epub;
 mod library;
+mod storage;
 
 use dict::commands::DictState;
 use epub::commands::EpubState;
@@ -22,6 +23,10 @@ pub fn run() {
             library::library_import_epub,
             library::library_list_books,
             library::library_open_book,
+            storage::reading_load_state,
+            storage::reading_save_progress,
+            storage::reading_clear_session,
+            storage::reading_import_legacy_state,
             dict::commands::dictionary_import_yomitan_zip,
             dict::commands::dictionary_list,
             dict::commands::dictionary_set_enabled,
