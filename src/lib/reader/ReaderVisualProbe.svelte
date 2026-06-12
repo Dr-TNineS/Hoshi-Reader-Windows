@@ -43,6 +43,7 @@
   let startAtEnd = $state(false);
   let lastProgress = $state<ReaderProgress | null>(null);
   let lastSelection = $state<ReaderSelection | null>(null);
+  let selectionCount = $state(0);
 
   function recordProgress(progress: ReaderProgress) {
     lastProgress = progress;
@@ -50,6 +51,7 @@
 
   function recordSelection(selection: ReaderSelection | null) {
     lastSelection = selection;
+    if (selection) selectionCount += 1;
   }
 
   function nextChapter() {
@@ -90,6 +92,7 @@
   data-chapter-index={chapterIndex}
   data-progress={lastProgress?.chapterProgress ?? 0}
   data-selection={lastSelection?.text ?? ""}
+  data-selection-count={selectionCount}
 >
   {lastProgress?.chapterReadChars ?? 0}:{lastSelection?.text ?? ""}
 </div>

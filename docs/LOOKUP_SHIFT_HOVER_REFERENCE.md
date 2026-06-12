@@ -172,10 +172,10 @@ HSW already has the core interaction:
 
 The current HSW model is simpler than Hibiki:
 
-- It uses a timer-based delay rather than a movement-distance threshold.
-- It does not appear to have explicit same-hit dedupe beyond normal selection behavior.
+- It combines a short timer with Hibiki-style 8px movement-distance thresholding.
+- It dedupes repeated lookup callbacks for the same selected text and rounded anchor rect.
 - It does not have a dedicated popup/barrier hover pass-through path.
-- It does not support recursive lookup inside popup glossary text.
+- It supports replacement-style recursive lookup inside popup glossary text, but not Hibiki-style stacked child popups.
 - It uses the browser's visible selection instead of a CSS Highlights based custom highlight layer.
 
 ## Suggested Migration Plan
@@ -185,6 +185,8 @@ Implement these only if lookup interaction hardening becomes the active slice.
 ### Slice 1: Reader Shift Hover Stability
 
 Goal: make current Shift+hover feel closer to Hibiki without changing popup architecture.
+
+Implementation status: implemented in HSW. Reader Shift-hover uses an 8px movement threshold, resets hover state when Shift is released or the pointer leaves the reader viewport, and dedupes repeated lookup callbacks for the same selected text/anchor.
 
 Key changes:
 

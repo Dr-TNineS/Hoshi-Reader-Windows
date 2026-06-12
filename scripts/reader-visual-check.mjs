@@ -185,6 +185,10 @@ async function probeSelectionText(page) {
   return await page.locator(".probe-state").getAttribute("data-selection") ?? "";
 }
 
+async function probeSelectionCount(page) {
+  return Number(await page.locator(".probe-state").getAttribute("data-selection-count") ?? 0);
+}
+
 async function main() {
   const vite = spawn(
     process.platform === "win32" ? "cmd.exe" : "npm",
@@ -226,6 +230,17 @@ async function main() {
     await page.keyboard.up("Shift");
     const shiftHoverSelection = await probeSelectionText(page);
     assert(shiftHoverSelection.length > 0, "Shift hover should select reader text for lookup.", { lookupPoint, shiftHoverSelection });
+    const shiftHoverCount = await probeSelectionCount(page);
+
+    await page.keyboard.down("Shift");
+    await page.mouse.move(lookupPoint.x + 2, lookupPoint.y + 2);
+    await page.waitForTimeout(120);
+    await page.keyboard.up("Shift");
+    assert(
+      await probeSelectionCount(page) === shiftHoverCount,
+      "Tiny Shift-hover movement should not retrigger lookup selection.",
+      { lookupPoint, shiftHoverSelection, shiftHoverCount, currentCount: await probeSelectionCount(page) },
+    );
 
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => (document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "") === "", { timeout: 10000 });

@@ -23,6 +23,7 @@
   const MAX_SELECTION_TEXT = 80;
   const MAX_HOVER_SELECTION_TEXT = 16;
   const SHIFT_HOVER_DELAY_MS = 45;
+  const SHIFT_HOVER_MOVE_THRESHOLD_SQUARED = 64;
   const SCAN_BOUNDARY_PATTERN = /[\s\u3000\u3001\u3002\uff01\uff1f\uff08\uff09\u300c\u300d\u300e\u300f\u3010\u3011\u2014\u2026.,!?;:()[\]{}"'<>/\\|]/u;
 
   let containerEl: HTMLDivElement = $state()!;
@@ -42,6 +43,8 @@
   let hasActiveSelection = false;
   let shiftKeyPressed = false;
   let lastPointer: { x: number; y: number } | null = null;
+  let lastShiftHoverPoint: { x: number; y: number } | null = null;
+  let lastLookupSelectionKey = "";
   let shiftHoverTimer: number | null = null;
   let layoutRun = 0;
   let contentMaxScroll = 0;
@@ -489,7 +492,11 @@
       return null;
     }
 
+    const selectionKey = `${chapterIndex}:${text}:${Math.round(rect.x)}:${Math.round(rect.y)}`;
     const selection = { text, rect, chapterIndex };
+    if (selectionKey === lastLookupSelectionKey) return selection;
+
+    lastLookupSelectionKey = selectionKey;
     hasActiveSelection = true;
     onSelectionChange(selection);
     return selection;
@@ -502,6 +509,7 @@
     }
     window.getSelection()?.removeAllRanges();
     hasActiveSelection = false;
+    lastLookupSelectionKey = "";
     onSelectionChange(null);
   }
 
@@ -509,6 +517,25 @@
     if (shiftHoverTimer === null) return;
     window.clearTimeout(shiftHoverTimer);
     shiftHoverTimer = null;
+  }
+
+  function resetShiftHoverState() {
+    clearShiftHoverTimer();
+    lastShiftHoverPoint = null;
+  }
+
+  function shouldScheduleShiftHoverLookup(point: { x: number; y: number }): boolean {
+    if (!lastShiftHoverPoint) {
+      lastShiftHoverPoint = point;
+      return true;
+    }
+
+    const dx = point.x - lastShiftHoverPoint.x;
+    const dy = point.y - lastShiftHoverPoint.y;
+    if (dx * dx + dy * dy < SHIFT_HOVER_MOVE_THRESHOLD_SQUARED) return false;
+
+    lastShiftHoverPoint = point;
+    return true;
   }
 
   function scheduleShiftHoverLookup() {
@@ -652,7 +679,7 @@
     const ctrl = e.ctrlKey || e.metaKey;
     if (e.key === "Shift") {
       shiftKeyPressed = true;
-      scheduleShiftHoverLookup();
+      if (lastPointer && shouldScheduleShiftHoverLookup(lastPointer)) scheduleShiftHoverLookup();
     } else if (ctrl && e.key === "ArrowLeft") {
       e.preventDefault();
       onNextChapter();
@@ -678,7 +705,7 @@
   function handleKeyUp(e: KeyboardEvent) {
     if (e.key !== "Shift") return;
     shiftKeyPressed = false;
-    clearShiftHoverTimer();
+    resetShiftHoverState();
   }
 
   function handleContentClick(e: MouseEvent) {
@@ -701,15 +728,15 @@
     lastPointer = { x: e.clientX, y: e.clientY };
     shiftKeyPressed = e.shiftKey;
     if (e.shiftKey) {
-      scheduleShiftHoverLookup();
+      if (shouldScheduleShiftHoverLookup(lastPointer)) scheduleShiftHoverLookup();
     } else {
-      clearShiftHoverTimer();
+      resetShiftHoverState();
     }
   }
 
   function handleWindowBlur() {
     shiftKeyPressed = false;
-    clearShiftHoverTimer();
+    resetShiftHoverState();
   }
 
   function handleWheel(e: WheelEvent) {
@@ -740,6 +767,7 @@
       scrollTailTop = 0;
       clearSelection();
       lastPointer = null;
+      resetShiftHoverState();
       layoutRun += 1;
     }
   });
@@ -760,10 +788,12 @@
     content.addEventListener("click", handleContentClick);
     viewport.addEventListener("pointerdown", handlePointerDown);
     viewport.addEventListener("pointermove", handlePointerMove);
+    viewport.addEventListener("pointerleave", resetShiftHoverState);
     return () => {
       content.removeEventListener("click", handleContentClick);
       viewport.removeEventListener("pointerdown", handlePointerDown);
       viewport.removeEventListener("pointermove", handlePointerMove);
+      viewport.removeEventListener("pointerleave", resetShiftHoverState);
       handleWindowBlur();
     };
   });
