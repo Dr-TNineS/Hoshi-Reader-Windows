@@ -74,6 +74,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - `HSW_HOSHIDICTS_DIR` can override the default local hoshidicts path.
   - Bookshelf has a minimal `Import Dictionary` entry for Yomitan `.zip` files.
   - Bookshelf has a minimal dictionary management panel for listing imported dictionaries, refreshing status, enabling/disabling dictionaries, and changing lookup order.
+  - Dictionary management probe and `npm run check:dictionary-management` cover empty/loading/error/ready states, visible counts, enable toggles, order controls, import/refresh actions, and narrow-window overflow.
   - Dictionary import uses zip content hash as stable `dict_id` and records successful imports in the manifest.
   - `DictResult` includes rules, source dictionary, frequency entries, and pitch entries.
   - Local VS Build Tools, MSVC, Windows SDK, VS-bundled CMake, and VS-bundled Ninja can drive the hoshidicts CMake configure path from a VS developer shell.
@@ -134,6 +135,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Documentation-only changes: `git diff --check`
 - Frontend/type changes: `npm run check`
 - Frontend production build: `npm run build`
+- Dictionary management regression probe: `npm run check:dictionary-management`
 - Lookup popup regression probe: `npm run check:lookup-popup`
 - Reader visual regression probe: `npm run check:reader-visual`
 - Rust command/backend changes: `cd src-tauri; cargo check`
