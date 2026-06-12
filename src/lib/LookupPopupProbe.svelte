@@ -18,14 +18,30 @@
   const glossaryText = longResult
     ? Array.from({ length: 16 }, (_, index) => `structured glossary line ${index + 1}: a school or learning place`).join("; ")
     : "school; a place of study";
+  const structuredGlossaryText = JSON.stringify([
+    {
+      type: "structured-content",
+      content: [
+        { tag: "div", content: "classroom school room" },
+        {
+          tag: "ul",
+          content: [
+            { tag: "li", content: "first structured sense" },
+            { tag: "li", content: ["second structured sense", { tag: "br" }, "with a line break"] },
+          ],
+        },
+      ],
+    },
+  ]);
 
   const results: DictResult[] = [
     {
       expression: "学校",
       reading: "がっこう",
       glossary: [
-        { dict: "Jitendex.org [probe]", text: glossaryText },
+        { dict: "Jitendex.org [probe]", text: structuredGlossaryText },
         { dict: "Jitendex.org [probe]", text: "academy; lesson context" },
+        { dict: "Jitendex.org [probe]", text: glossaryText },
       ],
       matched: "学校",
       deinflected: "学校",

@@ -68,6 +68,8 @@ async function popupMetrics(page) {
       hasResultsScroller: results instanceof HTMLElement && results.scrollHeight > results.clientHeight,
       ankiDisabled: document.querySelector(".lookup-anki")?.hasAttribute("disabled") ?? false,
       ankiTitle: document.querySelector(".lookup-anki")?.getAttribute("title") ?? "",
+      structuredListItems: document.querySelectorAll(".lookup-glossary-content ul li").length,
+      structuredBreaks: document.querySelectorAll(".lookup-glossary-content br").length,
     };
   });
 }
@@ -114,6 +116,9 @@ async function main() {
     const ready = await popupMetrics(page);
     assert(ready.text.includes("学校") && ready.text.includes("がっこう"), "Ready popup should render expression and reading.", ready);
     assert(ready.text.includes("Jitendex.org [probe]"), "Ready popup should render dictionary source.", ready);
+    assert(ready.text.includes("classroom school room"), "Ready popup should render structured glossary as readable text.", ready);
+    assert(!ready.text.includes("structured-content") && !ready.text.includes("\"tag\""), "Ready popup should not expose raw structured glossary JSON.", ready);
+    assert(ready.structuredListItems >= 2 && ready.structuredBreaks >= 1, "Ready popup should preserve structured glossary list and line breaks.", ready);
     assert(ready.text.includes("Freq") && ready.text.includes("120"), "Ready popup should render frequency.", ready);
     assert(ready.text.includes("Pitch") && ready.text.includes("ガッコー"), "Ready popup should render pitch.", ready);
     assert(ready.text.includes("Anki not configured") && ready.ankiDisabled, "Anki boundary should remain disabled.", ready);

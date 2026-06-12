@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { formatLookupMatch, frequencyLabel, pitchLabel, resultDictionaryLabel, type LookupState } from "./lookup-popup";
+  import { formatLookupMatch, frequencyLabel, pitchLabel, renderGlossaryContent, resultDictionaryLabel, type LookupState } from "./lookup-popup";
   import type { DictResult, ReaderSelection } from "./types";
 
   let {
@@ -63,7 +63,10 @@
           </div>
         {/if}
         {#each result.glossary.slice(0, 3) as entry}
-          <p class="lookup-glossary"><span>{entry.dict}</span>{entry.text}</p>
+          <div class="lookup-glossary">
+            <span class="lookup-glossary-dict">{entry.dict}</span>
+            <div class="lookup-glossary-content">{@html renderGlossaryContent(entry.text)}</div>
+          </div>
         {/each}
         {#if frequencyLabel(result)}
           <p class="lookup-detail"><span>Freq</span>{frequencyLabel(result)}</p>
@@ -94,8 +97,20 @@
   .lookup-meta { color: #81c995; font-size: 11px; line-height: 1.3; overflow-wrap: anywhere; }
   .lookup-tags { display: flex; flex-wrap: wrap; gap: 4px; }
   .lookup-tag { max-width: 100%; padding: 2px 6px; background: #30343a; color: #8ab4f8; border: 1px solid #454b52; border-radius: 4px; font-size: 11px; line-height: 1.25; overflow-wrap: anywhere; }
-  .lookup-glossary { color: #d7d9dc; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
-  .lookup-glossary span { margin-right: 6px; color: #81c995; font-size: 11px; }
+  .lookup-glossary { display: flex; flex-direction: column; gap: 2px; color: #d7d9dc; font-size: 12px; line-height: 1.38; overflow-wrap: anywhere; }
+  .lookup-glossary-dict { color: #81c995; font-size: 11px; }
+  .lookup-glossary-content { min-width: 0; }
+  .lookup-glossary-content :global(.structured-content) { display: inline; }
+  .lookup-glossary-content :global(ul),
+  .lookup-glossary-content :global(ol) { padding-left: 1.25em; margin: 3px 0; }
+  .lookup-glossary-content :global(li) { margin: 2px 0; }
+  .lookup-glossary-content :global(table) { max-width: 100%; table-layout: auto; border-collapse: collapse; }
+  .lookup-glossary-content :global(th),
+  .lookup-glossary-content :global(td) { padding: 3px 5px; border: 1px solid #5a6169; vertical-align: top; }
+  .lookup-glossary-content :global(th) { background: #30343a; font-weight: 600; }
+  .lookup-glossary-content :global(.gloss-sc-table-container) { display: block; max-width: 100%; overflow-x: auto; }
+  .lookup-glossary-content :global(a) { color: #8ab4f8; }
+  .lookup-glossary-content :global(rt) { color: #b7bcc3; font-size: 0.72em; }
   .lookup-detail { color: #c8ccd1; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
   .lookup-detail span { margin-right: 6px; color: #fdd663; }
   .lookup-anki { align-self: flex-start; margin-top: 2px; padding: 3px 7px; background: #2b2f34; color: #7f858c; border: 1px solid #444a51; border-radius: 4px; cursor: not-allowed; font-size: 11px; }
