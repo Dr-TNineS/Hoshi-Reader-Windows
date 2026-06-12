@@ -100,6 +100,31 @@ async function readerMetrics(page) {
   });
 }
 
+async function probeChapterIndex(page) {
+  const value = await page.locator(".probe-state").getAttribute("data-chapter-index");
+  return Number(value);
+}
+
+async function waitForProbeChapter(page, chapterIndex) {
+  await page.waitForFunction(
+    (expected) => document.querySelector(".probe-state")?.getAttribute("data-chapter-index") === String(expected),
+    chapterIndex,
+    { timeout: 10000 },
+  );
+}
+
+async function readerHeaderText(page) {
+  return page.locator(".rh").innerText();
+}
+
+async function waitForHeaderText(page, text) {
+  await page.waitForFunction(
+    (expected) => document.querySelector(".rh")?.textContent?.includes(expected),
+    text,
+    { timeout: 10000 },
+  );
+}
+
 async function main() {
   const vite = spawn(
     process.platform === "win32" ? "cmd.exe" : "npm",
@@ -129,6 +154,34 @@ async function main() {
         Math.abs(desktop.previousPageTop - desktop.lastPageTop) <= 2,
       "Last page text top should align with the previous page.",
       desktop,
+    );
+
+    await page.locator(".rv").click();
+    await page.keyboard.press("Control+ArrowLeft");
+    await waitForProbeChapter(page, 1);
+    await waitForHeaderText(page, "Ch.2/2");
+    await waitForHeaderText(page, "P.1/");
+
+    await page.keyboard.press("Control+ArrowRight");
+    await waitForProbeChapter(page, 0);
+    await waitForHeaderText(page, "Ch.1/2");
+    await waitForHeaderText(page, "P.1/");
+
+    for (let i = 0; i < desktop.totalPages; i += 1) {
+      await page.keyboard.press("ArrowLeft");
+    }
+    await waitForProbeChapter(page, 1);
+    assert(await probeChapterIndex(page) === 1, "ArrowLeft at the final page should advance to the next chapter.");
+    await waitForHeaderText(page, "P.1/");
+
+    await page.keyboard.press("ArrowRight");
+    await waitForProbeChapter(page, 0);
+    await waitForHeaderText(page, `P.${desktop.totalPages}/${desktop.totalPages}`);
+    const previousAtEndHeader = await readerHeaderText(page);
+    assert(
+      previousAtEndHeader.includes("Ch.1/2") && previousAtEndHeader.includes(`P.${desktop.totalPages}/${desktop.totalPages}`),
+      "ArrowRight at a chapter start should return to the previous chapter's final page.",
+      { previousAtEndHeader },
     );
 
     await page.setViewportSize({ width: 520, height: 720 });

@@ -22,8 +22,8 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Slice 9 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including `MK3Fix0213.zip` Windows compatibility import and linked runtime lookup.
    - Slice 10 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including source-title mapping for compatibility imports.
    - Dictionary management UI is complete at the minimal bookshelf-panel level.
-   - Reader visual regression coverage now has a minimal automated probe for pagination geometry, final-page alignment, image rendering, and narrow-window overflow.
-   - Next recommended work: add automated reader chapter-boundary/navigation coverage.
+   - Reader visual regression coverage now has a minimal automated probe for pagination geometry, final-page alignment, image rendering, narrow-window overflow, Ctrl chapter navigation, and page-boundary chapter navigation.
+   - Next recommended work: reassess whether lookup needs more real-data validation, or shift to the next product area in `AGENTS.md`.
 2. Preserve the bookshelf/import/reader/session main path described in `docs/READER_ENTRY_CHARACTERIZATION.md`.
 3. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 4. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
@@ -31,7 +31,6 @@ This file is the short operational handoff for future agents. Keep detailed stat
 ## Active Blockers
 
 - Compatibility imports that bypass legacy zip/media filename encoding issues intentionally skip media entries, so `MK3Fix0213.zip` imports with `mediaCount=0`.
-- Reader chapter-boundary/navigation behavior still lacks automated visual regression coverage.
 
 ## Required Validation
 

@@ -50,7 +50,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - EPUB asset URL rewriting.
   - Basic image load/reflow handling, SVG cover replacement, gaiji image handling, and block image handling.
   - Reader progress based on visible text position.
-  - Reader visual probe fixture and `npm run check:reader-visual` cover baseline pagination geometry, final-page alignment, block image rendering, and narrow-window overflow.
+  - Reader visual probe fixture and `npm run check:reader-visual` cover baseline pagination geometry, final-page alignment, block image rendering, narrow-window overflow, Ctrl chapter navigation, and page-boundary chapter navigation.
 - Reader selection and popup:
   - Captures selected reader text with rect and chapter index.
   - Supports Shift hover lookup trigger.
@@ -103,7 +103,6 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Rust-side character counts and frontend DOM-based progress need further cross-validation.
 - Cover/image rendering depends on temporary extraction path mapping and asset URL rewriting.
 - Running the frontend outside Tauri only provides partial behavior because native EPUB commands require Tauri.
-- Chapter-boundary behavior still lacks automated visual regression coverage.
 
 ## Risk Areas
 
