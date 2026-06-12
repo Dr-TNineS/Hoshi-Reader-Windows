@@ -25,7 +25,8 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Reader visual regression coverage now has a minimal automated probe for pagination geometry, final-page alignment, image rendering, narrow-window overflow, Ctrl chapter navigation, and page-boundary chapter navigation.
    - Lookup popup regression coverage now has a minimal automated probe for all visible popup states, result metadata, long-result scrolling, disabled Anki boundary, and narrow-window overflow.
    - Dictionary management UI coverage now has a minimal automated probe for empty/loading/error/ready states, counts, enable/order controls, actions, and narrow-window overflow.
-   - Next recommended work: reassess whether lookup needs more real-data validation, or shift to the next product area in `AGENTS.md`.
+   - Final linked real dictionary validation with local `MK3Fix0213.zip` passed on 2026-06-12: `dict_id=93e8e532b599ba4a`, `term=140821`, `media=0`, `lookup_results=2`.
+   - Next recommended work: shift to the next product area in `AGENTS.md` unless the user opens a new lookup-hardening goal.
 2. Preserve the bookshelf/import/reader/session main path described in `docs/READER_ENTRY_CHARACTERIZATION.md`.
 3. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 4. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
@@ -44,6 +45,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
 - Reader visual probe changes: `npm run check:reader-visual`
 - Rust/backend changes: `cd src-tauri; cargo check`
 - Rust library tests when touching storage, EPUB, sanitizer, or dictionary logic: `cd src-tauri; cargo test --lib`
+- Linked real dictionary validation: VS developer shell with `RUSTFLAGS=--cfg hoshi_dicts_linked`, `CARGO_TARGET_DIR=target-linked-check`, `HSW_REAL_YOMITAN_ZIP=<local dictionary zip>`, then `cargo test --lib imports_real_yomitan_zip_and_loads_runtime -- --ignored --nocapture`
 
 ## Do Not Start Without A Slice
 

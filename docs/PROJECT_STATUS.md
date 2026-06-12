@@ -83,6 +83,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Direct Tauri file-dialog import was verified with `jitendex-yomitan.zip`; the reader popup rendered real Jitendex results for text selected from a real `かがみの孤城` EPUB.
   - Dictionary importer exceptions from the C bridge are surfaced through the Rust command path instead of collapsing to only `Dictionary import failed.`
   - `MK3Fix0213.zip` imports on Windows through a compatibility retry path that skips legacy-encoded media entries, preserves the original manifest title, and loads real lookup results.
+  - Final linked validation on 2026-06-12 ran `imports_real_yomitan_zip_and_loads_runtime` against local `MK3Fix0213.zip`: `dict_id=93e8e532b599ba4a`, `term=140821`, `media=0`, and `lookup_results=2`.
   - Lookup responses map compatibility-import internal ASCII titles back to manifest titles for result, glossary, frequency, and pitch source labels.
 
 ## Not Implemented Or Not Verified
@@ -140,6 +141,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Reader visual regression probe: `npm run check:reader-visual`
 - Rust command/backend changes: `cd src-tauri; cargo check`
 - Rust tests: `cd src-tauri; cargo test --lib`
+- Linked real dictionary validation: run from a VS developer shell with `RUSTFLAGS=--cfg hoshi_dicts_linked`, `CARGO_TARGET_DIR=target-linked-check`, `HSW_REAL_YOMITAN_ZIP=<local dictionary zip>`, then `cargo test --lib imports_real_yomitan_zip_and_loads_runtime -- --ignored --nocapture`
 - Tauri runtime check: `cmd /c npx.cmd tauri dev`
 
 ## Related Docs
