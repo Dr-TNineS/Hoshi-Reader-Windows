@@ -9,11 +9,11 @@
   const lookupState = allowedStates.includes(requestedState ?? "loading") ? requestedState ?? "loading" : "loading";
   const longResult = params.has("longResult");
 
-  const selection: ReaderSelection = {
-    text: "学校",
+  let selection: ReaderSelection = $state({
+    text: "瀛︽牎",
     chapterIndex: 0,
     rect: { x: 460, y: 180, width: 36, height: 120 },
-  };
+  });
 
   const glossaryText = longResult
     ? Array.from({ length: 16 }, (_, index) => `structured glossary line ${index + 1}: a school or learning place`).join("; ")
@@ -34,28 +34,44 @@
     },
   ]);
 
-  const results: DictResult[] = [
-    {
-      expression: "学校",
-      reading: "がっこう",
-      glossary: [
-        { dict: "Jitendex.org [probe]", text: structuredGlossaryText },
-        { dict: "Jitendex.org [probe]", text: "academy; lesson context" },
-        { dict: "Jitendex.org [probe]", text: glossaryText },
-      ],
-      matched: "学校",
-      deinflected: "学校",
-      rules: "v5k",
-      dictionary: "Jitendex.org [probe]",
-      frequencies: [{ dictionary: "Freq Probe", items: [{ value: 120, displayValue: "120" }] }],
-      pitches: [{ dictionary: "Pitch Probe", positions: [0, 2], transcriptions: ["ガッコー"] }],
-    },
-  ];
+  const baseResult: DictResult = {
+    expression: "瀛︽牎",
+    reading: "銇屻仯銇撱亞",
+    glossary: [
+      { dict: "Jitendex.org [probe]", text: structuredGlossaryText },
+      { dict: "Jitendex.org [probe]", text: "academy; lesson context" },
+      { dict: "Jitendex.org [probe]", text: glossaryText },
+    ],
+    matched: "瀛︽牎",
+    deinflected: "瀛︽牎",
+    rules: "v5k",
+    dictionary: "Jitendex.org [probe]",
+    frequencies: [{ dictionary: "Freq Probe", items: [{ value: 120, displayValue: "120" }] }],
+    pitches: [{ dictionary: "Pitch Probe", positions: [0, 2], transcriptions: ["銈儍銈炽兗"] }],
+  };
 
+  let results: DictResult[] = $state([{ ...baseResult }]);
   let importClicks = $state(0);
   let closeClicks = $state(0);
   let nestedLookupCount = $state(0);
   let nestedLookupText = $state("");
+
+  function replaceWithNestedLookup(nestedSelection: ReaderSelection) {
+    nestedLookupCount += 1;
+    nestedLookupText = nestedSelection.text;
+    selection = nestedSelection;
+    results = [{
+      ...baseResult,
+      expression: nestedSelection.text,
+      reading: "",
+      glossary: [{ dict: "Jitendex.org [probe]", text: `nested result for ${nestedSelection.text}` }],
+      matched: nestedSelection.text,
+      deinflected: nestedSelection.text,
+      rules: "",
+      frequencies: [],
+      pitches: [],
+    }];
+  }
 </script>
 
 <main class="probe">
@@ -75,10 +91,7 @@
       results={lookupState === "ready" ? results : []}
       onImportDictionary={() => importClicks += 1}
       onClose={() => closeClicks += 1}
-      onNestedLookup={(nestedSelection) => {
-        nestedLookupCount += 1;
-        nestedLookupText = nestedSelection.text;
-      }}
+      onNestedLookup={replaceWithNestedLookup}
       ankiTitle={() => "Payload prepared for Probe Book"}
     />
   </aside>
@@ -98,7 +111,7 @@
   :global(body) { background: #202124; color: #e8eaed; font-family: "Segoe UI", sans-serif; overflow: hidden; }
   .probe { width: 100vw; height: 100vh; position: relative; }
   .probe::before {
-    content: "学校";
+    content: "瀛︽牎";
     position: fixed;
     left: 460px;
     top: 180px;

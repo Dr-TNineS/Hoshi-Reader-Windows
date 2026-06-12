@@ -242,6 +242,16 @@ async function main() {
       { lookupPoint, shiftHoverSelection, shiftHoverCount, currentCount: await probeSelectionCount(page) },
     );
 
+    await page.keyboard.down("Shift");
+    await page.mouse.move(10, 10);
+    await page.waitForTimeout(120);
+    await page.keyboard.up("Shift");
+    assert(
+      await probeSelectionText(page) === shiftHoverSelection,
+      "Shift-hover miss should not clear an existing lookup popup.",
+      { lookupPoint, shiftHoverSelection, currentSelection: await probeSelectionText(page) },
+    );
+
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => (document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "") === "", { timeout: 10000 });
     await page.mouse.move(lookupPoint.x - 8, lookupPoint.y - 8);

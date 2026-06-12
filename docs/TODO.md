@@ -23,7 +23,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Slice 10 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including source-title mapping for compatibility imports.
    - Dictionary management UI is complete at the minimal bookshelf-panel level.
    - Reader visual regression coverage now has a minimal automated probe for pagination geometry, final-page alignment, image rendering, Shift-hover lookup selection, Shift-hover tiny-movement dedupe, plain mouse selection not opening lookup, narrow-window overflow, Ctrl chapter navigation, and page-boundary chapter navigation.
-   - Lookup popup regression coverage now has a minimal automated probe for all visible popup states, glossary Shift hover nested lookup callback, result metadata, long-result scrolling, disabled Anki boundary, and narrow-window overflow.
+   - Lookup popup regression coverage now has a minimal automated probe for all visible popup states, glossary Shift hover nested lookup replacement, result metadata, long-result scrolling, disabled Anki boundary, and narrow-window overflow.
    - Dictionary management UI coverage now has a minimal automated probe for empty/loading/error/ready states, counts, enable/order controls, actions, and narrow-window overflow.
    - Final linked real dictionary validation with local `MK3Fix0213.zip` passed on 2026-06-12: `dict_id=93e8e532b599ba4a`, `term=140821`, `media=0`, `lookup_results=2`.
    - Next recommended work: shift to the next product area in `AGENTS.md` unless the user opens a new lookup-hardening goal.

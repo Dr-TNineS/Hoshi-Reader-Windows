@@ -432,7 +432,6 @@
 
     const hit = characterAtPoint(x, y);
     if (!hit) {
-      clearSelection();
       return null;
     }
 
@@ -472,7 +471,6 @@
 
     text = selectionText(text);
     if (!text || ranges.length === 0) {
-      clearSelection();
       return null;
     }
 
@@ -488,7 +486,6 @@
     ranges.forEach((range) => range.detach());
     visibleRange.detach();
     if (!rect) {
-      clearSelection();
       return null;
     }
 
