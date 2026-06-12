@@ -59,6 +59,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Popup distinguishes loading, no dictionary, engine unavailable, empty, error, and ready states.
   - Popup renders the current lookup result shape: expression, reading, source dictionary, matched/deinflected text, rules, glossary, frequency, and pitch.
   - Popup has a disabled Anki boundary affordance and can build a typed lookup-to-Anki payload from the selected result and current book/chapter context.
+  - Lookup popup probe and `npm run check:lookup-popup` cover popup states, long-result internal scrolling, frequency/pitch display, disabled Anki boundary, import/close actions, and narrow-window overflow.
   - Popup clears on page/chapter changes, TOC jumps, shelf return, close, and Escape.
 - Dictionary backend:
   - `dict_status` returns structured dictionary status: ready, no dictionaries, engine unavailable, or error.
@@ -133,6 +134,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Documentation-only changes: `git diff --check`
 - Frontend/type changes: `npm run check`
 - Frontend production build: `npm run build`
+- Lookup popup regression probe: `npm run check:lookup-popup`
 - Reader visual regression probe: `npm run check:reader-visual`
 - Rust command/backend changes: `cd src-tauri; cargo check`
 - Rust tests: `cd src-tauri; cargo test --lib`

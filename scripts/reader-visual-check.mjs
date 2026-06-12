@@ -1,4 +1,4 @@
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { chromium } from "playwright";
 
@@ -33,6 +33,15 @@ async function waitForServer(proc) {
   });
 
   await Promise.race([ready, exit]);
+}
+
+function stopServer(proc) {
+  if (proc.exitCode !== null) return;
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/PID", String(proc.pid), "/T", "/F"], { stdio: "ignore" });
+    return;
+  }
+  proc.kill();
 }
 
 async function readerMetrics(page) {
@@ -166,10 +175,13 @@ async function main() {
     await waitForProbeChapter(page, 0);
     await waitForHeaderText(page, "Ch.1/2");
     await waitForHeaderText(page, "P.1/");
+    await page.locator(".rv").click();
 
-    for (let i = 0; i < desktop.totalPages; i += 1) {
+    for (let pageNumber = 2; pageNumber <= desktop.totalPages; pageNumber += 1) {
       await page.keyboard.press("ArrowLeft");
+      await waitForHeaderText(page, `P.${pageNumber}/${desktop.totalPages}`);
     }
+    await page.keyboard.press("ArrowLeft");
     await waitForProbeChapter(page, 1);
     assert(await probeChapterIndex(page) === 1, "ArrowLeft at the final page should advance to the next chapter.");
     await waitForHeaderText(page, "P.1/");
@@ -193,7 +205,7 @@ async function main() {
     console.log(JSON.stringify({ desktop, narrow }, null, 2));
   } finally {
     if (browser) await browser.close();
-    vite.kill();
+    stopServer(vite);
   }
 }
 

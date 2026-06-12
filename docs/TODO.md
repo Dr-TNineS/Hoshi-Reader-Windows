@@ -23,6 +23,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Slice 10 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including source-title mapping for compatibility imports.
    - Dictionary management UI is complete at the minimal bookshelf-panel level.
    - Reader visual regression coverage now has a minimal automated probe for pagination geometry, final-page alignment, image rendering, narrow-window overflow, Ctrl chapter navigation, and page-boundary chapter navigation.
+   - Lookup popup regression coverage now has a minimal automated probe for all visible popup states, result metadata, long-result scrolling, disabled Anki boundary, and narrow-window overflow.
    - Next recommended work: reassess whether lookup needs more real-data validation, or shift to the next product area in `AGENTS.md`.
 2. Preserve the bookshelf/import/reader/session main path described in `docs/READER_ENTRY_CHARACTERIZATION.md`.
 3. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
@@ -37,6 +38,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
 - Documentation-only changes: `git diff --check`
 - Frontend changes: `npm run check`
 - Frontend production changes: `npm run build`
+- Lookup popup probe changes: `npm run check:lookup-popup`
 - Reader visual probe changes: `npm run check:reader-visual`
 - Rust/backend changes: `cd src-tauri; cargo check`
 - Rust library tests when touching storage, EPUB, sanitizer, or dictionary logic: `cd src-tauri; cargo test --lib`
