@@ -71,6 +71,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - `build.rs` attempts to compile/link `third_party/hoshidicts` and the current C API bridge when CMake/C++ tools exist.
   - `HSW_HOSHIDICTS_DIR` can override the default local hoshidicts path.
   - Bookshelf has a minimal `Import Dictionary` entry for Yomitan `.zip` files.
+  - Bookshelf has a minimal dictionary management panel for listing imported dictionaries, refreshing status, enabling/disabling dictionaries, and changing lookup order.
   - Dictionary import uses zip content hash as stable `dict_id` and records successful imports in the manifest.
   - `DictResult` includes rules, source dictionary, frequency entries, and pitch entries.
   - Local VS Build Tools, MSVC, Windows SDK, VS-bundled CMake, and VS-bundled Ninja can drive the hoshidicts CMake configure path from a VS developer shell.
@@ -84,7 +85,6 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata is still JSON.
-- No dictionary management/settings UI.
 - No real Anki integration; only the frontend payload boundary exists.
 - No sync implementation.
 - No settings or appearance panel.

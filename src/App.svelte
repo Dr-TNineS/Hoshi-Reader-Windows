@@ -14,7 +14,16 @@
     saveReadingProgress,
   } from "./lib/storage";
   import { findChapterIndex, flattenToc } from "./lib/toc";
-  import type { DictImportSummary, DictResult, DictionaryStatus, EpubMeta, LookupAnkiPayload, ReaderProgress, ReaderSelection } from "./lib/types";
+  import type {
+    DictImportSummary,
+    DictResult,
+    DictionaryManifestEntry,
+    DictionaryStatus,
+    EpubMeta,
+    LookupAnkiPayload,
+    ReaderProgress,
+    ReaderSelection,
+  } from "./lib/types";
   import type { BookLocator, BookRecord, LibraryBookRecord } from "./lib/storage";
 
   function clampChapter(chapter: number, total: number): number {
@@ -42,9 +51,15 @@
   let showToc = $state(false);
   let error = $state("");
   let dictionaryStatus = $state("");
+  let showDictionaryManager = $state(false);
+  let dictionaryList = $state<DictionaryManifestEntry[]>([]);
+  let dictionaryListStatus = $state<DictionaryStatus | null>(null);
+  let dictionaryListError = $state("");
+  let dictionaryBusy = $state(false);
   let debug = $state("");
   let triedRestore = false;
   let triedLibraryLoad = false;
+  let triedDictionaryList = false;
 
   let tocEntries = $derived(meta ? flattenToc(meta.toc, meta) : []);
   let chapterBookInfo = $derived(meta?.book_info.chapter_info[chapterIndex] ?? null);
@@ -83,6 +98,13 @@
         console.warn("Library list failed", e);
       }
     })();
+  });
+
+  $effect(() => {
+    if (triedDictionaryList) return;
+    triedDictionaryList = true;
+    if (!isTauriRuntime()) return;
+    void refreshDictionaries();
   });
 
   function saveProgress(
@@ -238,6 +260,51 @@
     return new Date(timestamp).toLocaleString();
   }
 
+  function importedLabel(timestamp: number): string {
+    if (timestamp <= 0) return "Unknown import time";
+    return new Date(timestamp * 1000).toLocaleString();
+  }
+
+  function dictionaryCountsLabel(dictionary: DictionaryManifestEntry): string {
+    const parts = [
+      dictionary.termCount > 0 ? `${dictionary.termCount} terms` : "",
+      dictionary.freqCount > 0 ? `${dictionary.freqCount} freq` : "",
+      dictionary.pitchCount > 0 ? `${dictionary.pitchCount} pitch` : "",
+    ].filter(Boolean);
+
+    return parts.length > 0 ? parts.join(" | ") : "No lookup data";
+  }
+
+  function dictionaryStatusLabel(status: DictionaryStatus | null): string {
+    if (!status) return "";
+    if (status.status === "ready") {
+      return `${status.loadedCount}/${status.importedCount} enabled dictionaries loaded.`;
+    }
+    return status.message;
+  }
+
+  async function refreshDictionaries() {
+    if (!isTauriRuntime()) {
+      dictionaryListError = "Dictionary management requires Tauri runtime.";
+      return;
+    }
+
+    dictionaryBusy = true;
+    dictionaryListError = "";
+    try {
+      const [entries, status] = await Promise.all([
+        invoke<DictionaryManifestEntry[]>("dictionary_list"),
+        invoke<DictionaryStatus>("dict_status"),
+      ]);
+      dictionaryList = entries;
+      dictionaryListStatus = status;
+    } catch (e) {
+      dictionaryListError = String(e);
+    } finally {
+      dictionaryBusy = false;
+    }
+  }
+
   function closeReaderSelection() {
     window.getSelection()?.removeAllRanges();
     readerSelection = null;
@@ -326,6 +393,11 @@
 
   async function importDictionary() {
     try {
+      if (!isTauriRuntime()) {
+        dictionaryStatus = "Dictionary import requires Tauri runtime.";
+        return;
+      }
+
       dictionaryStatus = "Importing dictionary...";
       const selected = await open({
         multiple: false,
@@ -340,6 +412,7 @@
       const reused = imported.reused ? "Reused" : "Imported";
       const ready = imported.ready ? "ready" : "not ready";
       dictionaryStatus = `${reused} ${imported.title} (${imported.termCount} terms, ${ready}).`;
+      await refreshDictionaries();
       if (readerSelection) {
         lookupRequestId += 1;
         const requestId = lookupRequestId;
@@ -348,6 +421,53 @@
       }
     } catch (e) {
       dictionaryStatus = String(e);
+    }
+  }
+
+  async function setDictionaryEnabled(dictionary: DictionaryManifestEntry, enabled: boolean) {
+    dictionaryBusy = true;
+    dictionaryListError = "";
+    try {
+      const status = await invoke<DictionaryStatus>("dictionary_set_enabled", { dictId: dictionary.dictId, enabled });
+      dictionaryListStatus = status;
+      await refreshDictionaries();
+      if (readerSelection) {
+        lookupRequestId += 1;
+        const requestId = lookupRequestId;
+        lookupState = "loading";
+        void lookupSelection(readerSelection, requestId);
+      }
+    } catch (e) {
+      dictionaryListError = String(e);
+    } finally {
+      dictionaryBusy = false;
+    }
+  }
+
+  async function moveDictionary(dictionary: DictionaryManifestEntry, direction: -1 | 1) {
+    const currentIndex = dictionaryList.findIndex((entry) => entry.dictId === dictionary.dictId);
+    const nextIndex = currentIndex + direction;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= dictionaryList.length) return;
+
+    const reordered = [...dictionaryList];
+    [reordered[currentIndex], reordered[nextIndex]] = [reordered[nextIndex], reordered[currentIndex]];
+    dictionaryBusy = true;
+    dictionaryListError = "";
+    try {
+      dictionaryList = await invoke<DictionaryManifestEntry[]>("dictionary_set_order", {
+        dictIds: reordered.map((entry) => entry.dictId),
+      });
+      dictionaryListStatus = await invoke<DictionaryStatus>("dict_status");
+      if (readerSelection) {
+        lookupRequestId += 1;
+        const requestId = lookupRequestId;
+        lookupState = "loading";
+        void lookupSelection(readerSelection, requestId);
+      }
+    } catch (e) {
+      dictionaryListError = String(e);
+    } finally {
+      dictionaryBusy = false;
     }
   }
 
@@ -473,6 +593,9 @@
           <p class="subtitle">Lightweight Japanese EPUB Reader</p>
         </div>
         <div class="head-actions">
+          <button class="secondary-action" onclick={() => showDictionaryManager = !showDictionaryManager}>
+            Dictionaries
+          </button>
           <button class="secondary-action" onclick={importDictionary}>Import Dictionary</button>
           <button class="ob" onclick={openBook}>Open EPUB</button>
         </div>
@@ -480,6 +603,73 @@
 
       {#if error}<p class="err">{error}</p>{/if}
       {#if dictionaryStatus}<p class="dict-status">{dictionaryStatus}</p>{/if}
+
+      {#if showDictionaryManager}
+        <section class="dictionary-panel">
+          <div class="dictionary-head">
+            <div>
+              <h2>Dictionaries</h2>
+              {#if dictionaryStatusLabel(dictionaryListStatus)}
+                <p class="dictionary-summary">{dictionaryStatusLabel(dictionaryListStatus)}</p>
+              {/if}
+            </div>
+            <div class="dictionary-actions">
+              <button class="compact-action" disabled={dictionaryBusy} onclick={refreshDictionaries}>Refresh</button>
+              <button class="compact-action" disabled={dictionaryBusy} onclick={importDictionary}>Import</button>
+            </div>
+          </div>
+          {#if dictionaryListError}
+            <p class="err">{dictionaryListError}</p>
+          {:else if dictionaryBusy && dictionaryList.length === 0}
+            <p class="empty">Loading dictionaries...</p>
+          {:else if dictionaryList.length === 0}
+            <p class="empty">No dictionaries imported.</p>
+          {:else}
+            <div class="dictionary-list" aria-busy={dictionaryBusy}>
+              {#each dictionaryList as dictionary, index (dictionary.dictId)}
+                <div class="dictionary-row">
+                  <label class="dictionary-toggle">
+                    <input
+                      type="checkbox"
+                      checked={dictionary.enabled}
+                      disabled={dictionaryBusy}
+                      onchange={(event) => setDictionaryEnabled(dictionary, event.currentTarget.checked)}
+                    />
+                    <span>{dictionary.enabled ? "Enabled" : "Disabled"}</span>
+                  </label>
+                  <div class="dictionary-main">
+                    <p class="dictionary-title">{dictionary.title}</p>
+                    <p class="dictionary-meta">
+                      {dictionary.kind} | {dictionaryCountsLabel(dictionary)} | {importedLabel(dictionary.lastImported)}
+                    </p>
+                    <p class="dictionary-path">{dictionary.internalPath}</p>
+                  </div>
+                  <div class="dictionary-order">
+                    <button
+                      class="icon-action"
+                      aria-label={`Move ${dictionary.title} up`}
+                      title="Move up"
+                      disabled={dictionaryBusy || index === 0}
+                      onclick={() => moveDictionary(dictionary, -1)}
+                    >
+                      ^
+                    </button>
+                    <button
+                      class="icon-action"
+                      aria-label={`Move ${dictionary.title} down`}
+                      title="Move down"
+                      disabled={dictionaryBusy || index === dictionaryList.length - 1}
+                      onclick={() => moveDictionary(dictionary, 1)}
+                    >
+                      v
+                    </button>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </section>
+      {/if}
 
       <div class="recent">
         <h2>Recent Books</h2>
@@ -633,6 +823,26 @@
   .secondary-action:hover { background: #3a3d41; }
   .err { color: #ff8a80; font-size: 13px; white-space: pre-wrap; }
   .dict-status { color: #b7bcc3; font-size: 13px; white-space: pre-wrap; }
+  .dictionary-panel { display: flex; flex-direction: column; gap: 10px; padding: 12px; background: #26282c; border: 1px solid #3c4043; border-radius: 6px; }
+  .dictionary-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
+  .dictionary-summary { margin-top: 4px; color: #b7bcc3; font-size: 12px; line-height: 1.35; }
+  .dictionary-actions { flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
+  .compact-action { padding: 5px 10px; background: #303134; color: #d7d9dc; border: 1px solid #555c64; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .compact-action:hover:not(:disabled) { background: #3a3d41; }
+  .compact-action:disabled { color: #747a80; cursor: default; }
+  .dictionary-list { display: flex; flex-direction: column; gap: 8px; max-height: 28vh; overflow-y: auto; padding-right: 2px; }
+  .dictionary-list[aria-busy="true"] { opacity: 0.72; }
+  .dictionary-row { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; background: #2b2d31; border: 1px solid #3c4043; border-radius: 6px; }
+  .dictionary-toggle { display: flex; align-items: center; gap: 7px; color: #d7d9dc; font-size: 12px; user-select: none; }
+  .dictionary-toggle input { width: 14px; height: 14px; accent-color: #3b8f78; }
+  .dictionary-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
+  .dictionary-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #f1f3f4; font-size: 14px; }
+  .dictionary-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9aa0a6; font-size: 11px; }
+  .dictionary-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #6f7479; font-size: 11px; }
+  .dictionary-order { display: flex; align-items: center; gap: 5px; }
+  .icon-action { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; background: #303134; color: #d7d9dc; border: 1px solid #555c64; border-radius: 4px; cursor: pointer; font-size: 13px; line-height: 1; }
+  .icon-action:hover:not(:disabled) { background: #3a3d41; }
+  .icon-action:disabled { color: #666c72; cursor: default; }
   .recent { display: flex; flex-direction: column; gap: 10px; min-height: 240px; }
   .empty { padding: 28px 0; color: #80868b; font-size: 13px; }
   .book-list { display: flex; flex-direction: column; gap: 8px; max-height: 54vh; overflow-y: auto; padding-right: 4px; }
@@ -675,4 +885,14 @@
   .ctrls button { padding: 4px 10px; background: #333; color: #ccc; border: 1px solid #555; border-radius: 3px; cursor: pointer; font-size: 12px; }
   .ctrls button:hover { background: #444; }
   .ctrls span { font-size: 12px; color: #888; }
+  @media (max-width: 640px) {
+    .bookshelf { width: min(100vw - 32px, 920px); }
+    .shelf-head { align-items: stretch; flex-direction: column; gap: 14px; }
+    .head-actions { flex-wrap: wrap; }
+    .head-actions button { flex: 1 1 148px; }
+    .dictionary-row { grid-template-columns: 1fr auto; align-items: start; }
+    .dictionary-toggle { grid-column: 1 / -1; }
+    .dictionary-main { grid-column: 1; }
+    .dictionary-order { grid-column: 2; grid-row: 2; }
+  }
 </style>
