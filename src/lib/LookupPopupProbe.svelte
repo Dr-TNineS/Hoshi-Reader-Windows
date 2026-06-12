@@ -54,6 +54,8 @@
 
   let importClicks = $state(0);
   let closeClicks = $state(0);
+  let nestedLookupCount = $state(0);
+  let nestedLookupText = $state("");
 </script>
 
 <main class="probe">
@@ -73,6 +75,10 @@
       results={lookupState === "ready" ? results : []}
       onImportDictionary={() => importClicks += 1}
       onClose={() => closeClicks += 1}
+      onNestedLookup={(nestedSelection) => {
+        nestedLookupCount += 1;
+        nestedLookupText = nestedSelection.text;
+      }}
       ankiTitle={() => "Payload prepared for Probe Book"}
     />
   </aside>
@@ -80,6 +86,8 @@
     class="probe-state"
     data-import-clicks={importClicks}
     data-close-clicks={closeClicks}
+    data-nested-lookup-count={nestedLookupCount}
+    data-nested-lookup-text={nestedLookupText}
     data-state={lookupState}
     aria-hidden="true"
   ></div>

@@ -62,6 +62,8 @@ async function popupMetrics(page) {
       state: state?.getAttribute("data-state") ?? "",
       importClicks: Number(state?.getAttribute("data-import-clicks") ?? 0),
       closeClicks: Number(state?.getAttribute("data-close-clicks") ?? 0),
+      nestedLookupCount: Number(state?.getAttribute("data-nested-lookup-count") ?? 0),
+      nestedLookupText: state?.getAttribute("data-nested-lookup-text") ?? "",
       popup: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom },
       viewport: { width: window.innerWidth, height: window.innerHeight },
       horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
@@ -124,6 +126,40 @@ async function main() {
     assert(ready.text.includes("Anki not configured") && ready.ankiDisabled, "Anki boundary should remain disabled.", ready);
     assert(ready.ankiTitle.includes("Probe Book"), "Anki payload title should be exposed as disabled affordance text.", ready);
     assert(ready.hasResultsScroller, "Long ready results should scroll inside the popup.", ready);
+
+    await page.evaluate(() => {
+      const content = document.querySelector(".lookup-glossary-content");
+      if (!(content instanceof HTMLElement)) throw new Error("Glossary content not found.");
+
+      const walker = document.createTreeWalker(content, NodeFilter.SHOW_TEXT);
+      let textNode = null;
+      let offset = -1;
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        const index = node.textContent?.indexOf("classroom") ?? -1;
+        if (index >= 0) {
+          textNode = node;
+          offset = index + 2;
+          break;
+        }
+      }
+      if (!textNode || offset < 0) throw new Error("Nested lookup probe text not found.");
+
+      const range = document.createRange();
+      range.setStart(textNode, offset);
+      range.setEnd(textNode, offset + 1);
+      const rect = range.getBoundingClientRect();
+      range.detach();
+      content.dispatchEvent(new PointerEvent("pointermove", {
+        bubbles: true,
+        clientX: rect.left + rect.width / 2,
+        clientY: rect.top + rect.height / 2,
+        shiftKey: true,
+      }));
+    });
+    const nested = await popupMetrics(page);
+    assert(nested.nestedLookupCount === 1, "Shift-hover inside glossary should trigger nested lookup callback.", nested);
+    assert(nested.nestedLookupText.includes("classroom"), "Nested lookup should select the glossary word under the pointer.", nested);
 
     await page.setViewportSize({ width: 360, height: 640 });
     await openProbe(page, "ready", { longResult: true });

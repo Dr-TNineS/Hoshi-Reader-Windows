@@ -453,6 +453,16 @@
     void lookupSelection(selection, requestId);
   }
 
+  function handleNestedPopupLookup(selection: ReaderSelection) {
+    readerSelection = selection;
+    lookupError = "";
+    lookupResults = [];
+    lookupRequestId += 1;
+    const requestId = lookupRequestId;
+    lookupState = "loading";
+    void lookupSelection(selection, requestId);
+  }
+
   async function lookupSelection(selection: ReaderSelection, requestId: number) {
     if (!isTauriRuntime()) {
       if (requestId !== lookupRequestId) return;
@@ -618,6 +628,7 @@
           results={lookupResults}
           onClose={closeReaderSelection}
           onImportDictionary={importDictionary}
+          onNestedLookup={handleNestedPopupLookup}
           ankiTitle={lookupAnkiTitle}
         />
       </aside>

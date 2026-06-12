@@ -61,8 +61,9 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Popup prefers left/right side placement beside the selected text, with top/bottom fallback.
   - Popup distinguishes loading, no dictionary, engine unavailable, empty, error, and ready states.
   - Popup renders the current lookup result shape: expression, reading, source dictionary, matched/deinflected text, rules, glossary, frequency, and pitch.
+  - Popup glossary text supports Shift hover nested lookup by replacing the current popup result with the glossary term under the pointer.
   - Popup has a disabled Anki boundary affordance and can build a typed lookup-to-Anki payload from the selected result and current book/chapter context.
-  - Lookup popup probe and `npm run check:lookup-popup` cover popup states, long-result internal scrolling, frequency/pitch display, disabled Anki boundary, import/close actions, and narrow-window overflow.
+  - Lookup popup probe and `npm run check:lookup-popup` cover popup states, glossary Shift hover nested lookup callback, long-result internal scrolling, frequency/pitch display, disabled Anki boundary, import/close actions, and narrow-window overflow.
   - Popup clears on page/chapter changes, TOC jumps, shelf return, close, and Escape.
 - Dictionary backend:
   - `dict_status` returns structured dictionary status: ready, no dictionaries, engine unavailable, or error.

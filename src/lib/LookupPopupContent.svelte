@@ -1,5 +1,6 @@
 <script lang="ts">
   import { formatLookupMatch, frequencyLabel, pitchLabel, renderGlossaryContent, resultDictionaryLabel, type LookupState } from "./lookup-popup";
+  import { selectPopupTextFromPoint } from "./popup-selection";
   import type { DictResult, ReaderSelection } from "./types";
 
   let {
@@ -9,6 +10,7 @@
     results = [],
     onClose = () => {},
     onImportDictionary = () => {},
+    onNestedLookup = () => {},
     ankiTitle = () => "Payload prepared for current book",
   }: {
     selection: ReaderSelection;
@@ -17,8 +19,39 @@
     results?: DictResult[];
     onClose?: () => void;
     onImportDictionary?: () => void;
+    onNestedLookup?: (selection: ReaderSelection) => void;
     ankiTitle?: (result: DictResult, resultIndex: number) => string;
   } = $props();
+
+  let shiftHoverLastX = -1;
+  let shiftHoverLastY = -1;
+  let lastNestedLookupKey = "";
+
+  function resetShiftHover() {
+    shiftHoverLastX = -1;
+    shiftHoverLastY = -1;
+  }
+
+  function handleGlossaryPointerMove(event: PointerEvent) {
+    if (!event.shiftKey) {
+      resetShiftHover();
+      return;
+    }
+
+    const dx = event.clientX - shiftHoverLastX;
+    const dy = event.clientY - shiftHoverLastY;
+    if (dx * dx + dy * dy < 64) return;
+
+    shiftHoverLastX = event.clientX;
+    shiftHoverLastY = event.clientY;
+    const nestedSelection = selectPopupTextFromPoint(event.clientX, event.clientY, selection.chapterIndex);
+    if (!nestedSelection) return;
+
+    const nestedKey = `${nestedSelection.text}:${Math.round(nestedSelection.rect.x)}:${Math.round(nestedSelection.rect.y)}`;
+    if (nestedKey === lastNestedLookupKey) return;
+    lastNestedLookupKey = nestedKey;
+    onNestedLookup(nestedSelection);
+  }
 </script>
 
 <div class="lookup-head">
@@ -65,7 +98,13 @@
         {#each result.glossary.slice(0, 3) as entry}
           <div class="lookup-glossary">
             <span class="lookup-glossary-dict">{entry.dict}</span>
-            <div class="lookup-glossary-content">{@html renderGlossaryContent(entry.text)}</div>
+            <div
+              class="lookup-glossary-content"
+              role="group"
+              aria-label="Lookup glossary text"
+              onpointermove={handleGlossaryPointerMove}
+              onpointerleave={resetShiftHover}
+            >{@html renderGlossaryContent(entry.text)}</div>
           </div>
         {/each}
         {#if frequencyLabel(result)}
