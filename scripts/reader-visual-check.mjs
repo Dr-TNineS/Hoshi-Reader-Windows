@@ -126,6 +126,28 @@ async function readerHeaderText(page) {
   return page.locator(".rh").innerText();
 }
 
+async function paginationState(page) {
+  await page.locator(".rv.ready").waitFor({ timeout: 10000 });
+  return page.evaluate(() => {
+    const rv = document.querySelector(".rv");
+    if (!(rv instanceof HTMLElement)) {
+      throw new Error("Reader viewport element not found.");
+    }
+
+    const pageSize = rv.clientHeight;
+    const scrollTop = rv.scrollTop;
+    const snappedScroll = Math.round(scrollTop / pageSize) * pageSize;
+    return {
+      header: document.querySelector(".rh")?.textContent?.trim() ?? "",
+      viewport: { width: window.innerWidth, height: window.innerHeight },
+      pageSize,
+      scrollTop,
+      snappedScroll,
+      snapDelta: Math.abs(scrollTop - snappedScroll),
+    };
+  });
+}
+
 async function waitForHeaderText(page, text) {
   await page.waitForFunction(
     (expected) => document.querySelector(".rh")?.textContent?.includes(expected),
@@ -219,6 +241,38 @@ async function main() {
       "Last page text top should align with the previous page.",
       desktop,
     );
+
+    await page.reload();
+    await page.locator(".rv.ready").waitFor({ timeout: 10000 });
+    await page.locator(".rv").click();
+    await page.keyboard.press("ArrowLeft");
+    await waitForHeaderText(page, `P.2/${desktop.totalPages}`);
+    await page.keyboard.press("ArrowLeft");
+    await waitForHeaderText(page, `P.3/${desktop.totalPages}`);
+    const beforeResize = await paginationState(page);
+    await page.setViewportSize({ width: 1280, height: 560 });
+    await page.waitForFunction(
+      (previousPageSize) => {
+        const rv = document.querySelector(".rv");
+        return rv instanceof HTMLElement && Math.abs(rv.clientHeight - previousPageSize) > 20;
+      },
+      beforeResize.pageSize,
+      { timeout: 10000 },
+    );
+    await page.waitForFunction(() => {
+      const rv = document.querySelector(".rv");
+      if (!(rv instanceof HTMLElement)) return false;
+      const pageSize = rv.clientHeight;
+      return Math.abs(rv.scrollTop - Math.round(rv.scrollTop / pageSize) * pageSize) <= 1;
+    }, { timeout: 10000 });
+    const afterResize = await paginationState(page);
+    assert(afterResize.snapDelta <= 1, "Reader should snap to the new page boundary after viewport height changes.", {
+      beforeResize,
+      afterResize,
+    });
+
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.reload();
 
     const lookupPoint = await visibleParagraphPoint(page);
     await page.keyboard.down("Shift");

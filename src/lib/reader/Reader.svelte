@@ -47,6 +47,7 @@
   let lastLookupSelectionKey = "";
   let shiftHoverTimer: number | null = null;
   let layoutRun = 0;
+  let resizeRun = 0;
   let contentMaxScroll = 0;
 
   let styleVars = $derived(`--page-width:${pageWidth}px;--page-height:${pageHeight}px`);
@@ -635,6 +636,41 @@
     scheduleProgressEmit();
   }
 
+  async function realignAfterResize() {
+    if (!containerEl || !contentEl) return;
+
+    const run = ++resizeRun;
+    const activeRun = layoutRun;
+    const targetPage = currentPage;
+    const wasReady = layoutReady;
+
+    syncPageGeometry();
+    if (!wasReady) {
+      recalc();
+      return;
+    }
+
+    initializing = true;
+    await waitFrame();
+    await waitFrame();
+    if (run !== resizeRun || activeRun !== layoutRun || !containerEl) return;
+
+    const pages = await waitForStableLayout(activeRun);
+    if (run !== resizeRun || activeRun !== layoutRun || !containerEl) return;
+
+    totalPages = pages;
+    currentPage = Math.max(0, Math.min(targetPage, totalPages - 1));
+    const scrollTarget = pageScrollFor(currentPage);
+    lastSnappedScroll = scrollTarget;
+    setLogicalScrollPos(scrollTarget);
+
+    await waitFrame();
+    if (run !== resizeRun || activeRun !== layoutRun || !containerEl) return;
+    initializing = false;
+    logReaderGeometry("resize-realign");
+    scheduleProgressEmit();
+  }
+
   function nextPage() {
     if (currentPage < totalPages - 1) {
       goPage(currentPage + 1);
@@ -831,8 +867,7 @@
     });
 
     const ro = new ResizeObserver(() => {
-      syncPageGeometry();
-      recalc();
+      realignAfterResize();
     });
     // Content changes are handled by the chapter/image layout path above.
     // Observe only the viewport so tail padding cannot trigger a resize loop.
