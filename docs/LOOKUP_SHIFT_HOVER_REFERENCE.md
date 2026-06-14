@@ -175,7 +175,7 @@ The current HSW model is simpler than Hibiki:
 - It combines a short timer with Hibiki-style 8px movement-distance thresholding.
 - It dedupes repeated lookup callbacks for the same selected text and rounded anchor rect.
 - It does not have a dedicated popup/barrier hover pass-through path.
-- It supports replacement-style recursive lookup inside popup glossary text, but not Hibiki-style stacked child popups.
+- It supports stacked recursive lookup inside popup glossary text: Shift-hover opens child popups, closing a child keeps the parent, and parent scroll closes children.
 - It uses the browser's visible selection instead of a CSS Highlights based custom highlight layer.
 
 ## Suggested Migration Plan
@@ -230,20 +230,20 @@ Validation:
 
 Goal: allow Shift+hover inside rendered glossary text to look up nested terms.
 
-Implementation status: partially implemented in HSW as replacement-style nested lookup. Shift+hover inside popup glossary text selects the word under the pointer and replaces the current popup result. Hibiki-style stacked child popups remain unimplemented.
+Implementation status: implemented in HSW as stacked nested lookup. Shift+hover inside popup glossary text selects the word under the pointer and opens a child popup anchored to that glossary word.
 
 Key changes:
 
-- Keep the current replacement-style behavior unless stacked child popups become a product requirement.
+- Keep stacked child popups as the default recursive lookup behavior.
 - Keep text hit-testing constrained to glossary content, not controls.
 - Keep reusing the same `ReaderSelection` lookup path so stale-result protection remains centralized.
-- Anchor replacement popup placement to the selected glossary word rect.
+- Anchor child popup placement to the selected glossary word rect.
 - Avoid lookup loops when hovering the same glossary term.
 
 Validation:
 
 - Hover Shift over Japanese text inside a dictionary definition.
-- Confirm nested lookup or replacement behavior is clear.
+- Confirm nested lookup stack behavior is clear.
 - Confirm long structured glossary scrolling still works.
 - Confirm popup result rendering remains safe and does not execute arbitrary HTML.
 
@@ -279,5 +279,5 @@ Validation:
 ## Open Questions
 
 - Should HSW keep timer-based hover delay, switch fully to movement-threshold triggering, or combine both?
-- Should popup recursive lookup replace the current popup content or open stacked child popups?
+- Should HSW eventually add popup history/back-forward controls like HSA, or keep the current stack-only behavior?
 - Should HSW introduce CSS Highlights for reader lookup highlight, or keep browser selection until a real layout issue demands the change?

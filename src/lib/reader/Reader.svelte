@@ -391,7 +391,16 @@
     return null;
   }
 
-  function characterAtPoint(x: number, y: number): { node: Text; offset: number } | null {
+  function rectSnapshotFromDomRect(rect: DOMRect): ReaderSelectionRect {
+    return {
+      x: rect.x,
+      y: rect.y,
+      width: rect.width,
+      height: rect.height,
+    };
+  }
+
+  function characterAtPoint(x: number, y: number): { node: Text; offset: number; rect: ReaderSelectionRect } | null {
     const range = caretRangeFromPoint(x, y);
     if (!range) return null;
 
@@ -410,9 +419,13 @@
       charRange.setStart(textNode, offset);
       charRange.setEnd(textNode, Math.min(text.length, offset + char.length));
       const hit = rangeContainsPoint(charRange, x, y);
+      const anchorDomRect = Array.from(charRange.getClientRects()).find((rect) => rectContains(rect, x, y))
+        ?? charRange.getBoundingClientRect();
       charRange.detach();
 
-      if (hit && !isScanBoundary(char)) return { node: textNode, offset };
+      if (hit && !isScanBoundary(char) && anchorDomRect.width > 0 && anchorDomRect.height > 0) {
+        return { node: textNode, offset, rect: rectSnapshotFromDomRect(anchorDomRect) };
+      }
     }
 
     return null;
@@ -490,8 +503,9 @@
       return null;
     }
 
-    const selectionKey = `${chapterIndex}:${text}:${Math.round(rect.x)}:${Math.round(rect.y)}`;
-    const selection = { text, rect, chapterIndex };
+    const anchorRect = hit.rect;
+    const selectionKey = `${chapterIndex}:${text}:${Math.round(anchorRect.x)}:${Math.round(anchorRect.y)}`;
+    const selection = { text, rect, anchorRect, chapterIndex };
     if (selectionKey === lastLookupSelectionKey) return selection;
 
     lastLookupSelectionKey = selectionKey;
@@ -520,6 +534,11 @@
   function resetShiftHoverState() {
     clearShiftHoverTimer();
     lastShiftHoverPoint = null;
+  }
+
+  function leaveReaderPointerState() {
+    lastPointer = null;
+    resetShiftHoverState();
   }
 
   function shouldScheduleShiftHoverLookup(point: { x: number; y: number }): boolean {
@@ -712,7 +731,6 @@
     const ctrl = e.ctrlKey || e.metaKey;
     if (e.key === "Shift") {
       shiftKeyPressed = true;
-      if (lastPointer && shouldScheduleShiftHoverLookup(lastPointer)) scheduleShiftHoverLookup();
     } else if (ctrl && e.key === "ArrowLeft") {
       e.preventDefault();
       onNextChapter();
@@ -769,7 +787,7 @@
 
   function handleWindowBlur() {
     shiftKeyPressed = false;
-    resetShiftHoverState();
+    leaveReaderPointerState();
   }
 
   function handleWheel(e: WheelEvent) {
@@ -821,12 +839,12 @@
     content.addEventListener("click", handleContentClick);
     viewport.addEventListener("pointerdown", handlePointerDown);
     viewport.addEventListener("pointermove", handlePointerMove);
-    viewport.addEventListener("pointerleave", resetShiftHoverState);
+    viewport.addEventListener("pointerleave", leaveReaderPointerState);
     return () => {
       content.removeEventListener("click", handleContentClick);
       viewport.removeEventListener("pointerdown", handlePointerDown);
       viewport.removeEventListener("pointermove", handlePointerMove);
-      viewport.removeEventListener("pointerleave", resetShiftHoverState);
+      viewport.removeEventListener("pointerleave", leaveReaderPointerState);
       handleWindowBlur();
     };
   });

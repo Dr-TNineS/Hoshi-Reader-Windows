@@ -17,6 +17,7 @@ type CaretDocument = Document & {
 interface TextHit {
   node: Text;
   offset: number;
+  rect: ReaderSelectionRect;
 }
 
 export function selectPopupTextFromPoint(x: number, y: number, chapterIndex: number): ReaderSelection | null {
@@ -25,7 +26,20 @@ export function selectPopupTextFromPoint(x: number, y: number, chapterIndex: num
 
   const glossaryRoot = target.closest<HTMLElement>(".lookup-glossary-content");
   if (!glossaryRoot) return null;
-  if (target.closest("a[href], button, input, select, textarea, [role='button']")) return null;
+  if (target.closest([
+    "a[href]",
+    "button",
+    "input",
+    "select",
+    "textarea",
+    "[role='button']",
+    ".lookup-head",
+    ".lookup-tag",
+    ".lookup-anki",
+    ".lookup-action",
+    ".lookup-glossary-dict",
+    "summary",
+  ].join(","))) return null;
 
   const hit = characterAtPoint(x, y, glossaryRoot);
   if (!hit) return null;
@@ -41,6 +55,7 @@ export function selectPopupTextFromPoint(x: number, y: number, chapterIndex: num
   return {
     text: selection.text,
     rect: selection.rect,
+    anchorRect: selection.anchorRect,
     chapterIndex,
   };
 }
@@ -65,8 +80,12 @@ function characterAtPoint(x: number, y: number, root: HTMLElement): TextHit | nu
     charRange.setStart(node, offset);
     charRange.setEnd(node, offset + codeUnitLengthAt(node.data, offset));
     const hit = rangeContainsPoint(charRange, x, y);
+    const anchorDomRect = Array.from(charRange.getClientRects()).find((rect) => rectContainsPoint(rect, x, y))
+      ?? charRange.getBoundingClientRect();
     charRange.detach();
-    if (hit && !isScanBoundary(node.data[offset])) return { node, offset };
+    if (hit && !isScanBoundary(node.data[offset]) && anchorDomRect.width > 0 && anchorDomRect.height > 0) {
+      return { node, offset, rect: rectSnapshotFromDomRect(anchorDomRect) };
+    }
   }
 
   return fallbackCharacterAtPoint(x, y, root);
@@ -99,8 +118,12 @@ function fallbackCharacterAtPoint(x: number, y: number, root: HTMLElement): Text
       range.setStart(node, offset);
       range.setEnd(node, offset + codeUnitLengthAt(node.data, offset));
       const hit = rangeContainsPoint(range, x, y);
+      const anchorDomRect = Array.from(range.getClientRects()).find((rect) => rectContainsPoint(rect, x, y))
+        ?? range.getBoundingClientRect();
       range.detach();
-      if (hit) return { node, offset };
+      if (hit && anchorDomRect.width > 0 && anchorDomRect.height > 0) {
+        return { node, offset, rect: rectSnapshotFromDomRect(anchorDomRect) };
+      }
     }
   }
   return null;
@@ -154,7 +177,7 @@ function buildSelection(hit: TextHit, root: HTMLElement, x: number, y: number, c
   visibleRange.setEnd(last.endContainer, last.endOffset);
   ranges.forEach((range) => range.detach());
 
-  return { text: normalized, rect, range: visibleRange, chapterIndex };
+  return { text: normalized, rect, anchorRect: hit.rect, range: visibleRange, chapterIndex };
 }
 
 function selectionRect(ranges: Range[], x: number, y: number): ReaderSelectionRect | null {
@@ -169,6 +192,19 @@ function rangeContainsPoint(range: Range, x: number, y: number): boolean {
   return Array.from(range.getClientRects()).some((rect) => (
     x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom
   ));
+}
+
+function rectContainsPoint(rect: DOMRect, x: number, y: number): boolean {
+  return x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
+}
+
+function rectSnapshotFromDomRect(rect: DOMRect): ReaderSelectionRect {
+  return {
+    x: rect.x,
+    y: rect.y,
+    width: rect.width,
+    height: rect.height,
+  };
 }
 
 function textWalker(root: HTMLElement): TreeWalker {

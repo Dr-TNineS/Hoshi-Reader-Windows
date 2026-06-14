@@ -55,6 +55,7 @@ export interface ReaderSelectionRect {
 export interface ReaderSelection {
   text: string;
   rect: ReaderSelectionRect;
+  anchorRect?: ReaderSelectionRect;
   chapterIndex: number;
 }
 

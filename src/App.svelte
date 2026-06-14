@@ -45,12 +45,8 @@
   let readerInitialProgress = $state(0);
   let currentReaderProgress = $state<ReaderProgress | null>(null);
   let readerSelection = $state<ReaderSelection | null>(null);
-  let lookupPopEl: HTMLElement | null = $state(null);
   let lookupPopupSize = $state({ width: 306, height: 154 });
-
-  let lookupState = $state<LookupState>("idle");
-  let lookupError = $state("");
-  let lookupResults = $state<DictResult[]>([]);
+  let lookupPopups = $state<LookupPopupItem[]>([]);
   let lookupRequestId = 0;
   let showToc = $state(false);
   let error = $state("");
@@ -67,6 +63,16 @@
 
   let tocEntries = $derived(meta ? flattenToc(meta.toc, meta) : []);
   let chapterBookInfo = $derived(meta?.book_info.chapter_info[chapterIndex] ?? null);
+
+  interface LookupPopupItem {
+    id: string;
+    selection: ReaderSelection;
+    state: LookupState;
+    error: string;
+    results: DictResult[];
+    requestId: number;
+    clearSelectionSignal: number;
+  }
 
   // Initialize persisted reading state once. Returning to the shelf should stay
   // on the shelf, so session restore remains intentionally one-shot.
@@ -191,7 +197,7 @@
     if (!meta || !isTauriRuntime()) return;
 
     try {
-      readerSelection = null;
+      closeReaderSelection();
       const safeIndex = clampChapter(idx, meta.spine.length);
       readerInitialProgress = clampUnit(chapterProgress);
       currentReaderProgress = null;
@@ -210,7 +216,7 @@
 
   async function jumpToChapter(idx: number) {
     startAtEnd = false;
-    readerSelection = null;
+    closeReaderSelection();
     showToc = false;
     await loadChapter(idx, 0);
   }
@@ -225,7 +231,7 @@
     }
 
     startAtEnd = false;
-    readerSelection = null;
+    closeReaderSelection();
     showToc = false;
     await loadChapter(idx, 0);
   }
@@ -233,7 +239,7 @@
   function prevChapter() {
     if (chapterIndex > 0) {
       startAtEnd = true;
-      readerSelection = null;
+      closeReaderSelection();
       loadChapter(chapterIndex - 1, 1);
     }
   }
@@ -241,14 +247,14 @@
   function prevChapterDirect() {
     if (chapterIndex > 0) {
       startAtEnd = false;
-      readerSelection = null;
+      closeReaderSelection();
       loadChapter(chapterIndex - 1, 0);
     }
   }
 
   function nextChapter() {
     startAtEnd = false;
-    readerSelection = null;
+    closeReaderSelection();
     if (meta && chapterIndex < meta.spine.length - 1) loadChapter(chapterIndex + 1, 0);
   }
 
@@ -295,9 +301,7 @@
   function closeReaderSelection() {
     window.getSelection()?.removeAllRanges();
     readerSelection = null;
-    lookupState = "idle";
-    lookupError = "";
-    lookupResults = [];
+    lookupPopups = [];
     lookupRequestId += 1;
   }
 
@@ -316,9 +320,9 @@
     return "ready";
   }
 
-  function buildAnkiPayload(result: DictResult, resultIndex: number): LookupAnkiPayload {
+  function buildAnkiPayload(selection: ReaderSelection, result: DictResult, resultIndex: number): LookupAnkiPayload {
     return {
-      selectedText: readerSelection?.text ?? "",
+      selectedText: selection.text,
       resultIndex,
       expression: result.expression,
       reading: result.reading,
@@ -365,19 +369,14 @@
       const ready = imported.ready ? "ready" : "not ready";
       dictionaryStatus = `${reused} ${imported.title} (${imported.termCount} terms, ${ready}).`;
       await refreshDictionaries();
-      if (readerSelection) {
-        lookupRequestId += 1;
-        const requestId = lookupRequestId;
-        lookupState = "loading";
-        void lookupSelection(readerSelection, requestId);
-      }
+      reloadLookupPopups();
     } catch (e) {
       dictionaryStatus = String(e);
     }
   }
 
-  function lookupAnkiTitle(result: DictResult, resultIndex: number): string {
-    return `Payload prepared for ${buildAnkiPayload(result, resultIndex).sourceBook.title ?? "current book"}`;
+  function lookupAnkiTitle(selection: ReaderSelection, result: DictResult, resultIndex: number): string {
+    return `Payload prepared for ${buildAnkiPayload(selection, result, resultIndex).sourceBook.title ?? "current book"}`;
   }
 
   async function setDictionaryEnabled(dictionary: DictionaryManifestEntry, enabled: boolean) {
@@ -387,12 +386,7 @@
       const status = await invoke<DictionaryStatus>("dictionary_set_enabled", { dictId: dictionary.dictId, enabled });
       dictionaryListStatus = status;
       await refreshDictionaries();
-      if (readerSelection) {
-        lookupRequestId += 1;
-        const requestId = lookupRequestId;
-        lookupState = "loading";
-        void lookupSelection(readerSelection, requestId);
-      }
+      reloadLookupPopups();
     } catch (e) {
       dictionaryListError = String(e);
     } finally {
@@ -414,12 +408,7 @@
         dictIds: reordered.map((entry) => entry.dictId),
       });
       dictionaryListStatus = await invoke<DictionaryStatus>("dict_status");
-      if (readerSelection) {
-        lookupRequestId += 1;
-        const requestId = lookupRequestId;
-        lookupState = "loading";
-        void lookupSelection(readerSelection, requestId);
-      }
+      reloadLookupPopups();
     } catch (e) {
       dictionaryListError = String(e);
     } finally {
@@ -437,57 +426,149 @@
     showToc = !showToc;
   }
 
-  function handleReaderSelection(selection: ReaderSelection | null) {
-    readerSelection = selection;
-    lookupError = "";
-    lookupResults = [];
-    lookupRequestId += 1;
-    const requestId = lookupRequestId;
+  function updateLookupPopup(id: string, update: Partial<LookupPopupItem>) {
+    lookupPopups = lookupPopups.map((popup) => popup.id === id ? { ...popup, ...update } : popup);
+  }
 
-    if (!selection) {
-      lookupState = "idle";
+  function popupIndex(id: string): number {
+    return lookupPopups.findIndex((popup) => popup.id === id);
+  }
+
+  function nextLookupRequestId(): number {
+    lookupRequestId += 1;
+    return lookupRequestId;
+  }
+
+  function createLookupPopup(id: string, selection: ReaderSelection, requestId: number): LookupPopupItem {
+    return {
+      id,
+      selection,
+      state: "loading",
+      error: "",
+      results: [],
+      requestId,
+      clearSelectionSignal: 0,
+    };
+  }
+
+  function clearPopupChildren(parentId: string, clearParentSelection = true) {
+    const index = popupIndex(parentId);
+    if (index < 0) return;
+    lookupPopups = lookupPopups
+      .slice(0, index + 1)
+      .map((popup, popupIndex) => (
+        clearParentSelection && popupIndex === index
+          ? { ...popup, clearSelectionSignal: popup.clearSelectionSignal + 1 }
+          : popup
+      ));
+  }
+
+  function reloadLookupPopups() {
+    const reloaded: LookupPopupItem[] = lookupPopups.map((popup) => {
+      const requestId = nextLookupRequestId();
+      return { ...popup, state: "loading", error: "", results: [], requestId };
+    });
+    lookupPopups = reloaded;
+    for (const popup of reloaded) {
+      void lookupSelection(popup.id, popup.selection, popup.requestId);
+    }
+  }
+
+  function openRootLookup(selection: ReaderSelection) {
+    const requestId = nextLookupRequestId();
+    readerSelection = selection;
+    lookupPopups = [createLookupPopup("root", selection, requestId)];
+    void lookupSelection("root", selection, requestId);
+  }
+
+  function openChildLookup(parentId: string, selection: ReaderSelection) {
+    const index = popupIndex(parentId);
+    if (index < 0) return;
+
+    const childId = `popup-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const requestId = nextLookupRequestId();
+    lookupPopups = [
+      ...lookupPopups.slice(0, index + 1).map((popup, popupIndex) => (
+        popupIndex === index ? { ...popup, clearSelectionSignal: popup.clearSelectionSignal + 1 } : popup
+      )),
+      createLookupPopup(childId, selection, requestId),
+    ];
+    void lookupSelection(childId, selection, requestId);
+  }
+
+  function closePopup(id: string) {
+    const index = popupIndex(id);
+    if (index < 0) return;
+    lookupRequestId += 1;
+    if (index === 0) {
+      closeReaderSelection();
       return;
     }
 
-    lookupState = "loading";
-    void lookupSelection(selection, requestId);
+    lookupPopups = lookupPopups
+      .slice(0, index)
+      .map((popup, popupIndex) => (
+        popupIndex === index - 1
+          ? { ...popup, clearSelectionSignal: popup.clearSelectionSignal + 1 }
+          : popup
+      ));
   }
 
-  function handleNestedPopupLookup(selection: ReaderSelection) {
-    readerSelection = selection;
-    lookupError = "";
-    lookupResults = [];
-    lookupRequestId += 1;
-    const requestId = lookupRequestId;
-    lookupState = "loading";
-    void lookupSelection(selection, requestId);
+  function handleReaderSelection(selection: ReaderSelection | null) {
+    if (!selection) {
+      closeReaderSelection();
+      return;
+    }
+
+    openRootLookup(selection);
   }
 
-  async function lookupSelection(selection: ReaderSelection, requestId: number) {
+  function handleNestedPopupLookup(parentId: string, selection: ReaderSelection) {
+    openChildLookup(parentId, selection);
+  }
+
+  function handlePopupScrolled(parentId: string) {
+    clearPopupChildren(parentId, true);
+  }
+
+  async function lookupSelection(popupId: string, selection: ReaderSelection, requestId: number) {
+    const isCurrent = () => lookupPopups.some((popup) => popup.id === popupId && popup.requestId === requestId);
     if (!isTauriRuntime()) {
-      if (requestId !== lookupRequestId) return;
-      lookupState = "error";
-      lookupError = "Dictionary lookup requires Tauri runtime.";
+      if (!isCurrent()) return;
+      updateLookupPopup(popupId, {
+        state: "error",
+        error: "Dictionary lookup requires Tauri runtime.",
+        results: [],
+      });
       return;
     }
 
     try {
       const status = await invoke<DictionaryStatus>("dict_status");
-      if (requestId !== lookupRequestId) return;
+      if (!isCurrent()) return;
       if (status.status !== "ready") {
-        lookupState = lookupStateForStatus(status);
-        lookupError = lookupStatusMessage(status);
+        updateLookupPopup(popupId, {
+          state: lookupStateForStatus(status),
+          error: lookupStatusMessage(status),
+          results: [],
+        });
         return;
       }
 
       const results = await invoke<DictResult[]>("dict_lookup", { text: selection.text });
-      if (requestId !== lookupRequestId) return;
-      lookupResults = results;
-      lookupState = results.length > 0 ? "ready" : "empty";
+      if (!isCurrent()) return;
+      updateLookupPopup(popupId, {
+        state: results.length > 0 ? "ready" : "empty",
+        error: "",
+        results,
+      });
     } catch (e) {
-      if (requestId !== lookupRequestId) return;
-      lookupState = "error";
-      lookupError = String(e);
+      if (!isCurrent()) return;
+      updateLookupPopup(popupId, {
+        state: "error",
+        error: String(e),
+        results: [],
+      });
     }
   }
 
@@ -495,18 +576,10 @@
     return Math.max(min, Math.min(max, value));
   }
 
-  function measureLookupPopup() {
-    if (!lookupPopEl) return;
-    const rect = lookupPopEl.getBoundingClientRect();
-    if (rect.width <= 0 || rect.height <= 0) return;
-    if (Math.abs(rect.width - lookupPopupSize.width) > 0.5 || Math.abs(rect.height - lookupPopupSize.height) > 0.5) {
-      lookupPopupSize = { width: rect.width, height: rect.height };
-    }
-  }
-
   function popupStyle(selection: ReaderSelection): string {
+    const anchor = selection.anchorRect ?? selection.rect;
     const contentWidth = 280;
-    const width = lookupPopupSize.width;
+    const width = contentWidth;
     const height = lookupPopupSize.height;
     const margin = 12;
     const gap = 10;
@@ -514,39 +587,46 @@
     const bottomMargin = 48;
     const maxLeft = Math.max(margin, window.innerWidth - width - margin);
     const maxTop = Math.max(topMargin, window.innerHeight - height - bottomMargin);
-    const leftSpace = selection.rect.x - margin - gap;
-    const rightSpace = window.innerWidth - selection.rect.x - selection.rect.width - margin - gap;
+    const leftSpace = anchor.x - margin - gap;
+    const rightSpace = window.innerWidth - anchor.x - anchor.width - margin - gap;
     const canFitLeft = leftSpace >= width;
     const canFitRight = rightSpace >= width;
+    const verticalAnchor = selection.rect.height > selection.rect.width * 1.4 || anchor.height > anchor.width * 1.4;
     let left: number;
+
+    if (verticalAnchor) {
+      if (canFitRight) {
+        left = anchor.x + anchor.width + gap;
+      } else if (canFitLeft) {
+        left = anchor.x - width - gap;
+      } else {
+        left = rightSpace >= leftSpace ? anchor.x + anchor.width + gap : anchor.x - width - gap;
+      }
+      const top = clamp(anchor.y, topMargin, maxTop);
+      return `left:${clamp(left, margin, maxLeft)}px;top:${top}px;width:${contentWidth}px`;
+    }
 
     if (canFitLeft || canFitRight) {
       const placeRight = canFitRight && (!canFitLeft || rightSpace >= leftSpace);
-      left = placeRight ? selection.rect.x + selection.rect.width + gap : selection.rect.x - width - gap;
-      const top = clamp(selection.rect.y, topMargin, maxTop);
+      left = placeRight ? anchor.x + anchor.width + gap : anchor.x - width - gap;
+      const top = clamp(anchor.y, topMargin, maxTop);
       return `left:${clamp(left, margin, maxLeft)}px;top:${top}px;width:${contentWidth}px`;
     }
 
     if (Math.max(leftSpace, rightSpace) >= width * 0.6) {
-      left = rightSpace >= leftSpace ? selection.rect.x + selection.rect.width + gap : selection.rect.x - width - gap;
-      const top = clamp(selection.rect.y, topMargin, maxTop);
+      left = rightSpace >= leftSpace ? anchor.x + anchor.width + gap : anchor.x - width - gap;
+      const top = clamp(anchor.y, topMargin, maxTop);
       return `left:${clamp(left, margin, maxLeft)}px;top:${top}px;width:${contentWidth}px`;
     }
 
-    left = clamp(selection.rect.x + selection.rect.width / 2 - width / 2, margin, maxLeft);
-    const below = selection.rect.y + selection.rect.height + 10;
-    const above = selection.rect.y - height - 10;
+    left = clamp(anchor.x + anchor.width / 2 - width / 2, margin, maxLeft);
+    const below = anchor.y + anchor.height + 10;
+    const above = anchor.y - height - 10;
     const topCandidate = below <= maxTop ? below : above;
     const top = clamp(topCandidate, topMargin, maxTop);
 
     return `left:${left}px;top:${top}px;width:${contentWidth}px`;
   }
-
-  $effect(() => {
-    if (!readerSelection || !lookupPopEl) return;
-    const frame = requestAnimationFrame(measureLookupPopup);
-    return () => cancelAnimationFrame(frame);
-  });
 
 </script>
 
@@ -619,20 +699,27 @@
       onSelectionChange={handleReaderSelection}
       {startAtEnd}
     />
-    {#if readerSelection}
-      <aside bind:this={lookupPopEl} class="lookup-pop" style={popupStyle(readerSelection)}>
+    {#each lookupPopups as popup, popupIndex (popup.id)}
+      <aside
+        class="lookup-pop"
+        data-popup-id={popup.id}
+        style={`${popupStyle(popup.selection)};--popup-z:${125 + popupIndex}`}
+      >
         <LookupPopupContent
-          selection={readerSelection}
-          state={lookupState}
-          error={lookupError}
-          results={lookupResults}
-          onClose={closeReaderSelection}
+          popupId={popup.id}
+          selection={popup.selection}
+          state={popup.state}
+          error={popup.error}
+          results={popup.results}
+          clearSelectionSignal={popup.clearSelectionSignal}
+          onClose={closePopup}
           onImportDictionary={importDictionary}
           onNestedLookup={handleNestedPopupLookup}
-          ankiTitle={lookupAnkiTitle}
+          onScrolled={handlePopupScrolled}
+          ankiTitle={(result, resultIndex) => lookupAnkiTitle(popup.selection, result, resultIndex)}
         />
       </aside>
-    {/if}
+    {/each}
     {#if showToc}
       <aside class="toc-panel">
         <div class="toc-head">
@@ -702,7 +789,7 @@
   .toc-row.active { background: #315c50; color: #fff; }
   .toc-row:disabled { color: #686d72; cursor: default; }
   .toc-row:disabled:hover { background: transparent; }
-  .lookup-pop { position: fixed; z-index: 125; display: flex; flex-direction: column; gap: 8px; max-height: min(520px, calc(100vh - 92px)); padding: 10px 12px; background: #23262a; color: #e8eaed; border: 1px solid #4b5056; border-radius: 6px; box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42); overflow: hidden; }
+  .lookup-pop { position: fixed; z-index: var(--popup-z); display: flex; flex-direction: column; gap: 8px; max-height: min(520px, calc(100vh - 92px)); padding: 10px 12px; background: #23262a; color: #e8eaed; border: 1px solid #4b5056; border-radius: 6px; box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42); overflow: hidden; }
   .ctrls { position: fixed; bottom: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 5px; background: #111; border-top: 1px solid #333; z-index: 100; }
   .ctrls button { padding: 4px 10px; background: #333; color: #ccc; border: 1px solid #555; border-radius: 3px; cursor: pointer; font-size: 12px; }
   .ctrls button:hover { background: #444; }

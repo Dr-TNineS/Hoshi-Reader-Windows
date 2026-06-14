@@ -4,33 +4,52 @@
   import type { DictResult, ReaderSelection } from "./types";
 
   let {
+    popupId,
     selection,
     state,
     error = "",
     results = [],
+    clearSelectionSignal = 0,
     onClose = () => {},
     onImportDictionary = () => {},
     onNestedLookup = () => {},
+    onScrolled = () => {},
     ankiTitle = () => "Payload prepared for current book",
   }: {
+    popupId: string;
     selection: ReaderSelection;
     state: LookupState;
     error?: string;
     results?: DictResult[];
-    onClose?: () => void;
+    clearSelectionSignal?: number;
+    onClose?: (popupId: string) => void;
     onImportDictionary?: () => void;
-    onNestedLookup?: (selection: ReaderSelection) => void;
+    onNestedLookup?: (popupId: string, selection: ReaderSelection) => void;
+    onScrolled?: (popupId: string) => void;
     ankiTitle?: (result: DictResult, resultIndex: number) => string;
   } = $props();
 
   let shiftHoverLastX = -1;
   let shiftHoverLastY = -1;
   let lastNestedLookupKey = "";
+  let previousClearSelectionSignal: number | null = null;
 
   function resetShiftHover() {
     shiftHoverLastX = -1;
     shiftHoverLastY = -1;
   }
+
+  $effect(() => {
+    if (previousClearSelectionSignal === null) {
+      previousClearSelectionSignal = clearSelectionSignal;
+      return;
+    }
+    if (clearSelectionSignal === previousClearSelectionSignal) return;
+    previousClearSelectionSignal = clearSelectionSignal;
+    window.getSelection()?.removeAllRanges();
+    resetShiftHover();
+    lastNestedLookupKey = "";
+  });
 
   function handleGlossaryPointerMove(event: PointerEvent) {
     if (!event.shiftKey) {
@@ -50,13 +69,17 @@
     const nestedKey = `${nestedSelection.text}:${Math.round(nestedSelection.rect.x)}:${Math.round(nestedSelection.rect.y)}`;
     if (nestedKey === lastNestedLookupKey) return;
     lastNestedLookupKey = nestedKey;
-    onNestedLookup(nestedSelection);
+    onNestedLookup(popupId, nestedSelection);
+  }
+
+  function handleResultsScroll() {
+    onScrolled(popupId);
   }
 </script>
 
 <div class="lookup-head">
   <span>Lookup</span>
-  <button aria-label="Close lookup" onclick={onClose}>Close</button>
+  <button aria-label="Close lookup" onclick={() => onClose(popupId)}>Close</button>
 </div>
 <p class="lookup-text">{selection.text}</p>
 {#if state === "loading"}
@@ -73,7 +96,7 @@
 {:else if state === "empty"}
   <p class="lookup-state">No dictionary results for "{selection.text}".</p>
 {:else if state === "ready"}
-  <div class="lookup-results">
+  <div class="lookup-results" onscroll={handleResultsScroll}>
     {#each results.slice(0, 3) as result, resultIndex}
       <section class="lookup-result">
         <div class="lookup-result-head">

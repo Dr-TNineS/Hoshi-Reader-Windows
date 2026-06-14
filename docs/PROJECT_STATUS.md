@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Project Status
 
-Last updated: 2026-06-12
+Last updated: 2026-06-14
 
 This file records current implementation facts for `hoshi-reader-windows`. It is not an agent rule file, product roadmap, or substitute for checking the current code.
 
@@ -62,9 +62,9 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Popup prefers left/right side placement beside the selected text, with top/bottom fallback.
   - Popup distinguishes loading, no dictionary, engine unavailable, empty, error, and ready states.
   - Popup renders the current lookup result shape: expression, reading, source dictionary, matched/deinflected text, rules, glossary, frequency, and pitch.
-  - Popup glossary text supports Shift hover nested lookup by replacing the current popup result with the glossary term under the pointer, without closing on reader hover misses.
+  - Popup glossary text supports Shift hover nested lookup as a popup stack: root lookup stays open, child popups anchor to glossary text, closing a child preserves the parent, and parent scroll closes children.
   - Popup has a disabled Anki boundary affordance and can build a typed lookup-to-Anki payload from the selected result and current book/chapter context.
-  - Lookup popup probe and `npm run check:lookup-popup` cover popup states, glossary Shift hover nested lookup replacement, long-result internal scrolling, frequency/pitch display, disabled Anki boundary, import/close actions, and narrow-window overflow.
+  - Lookup popup probe and `npm run check:lookup-popup` cover popup states, glossary Shift hover nested lookup stack behavior, child close parent preservation, parent-scroll child dismissal, long-result internal scrolling, frequency/pitch display, disabled Anki boundary, import/close actions, and narrow-window overflow.
   - Popup clears on page/chapter changes, TOC jumps, shelf return, close, and Escape.
 - Dictionary backend:
   - `dict_status` returns structured dictionary status: ready, no dictionaries, engine unavailable, or error.
