@@ -1,4 +1,4 @@
-import type { DictResult } from "./types";
+import type { DictResult, GlossaryEntry } from "./types";
 
 export type LookupState = "idle" | "loading" | "ready" | "empty" | "error" | "noDictionaries" | "engineUnavailable";
 
@@ -37,6 +37,38 @@ export function resultDictionaryLabel(result: DictResult): string {
   return result.dictionary || result.glossary[0]?.dict || result.frequencies[0]?.dictionary || result.pitches[0]?.dictionary || "";
 }
 
+export interface GlossaryGroup {
+  dictionary: string;
+  termTags: string[];
+  entries: Array<GlossaryEntry & { definitionTagList: string[] }>;
+}
+
+export function ruleTags(result: DictResult): string[] {
+  return splitTags(result.rules);
+}
+
+export function splitTags(value: string | undefined): string[] {
+  return [...new Set((value ?? "").split(/[\s,;|]+/).map((tag) => tag.trim()).filter(Boolean))];
+}
+
+export function glossaryGroups(result: DictResult): GlossaryGroup[] {
+  const groups = new Map<string, GlossaryGroup>();
+  for (const entry of result.glossary) {
+    const dictionary = entry.dict || result.dictionary || "Dictionary";
+    let group = groups.get(dictionary);
+    if (!group) {
+      group = { dictionary, termTags: [], entries: [] };
+      groups.set(dictionary, group);
+    }
+    group.termTags = [...new Set([...group.termTags, ...splitTags(entry.termTags)])];
+    group.entries.push({
+      ...entry,
+      definitionTagList: splitTags(entry.definitionTags),
+    });
+  }
+  return [...groups.values()];
+}
+
 export function renderGlossaryContent(text: string): string {
   const trimmed = text.trim();
   if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return escapeHtml(text);
@@ -71,6 +103,7 @@ function renderStructuredContent(value: unknown, parentTag = ""): string {
   }
 
   const tag = typeof record.tag === "string" ? record.tag.toLowerCase() : "";
+  if (tag === "img" || tag === "image") return renderStructuredImage(record);
   const safeTag = safeStructuredTag(tag);
   if (safeTag === "br") return "<br>";
 
@@ -82,6 +115,19 @@ function renderStructuredContent(value: unknown, parentTag = ""): string {
   const html = `<${safeTag}${attributes}>${content}</${safeTag}>`;
   if (safeTag === "table") return `<div class="gloss-sc-table-container">${html}</div>`;
   return html;
+}
+
+function renderStructuredImage(record: Record<string, unknown>): string {
+  const path = typeof record.path === "string"
+    ? record.path
+    : typeof record.src === "string"
+      ? record.src
+      : "";
+  const title = typeof record.title === "string" ? record.title : path;
+  const alt = typeof record.alt === "string" ? record.alt : title;
+  const pathAttr = path ? ` data-media-path="${escapeAttribute(path)}"` : "";
+  const titleAttr = title ? ` title="${escapeAttribute(title)}"` : "";
+  return `<span class="gloss-media-placeholder"${pathAttr}${titleAttr}>${escapeHtml(alt || "Dictionary media")}</span>`;
 }
 
 function renderText(text: string): string {
@@ -105,6 +151,8 @@ function structuredAttributes(record: Record<string, unknown>, tag: string): str
   if (typeof record.lang === "string") attrs.push(`lang="${escapeAttribute(record.lang)}"`);
   if (typeof record.colSpan === "number") attrs.push(`colspan="${record.colSpan}"`);
   if (typeof record.rowSpan === "number") attrs.push(`rowspan="${record.rowSpan}"`);
+  if (typeof record.colspan === "number") attrs.push(`colspan="${record.colspan}"`);
+  if (typeof record.rowspan === "number") attrs.push(`rowspan="${record.rowspan}"`);
 
   const data = record.data;
   if (data && typeof data === "object") {

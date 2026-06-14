@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { formatLookupMatch, frequencyLabel, pitchLabel, renderGlossaryContent, resultDictionaryLabel, type LookupState } from "./lookup-popup";
+  import { formatLookupMatch, frequencyLabel, glossaryGroups, pitchLabel, renderGlossaryContent, resultDictionaryLabel, ruleTags, type LookupState } from "./lookup-popup";
   import { selectPopupTextFromPoint } from "./popup-selection";
   import type { DictResult, ReaderSelection } from "./types";
 
@@ -113,22 +113,42 @@
             {#if formatLookupMatch(result)}
               <span class="lookup-tag">{formatLookupMatch(result)}</span>
             {/if}
-            {#if result.rules}
-              <span class="lookup-tag">{result.rules}</span>
-            {/if}
+            {#each ruleTags(result) as rule}
+              <span class="lookup-tag">{rule}</span>
+            {/each}
           </div>
         {/if}
-        {#each result.glossary.slice(0, 3) as entry}
-          <div class="lookup-glossary">
-            <span class="lookup-glossary-dict">{entry.dict}</span>
-            <div
-              class="lookup-glossary-content"
-              role="group"
-              aria-label="Lookup glossary text"
-              onpointermove={handleGlossaryPointerMove}
-              onpointerleave={resetShiftHover}
-            >{@html renderGlossaryContent(entry.text)}</div>
-          </div>
+        {#each glossaryGroups(result) as group, groupIndex}
+          <details class="lookup-glossary-group" open={groupIndex === 0}>
+            <summary class="lookup-glossary-dict">{group.dictionary}</summary>
+            {#if group.termTags.length > 0}
+              <div class="lookup-tags">
+                {#each group.termTags as tag}
+                  <span class="lookup-tag">{tag}</span>
+                {/each}
+              </div>
+            {/if}
+            <ol class="lookup-glossary-list">
+              {#each group.entries as entry}
+                <li class="lookup-glossary">
+                  {#if entry.definitionTagList.length > 0}
+                    <div class="lookup-tags">
+                      {#each entry.definitionTagList as tag}
+                        <span class="lookup-tag">{tag}</span>
+                      {/each}
+                    </div>
+                  {/if}
+                  <div
+                    class="lookup-glossary-content"
+                    role="group"
+                    aria-label="Lookup glossary text"
+                    onpointermove={handleGlossaryPointerMove}
+                    onpointerleave={resetShiftHover}
+                  >{@html renderGlossaryContent(entry.text)}</div>
+                </li>
+              {/each}
+            </ol>
+          </details>
         {/each}
         {#if frequencyLabel(result)}
           <p class="lookup-detail"><span>Freq</span>{frequencyLabel(result)}</p>
@@ -160,7 +180,11 @@
   .lookup-tags { display: flex; flex-wrap: wrap; gap: 4px; }
   .lookup-tag { max-width: 100%; padding: 2px 6px; background: #30343a; color: #8ab4f8; border: 1px solid #454b52; border-radius: 4px; font-size: 11px; line-height: 1.25; overflow-wrap: anywhere; }
   .lookup-glossary { display: flex; flex-direction: column; gap: 2px; color: #d7d9dc; font-size: 12px; line-height: 1.38; overflow-wrap: anywhere; }
-  .lookup-glossary-dict { color: #81c995; font-size: 11px; }
+  .lookup-glossary-group { display: flex; flex-direction: column; gap: 4px; }
+  .lookup-glossary-group[open] { display: flex; }
+  .lookup-glossary-dict { color: #81c995; font-size: 11px; cursor: pointer; }
+  .lookup-glossary-list { margin: 0; padding-left: 1.25em; }
+  .lookup-glossary-list > li { margin: 4px 0; }
   .lookup-glossary-content { min-width: 0; }
   .lookup-glossary-content :global(.structured-content) { display: inline; }
   .lookup-glossary-content :global(ul),
@@ -173,6 +197,7 @@
   .lookup-glossary-content :global(.gloss-sc-table-container) { display: block; max-width: 100%; overflow-x: auto; }
   .lookup-glossary-content :global(a) { color: #8ab4f8; }
   .lookup-glossary-content :global(rt) { color: #b7bcc3; font-size: 0.72em; }
+  .lookup-glossary-content :global(.gloss-media-placeholder) { display: inline-block; max-width: 100%; padding: 4px 7px; border: 1px dashed #5a6169; border-radius: 4px; color: #b7bcc3; background: #2b2f34; font-size: 11px; }
   .lookup-detail { color: #c8ccd1; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
   .lookup-detail span { margin-right: 6px; color: #fdd663; }
   .lookup-anki { align-self: flex-start; margin-top: 2px; padding: 3px 7px; background: #2b2f34; color: #7f858c; border: 1px solid #444a51; border-radius: 4px; cursor: not-allowed; font-size: 11px; }

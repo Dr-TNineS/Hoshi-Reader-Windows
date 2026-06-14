@@ -77,6 +77,10 @@ async function popupMetrics(page) {
       ankiTitle: document.querySelector(".lookup-anki")?.getAttribute("title") ?? "",
       structuredListItems: document.querySelectorAll(".lookup-glossary-content ul li").length,
       structuredBreaks: document.querySelectorAll(".lookup-glossary-content br").length,
+      structuredTables: document.querySelectorAll(".lookup-glossary-content table").length,
+      structuredRuby: document.querySelectorAll(".lookup-glossary-content ruby rt").length,
+      mediaPlaceholders: document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder").length,
+      glossaryGroups: document.querySelectorAll(".lookup-glossary-group").length,
     };
   });
 }
@@ -159,6 +163,11 @@ async function main() {
     assert(ready.text.includes("classroom school room"), "Ready popup should render structured glossary as readable text.", ready);
     assert(!ready.text.includes("structured-content") && !ready.text.includes("\"tag\""), "Ready popup should not expose raw structured glossary JSON.", ready);
     assert(ready.structuredListItems >= 2 && ready.structuredBreaks >= 1, "Ready popup should preserve structured glossary list and line breaks.", ready);
+    assert(ready.structuredTables >= 1, "Ready popup should preserve structured glossary tables.", ready);
+    assert(ready.structuredRuby >= 1, "Ready popup should preserve structured glossary ruby.", ready);
+    assert(ready.mediaPlaceholders >= 1, "Ready popup should render safe placeholders for dictionary media before media loading exists.", ready);
+    assert(ready.glossaryGroups >= 2, "Ready popup should group glossary entries by dictionary.", ready);
+    assert(ready.text.includes("education") && ready.text.includes("place"), "Ready popup should render glossary definition tags.", ready);
     assert(ready.text.includes("Freq") && ready.text.includes("120"), "Ready popup should render frequency.", ready);
     assert(ready.text.includes("Pitch") && ready.text.includes("school"), "Ready popup should render pitch.", ready);
     assert(ready.text.includes("Anki not configured") && ready.ankiDisabled, "Anki boundary should remain disabled.", ready);

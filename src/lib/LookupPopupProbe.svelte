@@ -30,6 +30,27 @@
             { tag: "li", content: ["second structured sense", { tag: "br" }, "with a line break"] },
           ],
         },
+        {
+          tag: "table",
+          data: { content: "formsTable" },
+          content: [
+            {
+              tag: "tr",
+              content: [
+                { tag: "th", content: "form" },
+                { tag: "th", content: "reading" },
+              ],
+            },
+            {
+              tag: "tr",
+              content: [
+                { tag: "td", content: "学校" },
+                { tag: "td", content: { tag: "ruby", content: ["学", { tag: "rt", content: "がく" }] } },
+              ],
+            },
+          ],
+        },
+        { tag: "img", path: "images/school.svg", alt: "school icon" },
       ],
     },
   ]);
@@ -38,9 +59,9 @@
     expression: "school",
     reading: "school",
     glossary: [
-      { dict: "Jitendex.org [probe]", text: structuredGlossaryText },
-      { dict: "Jitendex.org [probe]", text: "academy; lesson context" },
-      { dict: "Jitendex.org [probe]", text: glossaryText },
+      { dict: "Jitendex.org [probe]", text: structuredGlossaryText, termTags: "n common", definitionTags: "education" },
+      { dict: "Jitendex.org [probe]", text: "academy; lesson context", definitionTags: "place" },
+      { dict: "JMdict [probe]", text: glossaryText, termTags: "n" },
     ],
     matched: "school",
     deinflected: "school",

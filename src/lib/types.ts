@@ -62,6 +62,8 @@ export interface ReaderSelection {
 export interface GlossaryEntry {
   dict: string;
   text: string;
+  definitionTags?: string;
+  termTags?: string;
 }
 
 export interface DictResult {
