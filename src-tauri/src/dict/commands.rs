@@ -1,8 +1,9 @@
+use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
@@ -113,6 +114,13 @@ pub struct DictionaryManifestEntry {
     pub last_imported: u64,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictionaryMediaResource {
+    pub mime_type: String,
+    pub data_base64: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DictionaryManifest {
@@ -185,6 +193,16 @@ pub fn dict_status(state: tauri::State<DictState>) -> DictionaryStatus {
 #[tauri::command]
 pub fn dictionary_list(app: AppHandle) -> Result<Vec<DictionaryManifestEntry>, String> {
     Ok(read_dictionary_manifest(&dictionary_manifest_path(&app)?)?.dictionaries)
+}
+
+#[tauri::command]
+pub fn dictionary_media(
+    dictionary: String,
+    path: String,
+    app: AppHandle,
+) -> Result<DictionaryMediaResource, String> {
+    let manifest = read_dictionary_manifest(&dictionary_manifest_path(&app)?)?;
+    load_dictionary_media(&manifest, &dictionary, &path)
 }
 
 #[tauri::command]
@@ -639,6 +657,104 @@ fn validate_dictionary_order_ids(
     }
 
     Ok(())
+}
+
+fn find_dictionary_media_entry<'a>(
+    manifest: &'a DictionaryManifest,
+    dictionary: &str,
+) -> Result<&'a DictionaryManifestEntry, String> {
+    let needle = dictionary.trim();
+    if needle.is_empty() {
+        return Err("Dictionary media request is missing a dictionary id.".into());
+    }
+
+    manifest
+        .dictionaries
+        .iter()
+        .find(|entry| entry.dict_id == needle)
+        .or_else(|| {
+            manifest
+                .dictionaries
+                .iter()
+                .filter(|entry| entry.title == needle)
+                .min_by_key(|entry| entry.order)
+        })
+        .ok_or_else(|| format!("Dictionary not found for media request: {needle}"))
+}
+
+fn load_dictionary_media(
+    manifest: &DictionaryManifest,
+    dictionary: &str,
+    path: &str,
+) -> Result<DictionaryMediaResource, String> {
+    let entry = find_dictionary_media_entry(manifest, dictionary)?;
+    let media_path = resolve_dictionary_media_path(Path::new(&entry.internal_path), path)?;
+    let mime_type = dictionary_media_mime_type(&media_path)?;
+    let data =
+        fs::read(&media_path).map_err(|e| format!("Cannot read dictionary media '{path}': {e}"))?;
+
+    Ok(DictionaryMediaResource {
+        mime_type: mime_type.into(),
+        data_base64: general_purpose::STANDARD.encode(data),
+    })
+}
+
+fn resolve_dictionary_media_path(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
+    let relative_path = relative_path.trim();
+    if relative_path.is_empty() {
+        return Err("Dictionary media path is empty.".into());
+    }
+
+    let relative = Path::new(relative_path);
+    if relative.is_absolute()
+        || relative.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::Prefix(_) | Component::RootDir
+            )
+        })
+    {
+        return Err("Dictionary media path must stay inside the imported dictionary.".into());
+    }
+
+    let root = root
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve dictionary media root: {e}"))?;
+    let media_path = root.join(relative);
+    let media_path = media_path
+        .canonicalize()
+        .map_err(|_| format!("Dictionary media not found: {relative_path}"))?;
+
+    if !media_path.starts_with(&root) {
+        return Err("Dictionary media path escaped the imported dictionary.".into());
+    }
+    if !media_path.is_file() {
+        return Err(format!("Dictionary media is not a file: {relative_path}"));
+    }
+
+    Ok(media_path)
+}
+
+fn dictionary_media_mime_type(path: &Path) -> Result<&'static str, String> {
+    let extension = path
+        .extension()
+        .and_then(|extension| extension.to_str())
+        .map(|extension| extension.to_ascii_lowercase())
+        .unwrap_or_default();
+
+    match extension.as_str() {
+        "png" => Ok("image/png"),
+        "jpg" | "jpeg" => Ok("image/jpeg"),
+        "gif" => Ok("image/gif"),
+        "webp" => Ok("image/webp"),
+        "avif" => Ok("image/avif"),
+        "heic" | "heif" => Ok("image/heic"),
+        "svg" => Ok("image/svg+xml"),
+        _ => Err(format!(
+            "Unsupported dictionary media type: {}",
+            path.display()
+        )),
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -1300,6 +1416,80 @@ mod tests {
 
         let error = read_dictionary_manifest(&path).unwrap_err();
         assert!(error.starts_with("Cannot parse dictionary manifest:"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dictionary_media_loads_by_id_or_title() {
+        let root = temp_path("media_lookup");
+        let dict_dir = root.join("dict");
+        fs::create_dir_all(dict_dir.join("images")).unwrap();
+        fs::write(dict_dir.join("images").join("entry.png"), b"png-bytes").unwrap();
+
+        let mut entry = manifest_entry("abc", 0);
+        entry.title = "Readable Dictionary".into();
+        entry.internal_path = dict_dir.to_string_lossy().into_owned();
+        let manifest = DictionaryManifest {
+            dictionaries: vec![entry],
+        };
+
+        let by_id = load_dictionary_media(&manifest, "abc", "images/entry.png").unwrap();
+        assert_eq!(by_id.mime_type, "image/png");
+        assert_eq!(by_id.data_base64, "cG5nLWJ5dGVz");
+
+        let by_title =
+            load_dictionary_media(&manifest, "Readable Dictionary", "images/entry.png").unwrap();
+        assert_eq!(by_title.data_base64, by_id.data_base64);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dictionary_media_rejects_path_escape() {
+        let root = temp_path("media_escape");
+        let dict_dir = root.join("dict");
+        fs::create_dir_all(&dict_dir).unwrap();
+        fs::write(root.join("outside.png"), b"outside").unwrap();
+
+        let mut entry = manifest_entry("abc", 0);
+        entry.internal_path = dict_dir.to_string_lossy().into_owned();
+        let manifest = DictionaryManifest {
+            dictionaries: vec![entry],
+        };
+
+        let parent_error = load_dictionary_media(&manifest, "abc", "../outside.png").unwrap_err();
+        assert!(parent_error.contains("must stay inside"));
+        let absolute_error = load_dictionary_media(
+            &manifest,
+            "abc",
+            &root.join("outside.png").to_string_lossy(),
+        )
+        .unwrap_err();
+        assert!(absolute_error.contains("must stay inside"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dictionary_media_reports_missing_or_unsupported_media() {
+        let root = temp_path("media_missing");
+        let dict_dir = root.join("dict");
+        fs::create_dir_all(&dict_dir).unwrap();
+        fs::write(dict_dir.join("entry.txt"), b"text").unwrap();
+
+        let mut entry = manifest_entry("abc", 0);
+        entry.internal_path = dict_dir.to_string_lossy().into_owned();
+        let manifest = DictionaryManifest {
+            dictionaries: vec![entry],
+        };
+
+        let missing = load_dictionary_media(&manifest, "abc", "missing.png").unwrap_err();
+        assert!(missing.starts_with("Dictionary media not found:"));
+        let unsupported = load_dictionary_media(&manifest, "abc", "entry.txt").unwrap_err();
+        assert!(unsupported.starts_with("Unsupported dictionary media type:"));
+        let unknown = load_dictionary_media(&manifest, "missing", "entry.png").unwrap_err();
+        assert!(unknown.starts_with("Dictionary not found for media request:"));
 
         let _ = fs::remove_dir_all(root);
     }

@@ -69,19 +69,19 @@ export function glossaryGroups(result: DictResult): GlossaryGroup[] {
   return [...groups.values()];
 }
 
-export function renderGlossaryContent(text: string): string {
+export function renderGlossaryContent(text: string, dictionary = ""): string {
   const trimmed = text.trim();
   if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return escapeHtml(text);
 
   try {
     const parsed = JSON.parse(trimmed) as unknown;
-    return renderStructuredContent(parsed) || escapeHtml(text);
+    return renderStructuredContent(parsed, "", dictionary) || escapeHtml(text);
   } catch {
     return escapeHtml(text);
   }
 }
 
-function renderStructuredContent(value: unknown, parentTag = ""): string {
+function renderStructuredContent(value: unknown, parentTag = "", dictionary = ""): string {
   if (typeof value === "string") return renderText(value);
   if (Array.isArray(value)) {
     if (value.every((item) => typeof item === "string") && value.length > 1 && parentTag !== "span") {
@@ -90,26 +90,27 @@ function renderStructuredContent(value: unknown, parentTag = ""): string {
 
     const items = value.map((item) => isStructuredContentWrapper(item) ? (item as { content?: unknown }).content : item);
     if (items.every((item) => isStructuredTag(item, "a")) && items.length > 1) {
-      return `<ul class="glossary-list">${items.map((item) => `<li>${renderStructuredContent(item)}</li>`).join("")}</ul>`;
+      return `<ul class="glossary-list">${items.map((item) => `<li>${renderStructuredContent(item, "", dictionary)}</li>`).join("")}</ul>`;
     }
 
-    return value.map((item) => renderStructuredContent(item, parentTag)).join("");
+    return value.map((item) => renderStructuredContent(item, parentTag, dictionary)).join("");
   }
   if (!value || typeof value !== "object") return "";
 
   const record = value as Record<string, unknown>;
   if (record.type === "structured-content") {
-    return `<span class="structured-content">${renderStructuredContent(record.content, "span")}</span>`;
+    return `<span class="structured-content">${renderStructuredContent(record.content, "span", dictionary)}</span>`;
   }
 
   const tag = typeof record.tag === "string" ? record.tag.toLowerCase() : "";
-  if (tag === "img" || tag === "image") return renderStructuredImage(record);
+  if (tag === "img" || tag === "image") return renderStructuredImage(record, dictionary);
   const safeTag = safeStructuredTag(tag);
   if (safeTag === "br") return "<br>";
 
   const content = renderStructuredContent(
     typeof record.content !== "undefined" ? record.content : record.text,
     safeTag,
+    dictionary,
   );
   const attributes = structuredAttributes(record, safeTag);
   const html = `<${safeTag}${attributes}>${content}</${safeTag}>`;
@@ -117,7 +118,7 @@ function renderStructuredContent(value: unknown, parentTag = ""): string {
   return html;
 }
 
-function renderStructuredImage(record: Record<string, unknown>): string {
+function renderStructuredImage(record: Record<string, unknown>, dictionary: string): string {
   const path = typeof record.path === "string"
     ? record.path
     : typeof record.src === "string"
@@ -126,8 +127,9 @@ function renderStructuredImage(record: Record<string, unknown>): string {
   const title = typeof record.title === "string" ? record.title : path;
   const alt = typeof record.alt === "string" ? record.alt : title;
   const pathAttr = path ? ` data-media-path="${escapeAttribute(path)}"` : "";
+  const dictionaryAttr = dictionary ? ` data-media-dictionary="${escapeAttribute(dictionary)}"` : "";
   const titleAttr = title ? ` title="${escapeAttribute(title)}"` : "";
-  return `<span class="gloss-media-placeholder"${pathAttr}${titleAttr}>${escapeHtml(alt || "Dictionary media")}</span>`;
+  return `<span class="gloss-media-placeholder"${pathAttr}${dictionaryAttr}${titleAttr}>${escapeHtml(alt || "Dictionary media")}</span>`;
 }
 
 function renderText(text: string): string {

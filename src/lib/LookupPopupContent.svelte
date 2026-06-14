@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { invoke, isTauri } from "@tauri-apps/api/core";
   import { formatLookupMatch, frequencyLabel, glossaryGroups, pitchLabel, renderGlossaryContent, resultDictionaryLabel, ruleTags, type LookupState } from "./lookup-popup";
   import { selectPopupTextFromPoint } from "./popup-selection";
   import type { DictResult, ReaderSelection } from "./types";
@@ -33,6 +34,12 @@
   let shiftHoverLastY = -1;
   let lastNestedLookupKey = "";
   let previousClearSelectionSignal: number | null = null;
+  let contentRoot: HTMLDivElement | null = null;
+
+  interface DictionaryMediaResource {
+    mimeType: string;
+    dataBase64: string;
+  }
 
   function resetShiftHover() {
     shiftHoverLastX = -1;
@@ -49,6 +56,13 @@
     window.getSelection()?.removeAllRanges();
     resetShiftHover();
     lastNestedLookupKey = "";
+  });
+
+  $effect(() => {
+    if (state !== "ready" || !contentRoot || !isTauri()) return;
+
+    const frame = window.requestAnimationFrame(() => loadDictionaryMedia(contentRoot));
+    return () => window.cancelAnimationFrame(frame);
   });
 
   function handleGlossaryPointerMove(event: PointerEvent) {
@@ -75,96 +89,151 @@
   function handleResultsScroll() {
     onScrolled(popupId);
   }
+
+  function loadDictionaryMedia(root: HTMLElement | null) {
+    if (!root) return;
+    const placeholders = [
+      ...root.querySelectorAll<HTMLElement>(".gloss-media-placeholder[data-media-path][data-media-dictionary]"),
+    ].filter((placeholder) => !placeholder.dataset.mediaStatus);
+
+    if (placeholders.length === 0) return;
+    if (!("IntersectionObserver" in window)) {
+      for (const placeholder of placeholders) void loadDictionaryMediaPlaceholder(placeholder);
+      return;
+    }
+
+    const observer = new IntersectionObserver((entries) => {
+      for (const entry of entries) {
+        if (!entry.isIntersecting) continue;
+        const placeholder = entry.target as HTMLElement;
+        observer.unobserve(placeholder);
+        void loadDictionaryMediaPlaceholder(placeholder);
+      }
+    }, { rootMargin: "160px" });
+
+    for (const placeholder of placeholders) {
+      placeholder.dataset.mediaStatus = "pending";
+      observer.observe(placeholder);
+    }
+  }
+
+  async function loadDictionaryMediaPlaceholder(placeholder: HTMLElement) {
+    const dictionary = placeholder.dataset.mediaDictionary ?? "";
+    const path = placeholder.dataset.mediaPath ?? "";
+    if (!dictionary || !path) return;
+
+    placeholder.dataset.mediaStatus = "loading";
+    try {
+      const resource = await invoke<DictionaryMediaResource>("dictionary_media", { dictionary, path });
+      if (!placeholder.isConnected) return;
+
+      const image = document.createElement("img");
+      image.className = "gloss-media-image";
+      image.alt = placeholder.textContent?.trim() || "Dictionary media";
+      image.src = `data:${resource.mimeType};base64,${resource.dataBase64}`;
+      placeholder.replaceChildren(image);
+      placeholder.dataset.mediaStatus = "loaded";
+      placeholder.classList.add("gloss-media-placeholder-loaded");
+    } catch {
+      if (!placeholder.isConnected) return;
+      placeholder.textContent = "Media unavailable";
+      placeholder.dataset.mediaStatus = "error";
+      placeholder.classList.add("gloss-media-placeholder-error");
+    }
+  }
 </script>
 
-<div class="lookup-head">
-  <span>Lookup</span>
-  <button aria-label="Close lookup" onclick={() => onClose(popupId)}>Close</button>
-</div>
-<p class="lookup-text">{selection.text}</p>
-{#if state === "loading"}
-  <p class="lookup-state">Looking up...</p>
-{:else if state === "noDictionaries"}
-  <div class="lookup-state-block">
+<div class="lookup-content" bind:this={contentRoot}>
+  <div class="lookup-head">
+    <span>Lookup</span>
+    <button aria-label="Close lookup" onclick={() => onClose(popupId)}>Close</button>
+  </div>
+  <p class="lookup-text">{selection.text}</p>
+  {#if state === "loading"}
+    <p class="lookup-state">Looking up...</p>
+  {:else if state === "noDictionaries"}
+    <div class="lookup-state-block">
+      <p class="lookup-state">{error}</p>
+      <button class="lookup-action" onclick={onImportDictionary}>Import Dictionary</button>
+    </div>
+  {:else if state === "engineUnavailable"}
     <p class="lookup-state">{error}</p>
-    <button class="lookup-action" onclick={onImportDictionary}>Import Dictionary</button>
-  </div>
-{:else if state === "engineUnavailable"}
-  <p class="lookup-state">{error}</p>
-{:else if state === "error"}
-  <p class="lookup-state">{error}</p>
-{:else if state === "empty"}
-  <p class="lookup-state">No dictionary results for "{selection.text}".</p>
-{:else if state === "ready"}
-  <div class="lookup-results" onscroll={handleResultsScroll}>
-    {#each results.slice(0, 3) as result, resultIndex}
-      <section class="lookup-result">
-        <div class="lookup-result-head">
-          <span>{result.expression}</span>
-          {#if result.reading && result.reading !== result.expression}
-            <span class="lookup-reading">{result.reading}</span>
-          {/if}
-        </div>
-        {#if resultDictionaryLabel(result)}
-          <p class="lookup-meta">{resultDictionaryLabel(result)}</p>
-        {/if}
-        {#if formatLookupMatch(result) || result.rules}
-          <div class="lookup-tags">
-            {#if formatLookupMatch(result)}
-              <span class="lookup-tag">{formatLookupMatch(result)}</span>
+  {:else if state === "error"}
+    <p class="lookup-state">{error}</p>
+  {:else if state === "empty"}
+    <p class="lookup-state">No dictionary results for "{selection.text}".</p>
+  {:else if state === "ready"}
+    <div class="lookup-results" onscroll={handleResultsScroll}>
+      {#each results.slice(0, 3) as result, resultIndex}
+        <section class="lookup-result">
+          <div class="lookup-result-head">
+            <span>{result.expression}</span>
+            {#if result.reading && result.reading !== result.expression}
+              <span class="lookup-reading">{result.reading}</span>
             {/if}
-            {#each ruleTags(result) as rule}
-              <span class="lookup-tag">{rule}</span>
-            {/each}
           </div>
-        {/if}
-        {#each glossaryGroups(result) as group, groupIndex}
-          <details class="lookup-glossary-group" open={groupIndex === 0}>
-            <summary class="lookup-glossary-dict">{group.dictionary}</summary>
-            {#if group.termTags.length > 0}
-              <div class="lookup-tags">
-                {#each group.termTags as tag}
-                  <span class="lookup-tag">{tag}</span>
-                {/each}
-              </div>
-            {/if}
-            <ol class="lookup-glossary-list">
-              {#each group.entries as entry}
-                <li class="lookup-glossary">
-                  {#if entry.definitionTagList.length > 0}
-                    <div class="lookup-tags">
-                      {#each entry.definitionTagList as tag}
-                        <span class="lookup-tag">{tag}</span>
-                      {/each}
-                    </div>
-                  {/if}
-                  <div
-                    class="lookup-glossary-content"
-                    role="group"
-                    aria-label="Lookup glossary text"
-                    onpointermove={handleGlossaryPointerMove}
-                    onpointerleave={resetShiftHover}
-                  >{@html renderGlossaryContent(entry.text)}</div>
-                </li>
+          {#if resultDictionaryLabel(result)}
+            <p class="lookup-meta">{resultDictionaryLabel(result)}</p>
+          {/if}
+          {#if formatLookupMatch(result) || result.rules}
+            <div class="lookup-tags">
+              {#if formatLookupMatch(result)}
+                <span class="lookup-tag">{formatLookupMatch(result)}</span>
+              {/if}
+              {#each ruleTags(result) as rule}
+                <span class="lookup-tag">{rule}</span>
               {/each}
-            </ol>
-          </details>
-        {/each}
-        {#if frequencyLabel(result)}
-          <p class="lookup-detail"><span>Freq</span>{frequencyLabel(result)}</p>
-        {/if}
-        {#if pitchLabel(result)}
-          <p class="lookup-detail"><span>Pitch</span>{pitchLabel(result)}</p>
-        {/if}
-        <button class="lookup-anki" disabled title={ankiTitle(result, resultIndex)}>
-          Anki not configured
-        </button>
-      </section>
-    {/each}
-  </div>
-{/if}
+            </div>
+          {/if}
+          {#each glossaryGroups(result) as group, groupIndex}
+            <details class="lookup-glossary-group" open={groupIndex === 0}>
+              <summary class="lookup-glossary-dict">{group.dictionary}</summary>
+              {#if group.termTags.length > 0}
+                <div class="lookup-tags">
+                  {#each group.termTags as tag}
+                    <span class="lookup-tag">{tag}</span>
+                  {/each}
+                </div>
+              {/if}
+              <ol class="lookup-glossary-list">
+                {#each group.entries as entry}
+                  <li class="lookup-glossary">
+                    {#if entry.definitionTagList.length > 0}
+                      <div class="lookup-tags">
+                        {#each entry.definitionTagList as tag}
+                          <span class="lookup-tag">{tag}</span>
+                        {/each}
+                      </div>
+                    {/if}
+                    <div
+                      class="lookup-glossary-content"
+                      role="group"
+                      aria-label="Lookup glossary text"
+                      onpointermove={handleGlossaryPointerMove}
+                      onpointerleave={resetShiftHover}
+                    >{@html renderGlossaryContent(entry.text, group.dictionary)}</div>
+                  </li>
+                {/each}
+              </ol>
+            </details>
+          {/each}
+          {#if frequencyLabel(result)}
+            <p class="lookup-detail"><span>Freq</span>{frequencyLabel(result)}</p>
+          {/if}
+          {#if pitchLabel(result)}
+            <p class="lookup-detail"><span>Pitch</span>{pitchLabel(result)}</p>
+          {/if}
+          <button class="lookup-anki" disabled title={ankiTitle(result, resultIndex)}>
+            Anki not configured
+          </button>
+        </section>
+      {/each}
+    </div>
+  {/if}
+</div>
 
 <style>
+  .lookup-content { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .lookup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #9aa0a6; font-size: 11px; text-transform: uppercase; }
   .lookup-head button { flex-shrink: 0; padding: 3px 8px; background: #33383e; color: #d7d9dc; border: 1px solid #555c64; border-radius: 3px; cursor: pointer; font-size: 11px; text-transform: none; }
   .lookup-text { color: #fff; font-size: 18px; line-height: 1.35; overflow-wrap: anywhere; max-height: 54px; overflow: hidden; }
@@ -198,6 +267,9 @@
   .lookup-glossary-content :global(a) { color: #8ab4f8; }
   .lookup-glossary-content :global(rt) { color: #b7bcc3; font-size: 0.72em; }
   .lookup-glossary-content :global(.gloss-media-placeholder) { display: inline-block; max-width: 100%; padding: 4px 7px; border: 1px dashed #5a6169; border-radius: 4px; color: #b7bcc3; background: #2b2f34; font-size: 11px; }
+  .lookup-glossary-content :global(.gloss-media-placeholder-loaded) { display: block; padding: 2px; border-style: solid; }
+  .lookup-glossary-content :global(.gloss-media-placeholder-error) { color: #f28b82; border-color: #7d4f4b; }
+  .lookup-glossary-content :global(.gloss-media-image) { display: block; max-width: 100%; max-height: 180px; object-fit: contain; }
   .lookup-detail { color: #c8ccd1; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
   .lookup-detail span { margin-right: 6px; color: #fdd663; }
   .lookup-anki { align-self: flex-start; margin-top: 2px; padding: 3px 7px; background: #2b2f34; color: #7f858c; border: 1px solid #444a51; border-radius: 4px; cursor: not-allowed; font-size: 11px; }
