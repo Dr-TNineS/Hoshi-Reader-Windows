@@ -64,6 +64,11 @@
   let tocEntries = $derived(meta ? flattenToc(meta.toc, meta) : []);
   let chapterBookInfo = $derived(meta?.book_info.chapter_info[chapterIndex] ?? null);
 
+  interface LookupPopupHistoryEntry {
+    selection: ReaderSelection;
+    scrollTop: number;
+  }
+
   interface LookupPopupItem {
     id: string;
     selection: ReaderSelection;
@@ -72,6 +77,10 @@
     results: DictResult[];
     requestId: number;
     clearSelectionSignal: number;
+    historyBack: LookupPopupHistoryEntry[];
+    historyForward: LookupPopupHistoryEntry[];
+    restoreScrollTop: number;
+    restoreScrollSignal: number;
   }
 
   // Initialize persisted reading state once. Returning to the shelf should stay
@@ -448,7 +457,17 @@
       results: [],
       requestId,
       clearSelectionSignal: 0,
+      historyBack: [],
+      historyForward: [],
+      restoreScrollTop: 0,
+      restoreScrollSignal: 0,
     };
+  }
+
+  function popupResultsScrollTop(id: string): number {
+    const popup = [...document.querySelectorAll<HTMLElement>(".lookup-pop")]
+      .find((element) => element.dataset.popupId === id);
+    return popup?.querySelector<HTMLElement>(".lookup-results")?.scrollTop ?? 0;
   }
 
   function clearPopupChildren(parentId: string, clearParentSelection = true) {
@@ -525,6 +544,75 @@
 
   function handleNestedPopupLookup(parentId: string, selection: ReaderSelection) {
     openChildLookup(parentId, selection);
+  }
+
+  function handleRedirectPopupLookup(popupId: string, selection: ReaderSelection) {
+    const index = popupIndex(popupId);
+    if (index < 0) return;
+    const popup = lookupPopups[index];
+    const requestId = nextLookupRequestId();
+    const scrollTop = popupResultsScrollTop(popupId);
+    const redirectedSelection = {
+      ...selection,
+      rect: popup.selection.rect,
+      anchorRect: popup.selection.anchorRect,
+    };
+
+    lookupPopups = lookupPopups
+      .slice(0, index + 1)
+      .map((item, itemIndex) => (
+        itemIndex === index
+          ? {
+              ...item,
+              selection: redirectedSelection,
+              state: "loading",
+              error: "",
+              results: [],
+              requestId,
+              clearSelectionSignal: item.clearSelectionSignal + 1,
+              historyBack: [...item.historyBack, { selection: item.selection, scrollTop }],
+              historyForward: [],
+              restoreScrollTop: 0,
+              restoreScrollSignal: item.restoreScrollSignal + 1,
+            }
+          : item
+      ));
+    void lookupSelection(popupId, redirectedSelection, requestId);
+  }
+
+  function handlePopupHistoryNavigation(popupId: string, direction: "back" | "forward") {
+    const index = popupIndex(popupId);
+    if (index < 0) return;
+    const popup = lookupPopups[index];
+    const from = direction === "back" ? popup.historyBack : popup.historyForward;
+    if (from.length === 0) return;
+
+    const current = { selection: popup.selection, scrollTop: popupResultsScrollTop(popupId) };
+    const target = from[from.length - 1];
+    const requestId = nextLookupRequestId();
+    lookupPopups = lookupPopups
+      .slice(0, index + 1)
+      .map((item, itemIndex) => {
+        if (itemIndex !== index) return item;
+        return {
+          ...item,
+          selection: target.selection,
+          state: "loading",
+          error: "",
+          results: [],
+          requestId,
+          clearSelectionSignal: item.clearSelectionSignal + 1,
+          historyBack: direction === "back"
+            ? item.historyBack.slice(0, -1)
+            : [...item.historyBack, current],
+          historyForward: direction === "back"
+            ? [...item.historyForward, current]
+            : item.historyForward.slice(0, -1),
+          restoreScrollTop: target.scrollTop,
+          restoreScrollSignal: item.restoreScrollSignal + 1,
+        };
+      });
+    void lookupSelection(popupId, target.selection, requestId);
   }
 
   function handlePopupScrolled(parentId: string) {
@@ -715,7 +803,13 @@
           onClose={closePopup}
           onImportDictionary={importDictionary}
           onNestedLookup={handleNestedPopupLookup}
+          onRedirectLookup={handleRedirectPopupLookup}
           onScrolled={handlePopupScrolled}
+          onNavigateHistory={handlePopupHistoryNavigation}
+          canNavigateBack={popup.historyBack.length > 0}
+          canNavigateForward={popup.historyForward.length > 0}
+          restoreScrollTop={popup.restoreScrollTop}
+          restoreScrollSignal={popup.restoreScrollSignal}
           ankiTitle={(result, resultIndex) => lookupAnkiTitle(popup.selection, result, resultIndex)}
         />
       </aside>

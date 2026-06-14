@@ -145,9 +145,18 @@ function safeStructuredTag(tag: string): string {
 }
 
 function structuredAttributes(record: Record<string, unknown>, tag: string): string {
-  const attrs = [`class="gloss-sc-${tag}"`];
-  if (tag === "a" && typeof record.href === "string" && /^https?:\/\//i.test(record.href)) {
-    attrs.push(`href="${escapeAttribute(record.href)}" target="_blank" rel="noreferrer"`);
+  const classes = [`gloss-sc-${tag}`];
+  const attrs = [`class="${classes.join(" ")}"`];
+  if (tag === "a") {
+    const href = typeof record.href === "string" ? record.href : "";
+    if (/^https?:\/\//i.test(href)) {
+      attrs.push(`href="${escapeAttribute(href)}" target="_blank" rel="noreferrer"`);
+    } else {
+      const redirectTarget = structuredRedirectTarget(record);
+      if (redirectTarget) {
+        attrs.push(`href="#" data-lookup-redirect="${escapeAttribute(redirectTarget)}"`);
+      }
+    }
   }
   if (typeof record.title === "string") attrs.push(`title="${escapeAttribute(record.title)}"`);
   if (typeof record.lang === "string") attrs.push(`lang="${escapeAttribute(record.lang)}"`);
@@ -165,6 +174,48 @@ function structuredAttributes(record: Record<string, unknown>, tag: string): str
   }
 
   return attrs.length ? ` ${attrs.join(" ")}` : "";
+}
+
+function structuredRedirectTarget(record: Record<string, unknown>): string {
+  const data = record.data;
+  if (data && typeof data === "object") {
+    for (const key of ["query", "term", "expression", "headword", "content"]) {
+      const value = (data as Record<string, unknown>)[key];
+      if (typeof value === "string" && value.trim()) return value.trim();
+    }
+  }
+
+  const href = typeof record.href === "string" ? record.href.trim() : "";
+  if (href) {
+    const query = redirectQueryFromHref(href);
+    if (query) return query;
+  }
+
+  const text = structuredPlainText(typeof record.content !== "undefined" ? record.content : record.text);
+  return text.trim();
+}
+
+function redirectQueryFromHref(href: string): string {
+  try {
+    const url = new URL(href, "https://lookup.invalid/");
+    for (const key of ["query", "q", "term", "expression"]) {
+      const value = url.searchParams.get(key);
+      if (value?.trim()) return value.trim();
+    }
+  } catch {
+    // Fall through to raw href handling below.
+  }
+
+  if (!/[/?#]/.test(href)) return href;
+  return "";
+}
+
+function structuredPlainText(value: unknown): string {
+  if (typeof value === "string") return value;
+  if (Array.isArray(value)) return value.map(structuredPlainText).join("");
+  if (!value || typeof value !== "object") return "";
+  const record = value as Record<string, unknown>;
+  return structuredPlainText(typeof record.content !== "undefined" ? record.content : record.text);
 }
 
 function isStructuredContentWrapper(value: unknown): boolean {

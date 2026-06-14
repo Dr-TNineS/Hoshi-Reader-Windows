@@ -20,14 +20,15 @@ Do not modify `reference/` or `third_party/hoshidicts` from this document.
   and parent scroll closes descendants.
 - Popup states are implemented for loading, no dictionaries, engine
   unavailable, empty, error, and ready.
-- Result rendering is minimal but usable: expression, reading, dictionary
-  source, matched/deinflected/rules, glossary, frequency, pitch, and a disabled
-  Anki boundary.
-- Structured glossary JSON is rendered through the local safe renderer instead
-  of showing raw JSON.
-- HSW does not yet support dictionary media images, dictionary-provided popup
-  CSS, redirect history/back-forward, word audio, real Anki actions, or
-  Sasayaki controls.
+- Result rendering includes expression, reading, dictionary source,
+  matched/deinflected/rules, grouped glossary entries, term/definition tags,
+  structured content, dictionary media image loading, frequency, pitch, and a
+  disabled Anki boundary.
+- Same-popup cross-reference redirect history is implemented with popup-local
+  Back/Forward controls and scroll restoration. `Shift + hover` recursive
+  lookup remains a child-popup action.
+- HSW does not yet support dictionary-provided popup CSS, word audio, real Anki
+  actions, or Sasayaki controls.
 
 ## HSA Reference Findings
 
@@ -238,4 +239,3 @@ Validation:
 
 These should be planned as separate product slices after renderer/media/history
 are stable.
-

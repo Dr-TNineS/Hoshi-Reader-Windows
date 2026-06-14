@@ -14,7 +14,13 @@
     onClose = () => {},
     onImportDictionary = () => {},
     onNestedLookup = () => {},
+    onRedirectLookup = () => {},
     onScrolled = () => {},
+    onNavigateHistory = () => {},
+    canNavigateBack = false,
+    canNavigateForward = false,
+    restoreScrollTop = 0,
+    restoreScrollSignal = 0,
     ankiTitle = () => "Payload prepared for current book",
   }: {
     popupId: string;
@@ -26,7 +32,13 @@
     onClose?: (popupId: string) => void;
     onImportDictionary?: () => void;
     onNestedLookup?: (popupId: string, selection: ReaderSelection) => void;
+    onRedirectLookup?: (popupId: string, selection: ReaderSelection) => void;
     onScrolled?: (popupId: string) => void;
+    onNavigateHistory?: (popupId: string, direction: "back" | "forward") => void;
+    canNavigateBack?: boolean;
+    canNavigateForward?: boolean;
+    restoreScrollTop?: number;
+    restoreScrollSignal?: number;
     ankiTitle?: (result: DictResult, resultIndex: number) => string;
   } = $props();
 
@@ -34,6 +46,7 @@
   let shiftHoverLastY = -1;
   let lastNestedLookupKey = "";
   let previousClearSelectionSignal: number | null = null;
+  let previousRestoreScrollSignal: number | null = null;
   let contentRoot: HTMLDivElement | null = null;
 
   interface DictionaryMediaResource {
@@ -65,6 +78,28 @@
     return () => window.cancelAnimationFrame(frame);
   });
 
+  $effect(() => {
+    if (previousRestoreScrollSignal === null) {
+      previousRestoreScrollSignal = restoreScrollSignal;
+      return;
+    }
+    if (restoreScrollSignal === previousRestoreScrollSignal || state !== "ready" || !contentRoot) return;
+    previousRestoreScrollSignal = restoreScrollSignal;
+
+    const frame = window.requestAnimationFrame(() => {
+      const results = contentRoot?.querySelector<HTMLElement>(".lookup-results");
+      if (results) results.scrollTop = restoreScrollTop;
+    });
+    return () => window.cancelAnimationFrame(frame);
+  });
+
+  $effect(() => {
+    if (!contentRoot) return;
+    const root = contentRoot;
+    root.addEventListener("click", handleGlossaryClick);
+    return () => root.removeEventListener("click", handleGlossaryClick);
+  });
+
   function handleGlossaryPointerMove(event: PointerEvent) {
     if (!event.shiftKey) {
       resetShiftHover();
@@ -88,6 +123,25 @@
 
   function handleResultsScroll() {
     onScrolled(popupId);
+  }
+
+  function handleGlossaryClick(event: MouseEvent) {
+    const target = event.target instanceof Element
+      ? event.target.closest<HTMLAnchorElement>("a[data-lookup-redirect]")
+      : null;
+    if (!target) return;
+
+    const text = target.dataset.lookupRedirect?.trim() || target.textContent?.trim() || "";
+    if (!text) return;
+    event.preventDefault();
+
+    const rect = target.getBoundingClientRect();
+    onRedirectLookup(popupId, {
+      text,
+      chapterIndex: selection.chapterIndex,
+      rect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+      anchorRect: { x: rect.x, y: rect.y, width: rect.width, height: rect.height },
+    });
   }
 
   function loadDictionaryMedia(root: HTMLElement | null) {
@@ -146,7 +200,11 @@
 <div class="lookup-content" bind:this={contentRoot}>
   <div class="lookup-head">
     <span>Lookup</span>
-    <button aria-label="Close lookup" onclick={() => onClose(popupId)}>Close</button>
+    <div class="lookup-head-actions">
+      <button aria-label="Back" title="Back" disabled={!canNavigateBack} onclick={() => onNavigateHistory(popupId, "back")}>&lt;</button>
+      <button aria-label="Forward" title="Forward" disabled={!canNavigateForward} onclick={() => onNavigateHistory(popupId, "forward")}>&gt;</button>
+      <button aria-label="Close lookup" onclick={() => onClose(popupId)}>Close</button>
+    </div>
   </div>
   <p class="lookup-text">{selection.text}</p>
   {#if state === "loading"}
@@ -235,7 +293,9 @@
 <style>
   .lookup-content { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .lookup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #9aa0a6; font-size: 11px; text-transform: uppercase; }
-  .lookup-head button { flex-shrink: 0; padding: 3px 8px; background: #33383e; color: #d7d9dc; border: 1px solid #555c64; border-radius: 3px; cursor: pointer; font-size: 11px; text-transform: none; }
+  .lookup-head-actions { display: flex; align-items: center; gap: 4px; }
+  .lookup-head button { flex-shrink: 0; min-width: 24px; padding: 3px 7px; background: #33383e; color: #d7d9dc; border: 1px solid #555c64; border-radius: 3px; cursor: pointer; font-size: 11px; text-transform: none; }
+  .lookup-head button:disabled { color: #747b84; cursor: not-allowed; opacity: 0.62; }
   .lookup-text { color: #fff; font-size: 18px; line-height: 1.35; overflow-wrap: anywhere; max-height: 54px; overflow: hidden; }
   .lookup-state-block { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
   .lookup-state { color: #b7bcc3; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
@@ -265,6 +325,7 @@
   .lookup-glossary-content :global(th) { background: #30343a; font-weight: 600; }
   .lookup-glossary-content :global(.gloss-sc-table-container) { display: block; max-width: 100%; overflow-x: auto; }
   .lookup-glossary-content :global(a) { color: #8ab4f8; }
+  .lookup-glossary-content :global(a[data-lookup-redirect]) { border-bottom: 1px dotted currentColor; cursor: pointer; text-decoration: none; }
   .lookup-glossary-content :global(rt) { color: #b7bcc3; font-size: 0.72em; }
   .lookup-glossary-content :global(.gloss-media-placeholder) { display: inline-block; max-width: 100%; padding: 4px 7px; border: 1px dashed #5a6169; border-radius: 4px; color: #b7bcc3; background: #2b2f34; font-size: 11px; }
   .lookup-glossary-content :global(.gloss-media-placeholder-loaded) { display: block; padding: 2px; border-style: solid; }

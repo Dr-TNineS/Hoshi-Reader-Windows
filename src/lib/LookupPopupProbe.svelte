@@ -28,6 +28,7 @@
           content: [
             { tag: "li", content: "first structured sense" },
             { tag: "li", content: ["second structured sense", { tag: "br" }, "with a line break"] },
+            { tag: "li", content: ["see also ", { tag: "a", href: "?query=academy", content: "academy" }] },
           ],
         },
         {
@@ -76,6 +77,10 @@
     selection: ReaderSelection;
     results: DictResult[];
     clearSelectionSignal: number;
+    historyBack: Array<{ selection: ReaderSelection; scrollTop: number }>;
+    historyForward: Array<{ selection: ReaderSelection; scrollTop: number }>;
+    restoreScrollTop: number;
+    restoreScrollSignal: number;
   }
 
   let popups: ProbePopup[] = $state([{
@@ -83,6 +88,10 @@
     selection: rootSelection,
     results: [{ ...baseResult }],
     clearSelectionSignal: 0,
+    historyBack: [],
+    historyForward: [],
+    restoreScrollTop: 0,
+    restoreScrollSignal: 0,
   }]);
   let importClicks = $state(0);
   let closeClicks = $state(0);
@@ -118,6 +127,68 @@
         selection: nestedSelection,
         results: [nestedResult(nestedSelection)],
         clearSelectionSignal: 0,
+        historyBack: [],
+        historyForward: [],
+        restoreScrollTop: 0,
+        restoreScrollSignal: 0,
+      },
+    ];
+  }
+
+  function popupResultsScrollTop(id: string): number {
+    const popup = [...document.querySelectorAll<HTMLElement>(".lookup-pop")]
+      .find((element) => element.dataset.popupId === id);
+    return popup?.querySelector<HTMLElement>(".lookup-results")?.scrollTop ?? 0;
+  }
+
+  function redirectLookup(popupId: string, selection: ReaderSelection) {
+    const index = popups.findIndex((popup) => popup.id === popupId);
+    if (index < 0) return;
+    const popup = popups[index];
+    const scrollTop = popupResultsScrollTop(popupId);
+    const redirectedSelection = {
+      ...selection,
+      rect: popup.selection.rect,
+      anchorRect: popup.selection.anchorRect,
+    };
+    popups = [
+      ...popups.slice(0, index).map((item) => item),
+      {
+        ...popup,
+        selection: redirectedSelection,
+        results: [nestedResult(redirectedSelection)],
+        clearSelectionSignal: popup.clearSelectionSignal + 1,
+        historyBack: [...popup.historyBack, { selection: popup.selection, scrollTop }],
+        historyForward: [],
+        restoreScrollTop: 0,
+        restoreScrollSignal: popup.restoreScrollSignal + 1,
+      },
+    ];
+  }
+
+  function navigateHistory(popupId: string, direction: "back" | "forward") {
+    const index = popups.findIndex((popup) => popup.id === popupId);
+    if (index < 0) return;
+    const popup = popups[index];
+    const source = direction === "back" ? popup.historyBack : popup.historyForward;
+    if (source.length === 0) return;
+    const current = { selection: popup.selection, scrollTop: popupResultsScrollTop(popupId) };
+    const target = source[source.length - 1];
+    popups = [
+      ...popups.slice(0, index),
+      {
+        ...popup,
+        selection: target.selection,
+        results: target.selection.text === "school" ? [{ ...baseResult }] : [nestedResult(target.selection)],
+        clearSelectionSignal: popup.clearSelectionSignal + 1,
+        historyBack: direction === "back"
+          ? popup.historyBack.slice(0, -1)
+          : [...popup.historyBack, current],
+        historyForward: direction === "back"
+          ? [...popup.historyForward, current]
+          : popup.historyForward.slice(0, -1),
+        restoreScrollTop: target.scrollTop,
+        restoreScrollSignal: popup.restoreScrollSignal + 1,
       },
     ];
   }
@@ -166,7 +237,13 @@
         onImportDictionary={() => importClicks += 1}
         onClose={closePopup}
         onNestedLookup={openNestedLookup}
+        onRedirectLookup={redirectLookup}
         onScrolled={closeChildren}
+        onNavigateHistory={navigateHistory}
+        canNavigateBack={popup.historyBack.length > 0}
+        canNavigateForward={popup.historyForward.length > 0}
+        restoreScrollTop={popup.restoreScrollTop}
+        restoreScrollSignal={popup.restoreScrollSignal}
         ankiTitle={() => "Payload prepared for Probe Book"}
       />
     </aside>

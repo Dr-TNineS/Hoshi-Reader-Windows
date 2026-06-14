@@ -81,6 +81,10 @@ async function popupMetrics(page) {
       structuredRuby: document.querySelectorAll(".lookup-glossary-content ruby rt").length,
       mediaPlaceholders: document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder").length,
       glossaryGroups: document.querySelectorAll(".lookup-glossary-group").length,
+      redirectLinks: document.querySelectorAll(".lookup-glossary-content a[data-lookup-redirect]").length,
+      canGoBack: !document.querySelector(".lookup-pop[data-popup-id='root'] button[aria-label='Back']")?.hasAttribute("disabled"),
+      canGoForward: !document.querySelector(".lookup-pop[data-popup-id='root'] button[aria-label='Forward']")?.hasAttribute("disabled"),
+      resultsScrollTop: document.querySelector(".lookup-pop[data-popup-id='root'] .lookup-results")?.scrollTop ?? 0,
     };
   });
 }
@@ -167,12 +171,41 @@ async function main() {
     assert(ready.structuredRuby >= 1, "Ready popup should preserve structured glossary ruby.", ready);
     assert(ready.mediaPlaceholders >= 1, "Ready popup should render safe placeholders for dictionary media before media loading exists.", ready);
     assert(ready.glossaryGroups >= 2, "Ready popup should group glossary entries by dictionary.", ready);
+    assert(ready.redirectLinks >= 1, "Ready popup should render dictionary cross-reference links.", ready);
+    assert(!ready.canGoBack && !ready.canGoForward, "Root popup should start without redirect history.", ready);
     assert(ready.text.includes("education") && ready.text.includes("place"), "Ready popup should render glossary definition tags.", ready);
     assert(ready.text.includes("Freq") && ready.text.includes("120"), "Ready popup should render frequency.", ready);
     assert(ready.text.includes("Pitch") && ready.text.includes("school"), "Ready popup should render pitch.", ready);
     assert(ready.text.includes("Anki not configured") && ready.ankiDisabled, "Anki boundary should remain disabled.", ready);
     assert(ready.ankiTitle.includes("Probe Book"), "Anki payload title should be exposed as disabled affordance text.", ready);
     assert(ready.hasResultsScroller, "Long ready results should scroll inside the popup.", ready);
+
+    await page.locator(".lookup-pop[data-popup-id='root'] a[data-lookup-redirect]").first().evaluate((link) => {
+      const scroller = link.closest(".lookup-results");
+      if (scroller instanceof HTMLElement) scroller.scrollTop = 72;
+      link.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+    });
+    const redirected = await popupMetrics(page);
+    assert(redirected.popupCount === 1, "Cross-reference redirect should reuse the current popup.", redirected);
+    assert(redirected.text.includes("nested result for academy"), "Cross-reference redirect should look up the target in the same popup.", redirected);
+    assert(redirected.canGoBack && !redirected.canGoForward, "Redirect should push back history and clear forward history.", redirected);
+
+    await page.locator(".lookup-pop[data-popup-id='root']").getByRole("button", { name: "Back" }).click();
+    await page.waitForFunction(() => (
+      (document.querySelector(".lookup-pop[data-popup-id='root'] .lookup-results")?.scrollTop ?? 0) >= 70
+    ));
+    const afterBack = await popupMetrics(page);
+    assert(afterBack.popupCount === 1, "Back navigation should stay in the same popup.", afterBack);
+    assert(afterBack.text.includes("classroom school room"), "Back navigation should restore the previous lookup.", afterBack);
+    assert(afterBack.resultsScrollTop >= 70, "Back navigation should restore the previous popup scroll position.", afterBack);
+    assert(!afterBack.canGoBack && afterBack.canGoForward, "Back navigation should move the redirect into forward history.", afterBack);
+
+    await page.locator(".lookup-pop[data-popup-id='root']").getByRole("button", { name: "Forward" }).click();
+    const afterForward = await popupMetrics(page);
+    assert(afterForward.text.includes("nested result for academy"), "Forward navigation should restore the redirected lookup.", afterForward);
+    assert(afterForward.canGoBack && !afterForward.canGoForward, "Forward navigation should move the previous lookup back into back history.", afterForward);
+
+    await page.locator(".lookup-pop[data-popup-id='root']").getByRole("button", { name: "Back" }).click();
 
     await dispatchShiftHover(page, "classroom");
     const nested = await popupMetrics(page);
