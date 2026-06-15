@@ -8,4 +8,11 @@ script = ""
 [[actions]]
 name = "运行"
 icon = "run"
-command = "npx tauri dev"
+command = '''
+@echo off
+call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\Common7\Tools\VsDevCmd.bat" -arch=x64 -host_arch=x64
+
+cd /d "%~dp0"
+
+npm exec tauri dev
+'''

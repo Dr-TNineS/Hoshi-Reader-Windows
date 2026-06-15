@@ -6,7 +6,7 @@
 
 ## 工作原则
 
-- HSW 是 HSA/HS 阅读体验在 Windows 平台上的迁移、复刻或再实现；核心阅读体验优先对齐 HSA/HS 的用户可见行为。
+- HSW 是 Hoshi-Reader-Android（简称HSA）阅读体验在 Windows 平台上的迁移、复刻或再实现；核心阅读体验优先对齐 HSA 的用户可见行为。
 - Android 平台特有 UI、权限、WebView、存储和系统 API 细节只作参考，必须按 Windows/Tauri 实际能力逐项判断。
 - 默认推进顺序：model/storage -> bookshelf import -> reader -> dictionary popup -> Anki -> sync -> settings。
 - 主路径优先闭环：bookshelf -> import EPUB -> open reader -> select text -> lookup。
@@ -16,6 +16,7 @@
 - 修改范围应贴合当前任务。除非用户明确要求一个完整切片，否则不要把 reader、storage、dictionary、settings、packaging 改动混在一起。
 - 如果实现改动导致 `docs/` 下的状态、路线图或行为基线不准确，应在同一任务里同步更新最小相关文档；`STATUS.md` 只保留索引级信息。
 - 文档里不确定或未验证的项目事实必须标注为 `unknown` / `not verified`，不要猜。
+- 做长任务时自动把任务拆分为slice，按照slice依次做，每做完一个slice就commit下，并根据当前情况重新审视下个slice是否需要调整
 
 ## 架构基线
 
