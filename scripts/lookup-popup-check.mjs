@@ -55,6 +55,9 @@ async function popupMetrics(page) {
     const popup = document.querySelector(".lookup-pop");
     const results = document.querySelector(".lookup-results");
     const state = document.querySelector(".probe-state");
+    const styledGlossary = document.querySelector(".lookup-glossary-content .gloss-sc-div");
+    const head = document.querySelector(".lookup-head");
+    const anki = document.querySelector(".lookup-anki");
     const rect = popup instanceof HTMLElement
       ? popup.getBoundingClientRect()
       : { x: 0, y: 0, width: 0, height: 0, right: 0, bottom: 0 };
@@ -85,6 +88,14 @@ async function popupMetrics(page) {
       canGoBack: !document.querySelector(".lookup-pop[data-popup-id='root'] button[aria-label='Back']")?.hasAttribute("disabled"),
       canGoForward: !document.querySelector(".lookup-pop[data-popup-id='root'] button[aria-label='Forward']")?.hasAttribute("disabled"),
       resultsScrollTop: document.querySelector(".lookup-pop[data-popup-id='root'] .lookup-results")?.scrollTop ?? 0,
+      dictionaryStyleTags: Array.from(document.head.querySelectorAll("style"))
+        .filter((style) => style.textContent?.includes(".lookup-glossary-content .gloss-sc-div")).length,
+      dictionaryStyledColor: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).color : "",
+      dictionaryStyledPosition: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).position : "",
+      dictionaryStyledBackgroundImage: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).backgroundImage : "",
+      headColor: head instanceof HTMLElement ? getComputedStyle(head).color : "",
+      ankiDisplay: anki instanceof HTMLElement ? getComputedStyle(anki).display : "",
+      bodyBackground: getComputedStyle(document.body).backgroundColor,
     };
   });
 }
@@ -161,6 +172,10 @@ async function main() {
     assert((await popupMetrics(page)).closeClicks === 1, "Close action should be wired.");
 
     await openProbe(page, "ready", { longResult: true });
+    await page.waitForFunction(() => {
+      const target = document.querySelector(".lookup-glossary-content .gloss-sc-div");
+      return target instanceof HTMLElement && getComputedStyle(target).color === "rgb(123, 210, 145)";
+    });
     const ready = await popupMetrics(page);
     assert(ready.text.includes("school"), "Ready popup should render expression.", ready);
     assert(ready.text.includes("Jitendex.org [probe]"), "Ready popup should render dictionary source.", ready);
@@ -173,6 +188,13 @@ async function main() {
     assert(ready.glossaryGroups >= 2, "Ready popup should group glossary entries by dictionary.", ready);
     assert(ready.redirectLinks >= 1, "Ready popup should render dictionary cross-reference links.", ready);
     assert(!ready.canGoBack && !ready.canGoForward, "Root popup should start without redirect history.", ready);
+    assert(ready.dictionaryStyleTags >= 1, "Ready popup should inject scoped dictionary CSS.", ready);
+    assert(ready.dictionaryStyledColor === "rgb(123, 210, 145)", "Dictionary CSS should affect glossary content.", ready);
+    assert(ready.dictionaryStyledPosition !== "fixed", "Dictionary CSS sanitizer should block fixed positioning.", ready);
+    assert(ready.dictionaryStyledBackgroundImage === "none", "Dictionary CSS sanitizer should block remote image URLs.", ready);
+    assert(ready.headColor !== "rgb(255, 0, 0)", "Dictionary CSS should not style popup chrome.", ready);
+    assert(ready.ankiDisplay !== "none", "Dictionary CSS should not style popup action buttons.", ready);
+    assert(ready.bodyBackground !== "rgb(255, 0, 0)", "Dictionary CSS should not style the page body.", ready);
     assert(ready.text.includes("education") && ready.text.includes("place"), "Ready popup should render glossary definition tags.", ready);
     assert(ready.text.includes("Freq") && ready.text.includes("120"), "Ready popup should render frequency.", ready);
     assert(ready.text.includes("Pitch") && ready.text.includes("school"), "Ready popup should render pitch.", ready);

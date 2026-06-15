@@ -1,13 +1,13 @@
 <script lang="ts">
   import { invoke, isTauri } from "@tauri-apps/api/core";
-  import { formatLookupMatch, frequencyLabel, glossaryGroups, pitchLabel, renderGlossaryContent, resultDictionaryLabel, ruleTags, type LookupState } from "./lookup-popup";
+  import { formatLookupMatch, frequencyLabel, glossaryGroups, pitchLabel, renderGlossaryContent, resultDictionaryLabel, ruleTags, scopeDictionaryCss, type LookupState } from "./lookup-popup";
   import { selectPopupTextFromPoint } from "./popup-selection";
   import type { DictResult, ReaderSelection } from "./types";
 
   let {
     popupId,
     selection,
-    state,
+    state: lookupState,
     error = "",
     results = [],
     clearSelectionSignal = 0,
@@ -21,6 +21,7 @@
     canNavigateForward = false,
     restoreScrollTop = 0,
     restoreScrollSignal = 0,
+    loadDictionaryStyles,
     ankiTitle = () => "Payload prepared for current book",
   }: {
     popupId: string;
@@ -39,6 +40,7 @@
     canNavigateForward?: boolean;
     restoreScrollTop?: number;
     restoreScrollSignal?: number;
+    loadDictionaryStyles?: (dictionary: string) => Promise<DictionaryStyleResource>;
     ankiTitle?: (result: DictResult, resultIndex: number) => string;
   } = $props();
 
@@ -48,10 +50,18 @@
   let previousClearSelectionSignal: number | null = null;
   let previousRestoreScrollSignal: number | null = null;
   let contentRoot: HTMLDivElement | null = null;
+  let dictionaryStyleCss = $state("");
+  let styleRequestId = 0;
+  const styleTag = "style";
 
   interface DictionaryMediaResource {
     mimeType: string;
     dataBase64: string;
+  }
+
+  interface DictionaryStyleResource {
+    css: string;
+    source: string;
   }
 
   function resetShiftHover() {
@@ -72,10 +82,21 @@
   });
 
   $effect(() => {
-    if (state !== "ready" || !contentRoot || !isTauri()) return;
+    if (lookupState !== "ready" || !contentRoot || !isTauri()) return;
 
     const frame = window.requestAnimationFrame(() => loadDictionaryMedia(contentRoot));
     return () => window.cancelAnimationFrame(frame);
+  });
+
+  $effect(() => {
+    if (lookupState !== "ready") {
+      dictionaryStyleCss = "";
+      return;
+    }
+
+    const dictionaries = resultDictionaries(results);
+    const requestId = ++styleRequestId;
+    void loadScopedDictionaryStyles(dictionaries, requestId);
   });
 
   $effect(() => {
@@ -83,7 +104,7 @@
       previousRestoreScrollSignal = restoreScrollSignal;
       return;
     }
-    if (restoreScrollSignal === previousRestoreScrollSignal || state !== "ready" || !contentRoot) return;
+    if (restoreScrollSignal === previousRestoreScrollSignal || lookupState !== "ready" || !contentRoot) return;
     previousRestoreScrollSignal = restoreScrollSignal;
 
     const frame = window.requestAnimationFrame(() => {
@@ -195,7 +216,46 @@
       placeholder.classList.add("gloss-media-placeholder-error");
     }
   }
+
+  function resultDictionaries(lookupResults: DictResult[]): string[] {
+    const dictionaries: string[] = [];
+    for (const result of lookupResults) {
+      for (const group of glossaryGroups(result)) {
+        if (group.dictionary && !dictionaries.includes(group.dictionary)) dictionaries.push(group.dictionary);
+      }
+    }
+    return dictionaries;
+  }
+
+  async function loadScopedDictionaryStyles(dictionaries: string[], requestId: number) {
+    if (dictionaries.length === 0) {
+      dictionaryStyleCss = "";
+      return;
+    }
+
+    const loader = loadDictionaryStyles ?? invokeDictionaryStyles;
+    const chunks: string[] = [];
+    for (const dictionary of dictionaries) {
+      try {
+        const resource = await loader(dictionary);
+        if (requestId !== styleRequestId) return;
+        if (resource.css.trim()) chunks.push(scopeDictionaryCss(resource.css, popupId));
+      } catch {
+        if (requestId !== styleRequestId) return;
+      }
+    }
+    if (requestId === styleRequestId) dictionaryStyleCss = chunks.filter(Boolean).join("\n");
+  }
+
+  async function invokeDictionaryStyles(dictionary: string): Promise<DictionaryStyleResource> {
+    if (!isTauri()) return { css: "", source: dictionary };
+    return invoke<DictionaryStyleResource>("dictionary_styles", { dictionary });
+  }
 </script>
+
+<svelte:head>
+  <svelte:element this={styleTag}>{dictionaryStyleCss}</svelte:element>
+</svelte:head>
 
 <div class="lookup-content" bind:this={contentRoot}>
   <div class="lookup-head">
@@ -207,20 +267,20 @@
     </div>
   </div>
   <p class="lookup-text">{selection.text}</p>
-  {#if state === "loading"}
+  {#if lookupState === "loading"}
     <p class="lookup-state">Looking up...</p>
-  {:else if state === "noDictionaries"}
+  {:else if lookupState === "noDictionaries"}
     <div class="lookup-state-block">
       <p class="lookup-state">{error}</p>
       <button class="lookup-action" onclick={onImportDictionary}>Import Dictionary</button>
     </div>
-  {:else if state === "engineUnavailable"}
+  {:else if lookupState === "engineUnavailable"}
     <p class="lookup-state">{error}</p>
-  {:else if state === "error"}
+  {:else if lookupState === "error"}
     <p class="lookup-state">{error}</p>
-  {:else if state === "empty"}
+  {:else if lookupState === "empty"}
     <p class="lookup-state">No dictionary results for "{selection.text}".</p>
-  {:else if state === "ready"}
+  {:else if lookupState === "ready"}
     <div class="lookup-results" onscroll={handleResultsScroll}>
       {#each results.slice(0, 3) as result, resultIndex}
         <section class="lookup-result">

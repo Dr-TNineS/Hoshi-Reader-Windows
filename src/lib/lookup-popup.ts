@@ -81,6 +81,16 @@ export function renderGlossaryContent(text: string, dictionary = ""): string {
   }
 }
 
+export function scopeDictionaryCss(css: string, popupId: string): string {
+  const scope = `[data-popup-id="${escapeCssString(popupId)}"] .lookup-glossary-content`;
+  const cleaned = stripCssComments(css)
+    .replace(/@import[^;]+;/gi, "")
+    .replace(/url\(\s*(['"]?)https?:\/\/[^)]+\1\s*\)/gi, "none")
+    .replace(/position\s*:\s*fixed\s*!?\s*[^;}]*/gi, "position: static");
+
+  return scopeCssRules(cleaned, scope).trim();
+}
+
 function renderStructuredContent(value: unknown, parentTag = "", dictionary = ""): string {
   if (typeof value === "string") return renderText(value);
   if (Array.isArray(value)) {
@@ -239,4 +249,72 @@ function escapeHtml(value: string): string {
 
 function escapeAttribute(value: string): string {
   return escapeHtml(value).replace(/"/g, "&quot;");
+}
+
+function stripCssComments(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+function scopeCssRules(css: string, scope: string): string {
+  let output = "";
+  let index = 0;
+  while (index < css.length) {
+    const open = css.indexOf("{", index);
+    if (open < 0) break;
+    const selector = css.slice(index, open).trim();
+    const close = matchingBrace(css, open);
+    if (close < 0) break;
+    const body = css.slice(open + 1, close).trim();
+    index = close + 1;
+
+    if (!selector || !body) continue;
+    if (selector.toLowerCase().startsWith("@media")) {
+      const inner = scopeCssRules(body, scope);
+      if (inner) output += `${selector}{${inner}}\n`;
+      continue;
+    }
+    if (selector.startsWith("@")) continue;
+
+    const scopedSelector = selector
+      .split(",")
+      .map((item) => scopeCssSelector(item.trim(), scope))
+      .filter(Boolean)
+      .join(", ");
+    if (!scopedSelector) continue;
+    output += `${scopedSelector}{${body}}\n`;
+  }
+  return output;
+}
+
+function matchingBrace(css: string, open: number): number {
+  let depth = 0;
+  let quote = "";
+  for (let index = open; index < css.length; index += 1) {
+    const char = css[index];
+    const previous = css[index - 1];
+    if (quote) {
+      if (char === quote && previous !== "\\") quote = "";
+      continue;
+    }
+    if (char === "\"" || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
+}
+
+function scopeCssSelector(selector: string, scope: string): string {
+  if (!selector || /(^|[\s>+~,(])(?:html|body|:root)(?=$|[\s>+~,#.[:)])/i.test(selector)) return "";
+  if (/^\*/.test(selector)) return `${scope} ${selector}`;
+  return `${scope} ${selector}`;
+}
+
+function escapeCssString(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
 }

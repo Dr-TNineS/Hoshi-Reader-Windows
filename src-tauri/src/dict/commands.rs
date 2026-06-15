@@ -121,6 +121,13 @@ pub struct DictionaryMediaResource {
     pub data_base64: String,
 }
 
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictionaryStyleResource {
+    pub css: String,
+    pub source: String,
+}
+
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 struct DictionaryManifest {
@@ -203,6 +210,15 @@ pub fn dictionary_media(
 ) -> Result<DictionaryMediaResource, String> {
     let manifest = read_dictionary_manifest(&dictionary_manifest_path(&app)?)?;
     load_dictionary_media(&manifest, &dictionary, &path)
+}
+
+#[tauri::command]
+pub fn dictionary_styles(
+    dictionary: String,
+    app: AppHandle,
+) -> Result<DictionaryStyleResource, String> {
+    let manifest = read_dictionary_manifest(&dictionary_manifest_path(&app)?)?;
+    load_dictionary_styles(&manifest, &dictionary)
 }
 
 #[tauri::command]
@@ -659,13 +675,16 @@ fn validate_dictionary_order_ids(
     Ok(())
 }
 
-fn find_dictionary_media_entry<'a>(
+fn find_dictionary_entry<'a>(
     manifest: &'a DictionaryManifest,
     dictionary: &str,
+    request_kind: &str,
 ) -> Result<&'a DictionaryManifestEntry, String> {
     let needle = dictionary.trim();
     if needle.is_empty() {
-        return Err("Dictionary media request is missing a dictionary id.".into());
+        return Err(format!(
+            "Dictionary {request_kind} request is missing a dictionary id."
+        ));
     }
 
     manifest
@@ -679,7 +698,7 @@ fn find_dictionary_media_entry<'a>(
                 .filter(|entry| entry.title == needle)
                 .min_by_key(|entry| entry.order)
         })
-        .ok_or_else(|| format!("Dictionary not found for media request: {needle}"))
+        .ok_or_else(|| format!("Dictionary not found for {request_kind} request: {needle}"))
 }
 
 fn load_dictionary_media(
@@ -687,7 +706,7 @@ fn load_dictionary_media(
     dictionary: &str,
     path: &str,
 ) -> Result<DictionaryMediaResource, String> {
-    let entry = find_dictionary_media_entry(manifest, dictionary)?;
+    let entry = find_dictionary_entry(manifest, dictionary, "media")?;
     let media_path = resolve_dictionary_media_path(Path::new(&entry.internal_path), path)?;
     let mime_type = dictionary_media_mime_type(&media_path)?;
     let data =
@@ -696,6 +715,33 @@ fn load_dictionary_media(
     Ok(DictionaryMediaResource {
         mime_type: mime_type.into(),
         data_base64: general_purpose::STANDARD.encode(data),
+    })
+}
+
+fn load_dictionary_styles(
+    manifest: &DictionaryManifest,
+    dictionary: &str,
+) -> Result<DictionaryStyleResource, String> {
+    let entry = find_dictionary_entry(manifest, dictionary, "styles")?;
+    let styles_path = Path::new(&entry.internal_path).join("styles.css");
+    if !styles_path.exists() {
+        return Ok(DictionaryStyleResource {
+            css: String::new(),
+            source: entry.dict_id.clone(),
+        });
+    }
+    if !styles_path.is_file() {
+        return Err(format!(
+            "Dictionary styles path is not a file: {}",
+            styles_path.display()
+        ));
+    }
+
+    let css = fs::read_to_string(&styles_path)
+        .map_err(|e| format!("Cannot read dictionary styles.css: {e}"))?;
+    Ok(DictionaryStyleResource {
+        css,
+        source: entry.dict_id.clone(),
     })
 }
 
@@ -1490,6 +1536,73 @@ mod tests {
         assert!(unsupported.starts_with("Unsupported dictionary media type:"));
         let unknown = load_dictionary_media(&manifest, "missing", "entry.png").unwrap_err();
         assert!(unknown.starts_with("Dictionary not found for media request:"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dictionary_styles_loads_by_id_or_title() {
+        let root = temp_path("styles_lookup");
+        let dict_dir = root.join("dict");
+        fs::create_dir_all(&dict_dir).unwrap();
+        fs::write(
+            dict_dir.join("styles.css"),
+            ".gloss-sc-span { color: rgb(1, 2, 3); }",
+        )
+        .unwrap();
+
+        let mut entry = manifest_entry("abc", 0);
+        entry.title = "Readable Dictionary".into();
+        entry.internal_path = dict_dir.to_string_lossy().into_owned();
+        let manifest = DictionaryManifest {
+            dictionaries: vec![entry],
+        };
+
+        let by_id = load_dictionary_styles(&manifest, "abc").unwrap();
+        assert_eq!(by_id.source, "abc");
+        assert!(by_id.css.contains("rgb(1, 2, 3)"));
+
+        let by_title = load_dictionary_styles(&manifest, "Readable Dictionary").unwrap();
+        assert_eq!(by_title.css, by_id.css);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dictionary_styles_missing_file_returns_empty_css() {
+        let root = temp_path("styles_missing");
+        let dict_dir = root.join("dict");
+        fs::create_dir_all(&dict_dir).unwrap();
+
+        let mut entry = manifest_entry("abc", 0);
+        entry.internal_path = dict_dir.to_string_lossy().into_owned();
+        let manifest = DictionaryManifest {
+            dictionaries: vec![entry],
+        };
+
+        let styles = load_dictionary_styles(&manifest, "abc").unwrap();
+        assert_eq!(styles.source, "abc");
+        assert_eq!(styles.css, "");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dictionary_styles_reports_invalid_source() {
+        let root = temp_path("styles_invalid");
+        let dict_dir = root.join("dict");
+        fs::create_dir_all(dict_dir.join("styles.css")).unwrap();
+
+        let mut entry = manifest_entry("abc", 0);
+        entry.internal_path = dict_dir.to_string_lossy().into_owned();
+        let manifest = DictionaryManifest {
+            dictionaries: vec![entry],
+        };
+
+        let invalid = load_dictionary_styles(&manifest, "abc").unwrap_err();
+        assert!(invalid.starts_with("Dictionary styles path is not a file:"));
+        let unknown = load_dictionary_styles(&manifest, "missing").unwrap_err();
+        assert!(unknown.starts_with("Dictionary not found for styles request:"));
 
         let _ = fs::remove_dir_all(root);
     }

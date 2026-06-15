@@ -214,6 +214,20 @@
       popupIndex === index ? { ...popup, clearSelectionSignal: popup.clearSelectionSignal + 1 } : popup
     ));
   }
+
+  async function loadDictionaryStyles(dictionary: string) {
+    if (dictionary !== "Jitendex.org [probe]") return { source: dictionary, css: "" };
+    return {
+      source: "probe",
+      css: `
+        @import url("https://example.invalid/bad.css");
+        body { background: rgb(255, 0, 0); }
+        .lookup-head { color: rgb(255, 0, 0); }
+        .lookup-anki { display: none; }
+        .gloss-sc-div { color: rgb(123, 210, 145); position: fixed; background-image: url("https://example.invalid/bad.png"); }
+      `,
+    };
+  }
 </script>
 
 <main class="probe">
@@ -244,6 +258,7 @@
         canNavigateForward={popup.historyForward.length > 0}
         restoreScrollTop={popup.restoreScrollTop}
         restoreScrollSignal={popup.restoreScrollSignal}
+        {loadDictionaryStyles}
         ankiTitle={() => "Payload prepared for Probe Book"}
       />
     </aside>

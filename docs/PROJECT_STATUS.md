@@ -61,15 +61,16 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Plain mouse text selection does not open the lookup popup; lookup selection is a deliberate Shift-hover path.
   - Popup prefers left/right side placement beside the selected text, with top/bottom fallback.
   - Popup distinguishes loading, no dictionary, engine unavailable, empty, error, and ready states.
-  - Popup renders the current lookup result shape: expression, reading, source dictionary, matched/deinflected text, rules, glossary, frequency, and pitch.
+  - Popup renders the current lookup result shape: expression, reading, source dictionary, matched/deinflected text, rules, grouped glossary content, dictionary media, scoped dictionary `styles.css`, frequency, and pitch.
   - Popup glossary text supports Shift hover nested lookup as a popup stack: root lookup stays open, child popups anchor to glossary text, closing a child preserves the parent, and parent scroll closes children.
   - Popup has a disabled Anki boundary affordance and can build a typed lookup-to-Anki payload from the selected result and current book/chapter context.
-  - Lookup popup probe and `npm run check:lookup-popup` cover popup states, glossary Shift hover nested lookup stack behavior, child close parent preservation, parent-scroll child dismissal, long-result internal scrolling, frequency/pitch display, disabled Anki boundary, import/close actions, and narrow-window overflow.
+  - Lookup popup probe and `npm run check:lookup-popup` cover popup states, glossary Shift hover nested lookup stack behavior, child close parent preservation, parent-scroll child dismissal, redirect history, scoped dictionary CSS behavior, long-result internal scrolling, frequency/pitch display, disabled Anki boundary, import/close actions, and narrow-window overflow.
   - Popup clears on page/chapter changes, TOC jumps, shelf return, close, and Escape.
 - Dictionary backend:
   - `dict_status` returns structured dictionary status: ready, no dictionaries, engine unavailable, or error.
   - `dict_lookup` command exists.
   - `dictionary_list` returns imported dictionaries from the manifest.
+  - `dictionary_media` and `dictionary_styles` expose imported dictionary media and `styles.css` to the popup through read-only commands.
   - On startup, dictionary state reads enabled term dictionaries from the manifest.
   - Dictionary enabled/order changes are persisted and rebuild dictionary runtime state.
   - Enabled manifest entries load term, frequency, and pitch roles based on imported counts.

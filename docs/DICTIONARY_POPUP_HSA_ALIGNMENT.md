@@ -24,11 +24,13 @@ Do not modify `reference/` or `third_party/hoshidicts` from this document.
   matched/deinflected/rules, grouped glossary entries, term/definition tags,
   structured content, dictionary media image loading, frequency, pitch, and a
   disabled Anki boundary.
+- Imported dictionary `styles.css` can be loaded into the Svelte popup through a
+  scoped sanitizer so dictionary CSS affects glossary content without styling
+  reader or popup chrome.
 - Same-popup cross-reference redirect history is implemented with popup-local
   Back/Forward controls and scroll restoration. `Shift + hover` recursive
   lookup remains a child-popup action.
-- HSW does not yet support dictionary-provided popup CSS, word audio, real Anki
-  actions, or Sasayaki controls.
+- HSW does not yet support word audio, real Anki actions, or Sasayaki controls.
 
 ## HSA Reference Findings
 
@@ -127,6 +129,10 @@ Adopt HSA behavior first, not HSA architecture:
 - Reconsider iframe host only if Svelte DOM rendering becomes unable to support
   dictionary CSS/media safely, or if future Dictionary tab / Process Text flows
   require a shared popup document.
+
+Current note: HSW now supports a first-pass scoped dictionary `styles.css`
+path. This is a safe subset for glossary styling, not a full HSA iframe/CSS
+compatibility promise.
 
 ## Follow-Up Implementation Slices
 
@@ -233,7 +239,7 @@ Validation:
 - Word audio and local/remote audio playback.
 - Sasayaki popup controls and audiobook sentence audio.
 - Dictionary settings UI for collapse modes, compact glossaries, compact pitch,
-  custom CSS, and popup scale.
+  custom user CSS, and popup scale.
 - E-ink-specific underline/highlight parity.
 - Dictionary tab and Process Text iframe popup hosts.
 
