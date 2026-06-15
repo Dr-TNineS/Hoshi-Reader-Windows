@@ -937,9 +937,15 @@ fn import_yomitan_zip_linked(
     fs::create_dir_all(&staging_root)
         .map_err(|e| format!("Cannot create dictionary import staging dir: {e}"))?;
 
-    let mut attempt = run_linked_import_attempt(source, &staging_root)?;
-    let mut restored_title = None;
     let mut lookup_safe_zip = None;
+    let mut attempt = match run_linked_import_attempt(source, &staging_root) {
+        Ok(attempt) => attempt,
+        Err(error) => {
+            cleanup_dictionary_import_temps(&staging_root, lookup_safe_zip.as_deref());
+            return Err(error);
+        }
+    };
+    let mut restored_title = None;
 
     if !attempt.ok() && is_windows_code_page_import_error(&attempt.errors) {
         let _ = fs::remove_dir_all(&staging_root);
@@ -947,35 +953,42 @@ fn import_yomitan_zip_linked(
             .map_err(|e| format!("Cannot recreate dictionary import staging dir: {e}"))?;
 
         let safe_zip_path = imported_root.join(format!(".importing-{dict_id}.lookup-safe.zip"));
-        let safe_zip = create_lookup_safe_import_zip(source, &safe_zip_path, dict_id)?;
-        attempt = run_linked_import_attempt(&safe_zip.path, &staging_root)?;
+        let safe_zip = match create_lookup_safe_import_zip(source, &safe_zip_path, dict_id) {
+            Ok(safe_zip) => safe_zip,
+            Err(error) => {
+                cleanup_dictionary_import_temps(&staging_root, lookup_safe_zip.as_deref());
+                return Err(error);
+            }
+        };
+        attempt = match run_linked_import_attempt(&safe_zip.path, &staging_root) {
+            Ok(attempt) => attempt,
+            Err(error) => {
+                lookup_safe_zip = Some(safe_zip.path);
+                cleanup_dictionary_import_temps(&staging_root, lookup_safe_zip.as_deref());
+                return Err(error);
+            }
+        };
         restored_title = safe_zip.original_title;
         lookup_safe_zip = Some(safe_zip.path);
     }
 
     if !attempt.ok() {
-        let _ = fs::remove_dir_all(&staging_root);
-        if let Some(path) = lookup_safe_zip {
-            let _ = fs::remove_file(path);
-        }
+        cleanup_dictionary_import_temps(&staging_root, lookup_safe_zip.as_deref());
         return Err(import_error_message(&attempt.errors));
     }
 
-    let imported_dir = find_single_imported_dictionary_dir(&staging_root)?;
-    if final_dir.exists() {
-        fs::remove_dir_all(final_dir)
-            .map_err(|e| format!("Cannot replace existing dictionary dir: {e}"))?;
+    let imported_dir = match find_single_imported_dictionary_dir(&staging_root) {
+        Ok(imported_dir) => imported_dir,
+        Err(error) => {
+            cleanup_dictionary_import_temps(&staging_root, lookup_safe_zip.as_deref());
+            return Err(error);
+        }
+    };
+    if let Err(error) = replace_imported_dictionary_dir(&imported_dir, final_dir) {
+        cleanup_dictionary_import_temps(&staging_root, lookup_safe_zip.as_deref());
+        return Err(error);
     }
-    fs::rename(&imported_dir, final_dir)
-        .or_else(|_| {
-            copy_dir_all(&imported_dir, final_dir)?;
-            fs::remove_dir_all(&imported_dir)
-        })
-        .map_err(|e| format!("Cannot move imported dictionary into library: {e}"))?;
-    let _ = fs::remove_dir_all(&staging_root);
-    if let Some(path) = lookup_safe_zip {
-        let _ = fs::remove_file(path);
-    }
+    cleanup_dictionary_import_temps(&staging_root, lookup_safe_zip.as_deref());
 
     let entry = upsert_dictionary_manifest_entry(
         manifest_path,
@@ -1016,6 +1029,14 @@ fn import_yomitan_zip_linked(
         ready: dict_runtime_ready(&runtime),
         reused: false,
     })
+}
+
+#[cfg_attr(not(hoshi_dicts_linked), allow(dead_code))]
+fn cleanup_dictionary_import_temps(staging_root: &Path, lookup_safe_zip: Option<&Path>) {
+    let _ = fs::remove_dir_all(staging_root);
+    if let Some(path) = lookup_safe_zip {
+        let _ = fs::remove_file(path);
+    }
 }
 
 #[cfg(hoshi_dicts_linked)]
@@ -1225,7 +1246,7 @@ fn find_single_imported_dictionary_dir(staging_root: &Path) -> Result<PathBuf, S
     })
 }
 
-#[cfg(hoshi_dicts_linked)]
+#[cfg_attr(not(hoshi_dicts_linked), allow(dead_code))]
 fn copy_dir_all(from: &Path, to: &Path) -> Result<(), std::io::Error> {
     fs::create_dir_all(to)?;
     for entry in fs::read_dir(from)? {
@@ -1236,6 +1257,42 @@ fn copy_dir_all(from: &Path, to: &Path) -> Result<(), std::io::Error> {
         } else {
             fs::copy(entry.path(), target)?;
         }
+    }
+    Ok(())
+}
+
+#[cfg_attr(not(hoshi_dicts_linked), allow(dead_code))]
+fn replace_imported_dictionary_dir(imported_dir: &Path, final_dir: &Path) -> Result<(), String> {
+    let backup_dir = final_dir.with_extension("replacing");
+    if final_dir.exists() {
+        if backup_dir.exists() {
+            fs::remove_dir_all(&backup_dir)
+                .map_err(|e| format!("Cannot clean dictionary replacement backup: {e}"))?;
+        }
+        fs::rename(final_dir, &backup_dir)
+            .map_err(|e| format!("Cannot prepare existing dictionary dir for replacement: {e}"))?;
+    }
+
+    let moved = fs::rename(imported_dir, final_dir).or_else(|_| {
+        copy_dir_all(imported_dir, final_dir)?;
+        fs::remove_dir_all(imported_dir)
+    });
+
+    if let Err(error) = moved {
+        if backup_dir.exists() {
+            if final_dir.exists() {
+                let _ = fs::remove_dir_all(final_dir);
+            }
+            let _ = fs::rename(&backup_dir, final_dir);
+        }
+        return Err(format!(
+            "Cannot move imported dictionary into library: {error}"
+        ));
+    }
+
+    if backup_dir.exists() {
+        fs::remove_dir_all(&backup_dir)
+            .map_err(|e| format!("Cannot remove replaced dictionary backup: {e}"))?;
     }
     Ok(())
 }
@@ -1640,6 +1697,56 @@ mod tests {
         assert_eq!(manifest.dictionaries[0].title, "Updated");
         assert_eq!(manifest.dictionaries[0].term_count, 42);
         assert_eq!(manifest.dictionaries[1].dict_id, "def");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dictionary_replacement_restores_existing_dir_on_failure() {
+        let root = temp_path("dict_replace_restore");
+        let final_dir = root.join("imported").join("abc");
+        let imported_dir = root.join("imported").join(".importing-abc").join("dict");
+        fs::create_dir_all(&final_dir).unwrap();
+        fs::write(final_dir.join("index.json"), "old").unwrap();
+
+        let error = replace_imported_dictionary_dir(&imported_dir, &final_dir).unwrap_err();
+        assert!(error.starts_with("Cannot move imported dictionary into library:"));
+        assert_eq!(fs::read_to_string(final_dir.join("index.json")).unwrap(), "old");
+        assert!(!final_dir.with_extension("replacing").exists());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dictionary_replacement_removes_backup_after_success() {
+        let root = temp_path("dict_replace_success");
+        let final_dir = root.join("imported").join("abc");
+        let imported_dir = root.join("imported").join(".importing-abc").join("dict");
+        fs::create_dir_all(&final_dir).unwrap();
+        fs::write(final_dir.join("index.json"), "old").unwrap();
+        fs::create_dir_all(&imported_dir).unwrap();
+        fs::write(imported_dir.join("index.json"), "new").unwrap();
+
+        replace_imported_dictionary_dir(&imported_dir, &final_dir).unwrap();
+        assert_eq!(fs::read_to_string(final_dir.join("index.json")).unwrap(), "new");
+        assert!(!imported_dir.exists());
+        assert!(!final_dir.with_extension("replacing").exists());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dictionary_import_cleanup_removes_staging_and_safe_zip() {
+        let root = temp_path("dict_cleanup");
+        let staging_root = root.join(".importing-abc");
+        let safe_zip = root.join(".importing-abc.lookup-safe.zip");
+        fs::create_dir_all(&staging_root).unwrap();
+        fs::write(staging_root.join("temp"), "temp").unwrap();
+        fs::write(&safe_zip, "zip").unwrap();
+
+        cleanup_dictionary_import_temps(&staging_root, Some(&safe_zip));
+        assert!(!staging_root.exists());
+        assert!(!safe_zip.exists());
 
         let _ = fs::remove_dir_all(root);
     }
