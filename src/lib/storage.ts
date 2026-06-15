@@ -136,6 +136,27 @@ export async function clearReadingSession(useTauri: boolean): Promise<void> {
   await invoke("reading_clear_session");
 }
 
+function sessionRecordKey(session: SavedSession): string {
+  if (session.bookId) return `library:${session.bookId}`;
+  return `path:${session.path ?? ""}`;
+}
+
+export async function forgetReadingBook(book: BookRecord, useTauri: boolean): Promise<BookRecord[]> {
+  if (useTauri) {
+    return invoke<BookRecord[]>("reading_forget_book", {
+      bookId: book.bookId ?? null,
+      path: book.path ?? null,
+    });
+  }
+
+  const key = bookRecordKey(book);
+  const nextBooks = loadBooks().filter((record) => bookRecordKey(record) !== key);
+  const session = loadSession();
+  if (session && sessionRecordKey(session) === key) clearSession();
+  localStorage.setItem(BOOKS_KEY, JSON.stringify(nextBooks));
+  return nextBooks;
+}
+
 export function bookRecordKey(book: BookRecord): string {
   return locatorKey(book);
 }

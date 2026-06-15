@@ -123,6 +123,20 @@ pub fn reading_clear_session(app: AppHandle) -> Result<(), String> {
 }
 
 #[tauri::command]
+pub fn reading_forget_book(
+    book_id: Option<String>,
+    path: Option<String>,
+    app: AppHandle,
+) -> Result<Vec<BookRecord>, String> {
+    let root = reading_root(&app)?;
+    let mut state = read_state(&root)?;
+    let key = locator_key(book_id.as_deref(), path.as_deref())?;
+    forget_book_in_state(&mut state, &key);
+    write_state(&root, &state)?;
+    Ok(state.books)
+}
+
+#[tauri::command]
 pub fn reading_import_legacy_state(
     books: Vec<BookRecord>,
     session: Option<SavedSession>,
@@ -227,6 +241,34 @@ fn book_key(book: &BookRecord) -> String {
         return format!("library:{book_id}");
     }
     format!("path:{}", book.path.as_deref().unwrap_or(""))
+}
+
+fn session_key(session: &SavedSession) -> String {
+    if let Some(book_id) = session.book_id.as_ref().filter(|value| !value.is_empty()) {
+        return format!("library:{book_id}");
+    }
+    format!("path:{}", session.path.as_deref().unwrap_or(""))
+}
+
+fn locator_key(book_id: Option<&str>, path: Option<&str>) -> Result<String, String> {
+    if let Some(book_id) = book_id.filter(|value| !value.is_empty()) {
+        return Ok(format!("library:{book_id}"));
+    }
+    if let Some(path) = path.filter(|value| !value.is_empty()) {
+        return Ok(format!("path:{path}"));
+    }
+    Err("Cannot forget reading record without a book id or path.".into())
+}
+
+fn forget_book_in_state(state: &mut ReadingState, key: &str) {
+    state.books.retain(|book| book_key(book) != key);
+    if state
+        .session
+        .as_ref()
+        .is_some_and(|session| session_key(session) == key)
+    {
+        state.session = None;
+    }
 }
 
 fn now_millis() -> Result<u64, String> {
@@ -338,6 +380,29 @@ mod tests {
         write_state(&root, &state).unwrap();
 
         assert!(read_state(&root).unwrap().session.is_none());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn forget_book_removes_record_and_matching_session() {
+        let root = temp_root("forget");
+        let state = ReadingState {
+            books: vec![record("library:abc", 10), record("path:keep.epub", 20)],
+            session: Some(session("library:abc")),
+            ..ReadingState::default()
+        };
+        write_state(&root, &state).unwrap();
+
+        let mut loaded = read_state(&root).unwrap();
+        let key = locator_key(Some("abc"), None).unwrap();
+        forget_book_in_state(&mut loaded, &key);
+        write_state(&root, &loaded).unwrap();
+
+        let final_state = read_state(&root).unwrap();
+        assert_eq!(final_state.books.len(), 1);
+        assert_eq!(final_state.books[0].path.as_deref(), Some("keep.epub"));
+        assert!(final_state.session.is_none());
+
         let _ = fs::remove_dir_all(root);
     }
 

@@ -106,6 +106,15 @@ pub fn library_list_books(app: AppHandle) -> Result<Vec<LibraryBookRecord>, Stri
 }
 
 #[tauri::command]
+pub fn library_forget_book(
+    book_id: String,
+    app: AppHandle,
+) -> Result<Vec<LibraryBookRecord>, String> {
+    let root = library_root(&app)?;
+    forget_library_book(&root, &book_id)
+}
+
+#[tauri::command]
 pub fn library_open_book(
     book_id: String,
     app: AppHandle,
@@ -143,6 +152,27 @@ fn library_book_path_for_open(root: &Path, book_id: &str) -> Result<String, Stri
     }
 
     Ok(record.library_path.clone())
+}
+
+fn forget_library_book(root: &Path, book_id: &str) -> Result<Vec<LibraryBookRecord>, String> {
+    if book_id.is_empty() {
+        return Err("Cannot forget library book without a book id.".into());
+    }
+
+    let mut manifest = read_manifest(root)?;
+    let before = manifest.books.len();
+    manifest.books.retain(|book| book.book_id != book_id);
+    if manifest.books.len() == before {
+        return Ok(manifest.books);
+    }
+
+    let book_dir = root.join("books").join(book_id);
+    if book_dir.exists() {
+        fs::remove_dir_all(&book_dir)
+            .map_err(|e| format!("Cannot remove imported EPUB files: {e}"))?;
+    }
+    write_manifest(root, &manifest)?;
+    Ok(manifest.books)
 }
 
 fn library_root(app: &AppHandle) -> Result<PathBuf, String> {
@@ -477,6 +507,52 @@ mod tests {
         let error = library_book_path_for_open(&root, "abc").unwrap_err();
         assert!(error.contains("Missing Book"));
         assert!(error.contains("Re-import the book"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn forget_library_book_removes_manifest_record_and_dir() {
+        let root = temp_root("forget_book");
+        let book_dir = root.join("books").join("abc");
+        fs::create_dir_all(&book_dir).unwrap();
+        fs::write(book_dir.join("book.epub"), "old").unwrap();
+        let manifest = LibraryManifest {
+            version: MANIFEST_VERSION,
+            books: vec![
+                LibraryBookRecord {
+                    book_id: "abc".into(),
+                    title: Some("Forget Me".into()),
+                    source_path: "source.epub".into(),
+                    library_path: book_dir.join("book.epub").to_string_lossy().into_owned(),
+                    content_hash: "abc".into(),
+                    size_bytes: 123,
+                    imported_at: 1,
+                },
+                LibraryBookRecord {
+                    book_id: "keep".into(),
+                    title: Some("Keep Me".into()),
+                    source_path: "keep.epub".into(),
+                    library_path: root
+                        .join("books")
+                        .join("keep")
+                        .join("book.epub")
+                        .to_string_lossy()
+                        .into_owned(),
+                    content_hash: "keep".into(),
+                    size_bytes: 456,
+                    imported_at: 2,
+                },
+            ],
+        };
+        write_manifest(&root, &manifest).unwrap();
+
+        let remaining = forget_library_book(&root, "abc").unwrap();
+
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].book_id, "keep");
+        assert!(!book_dir.exists());
+        assert_eq!(read_manifest(&root).unwrap().books.len(), 1);
 
         let _ = fs::remove_dir_all(root);
     }

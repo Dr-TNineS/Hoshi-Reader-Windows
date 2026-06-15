@@ -1,6 +1,6 @@
 # HSW Reader Entry Characterization
 
-Last updated: 2026-06-12
+Last updated: 2026-06-16
 
 This checklist records the durable behavior baseline for the HSW bookshelf, EPUB import, reader entry, reader exit, and session restore path.
 
@@ -15,6 +15,7 @@ Use this before and after changes that touch bookshelf state, app-owned EPUB imp
 - The imported book opens in Reader immediately after import.
 - The reader renders the selected chapter and reports progress.
 - Returning to the shelf preserves the recent book row and progress.
+- Forgetting an app-owned bookshelf row removes its recent record and imported EPUB copy without deleting the original source EPUB.
 
 ## Legacy Book Records
 

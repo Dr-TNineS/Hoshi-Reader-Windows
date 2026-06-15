@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Agent TODO
 
-Last updated: 2026-06-14
+Last updated: 2026-06-16
 
 This file is the short operational handoff for future agents. Keep detailed state in `docs/PROJECT_STATUS.md` and lookup-specific slice details in `docs/LOOKUP_ROADMAP.md`.
 
@@ -25,18 +25,17 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Reader visual regression coverage now has a minimal automated probe for pagination geometry, final-page alignment, image rendering, Shift-hover lookup selection, Shift-hover tiny-movement dedupe, plain mouse selection not opening lookup, narrow-window overflow, Ctrl chapter navigation, and page-boundary chapter navigation.
    - Lookup popup regression coverage now has a minimal automated probe for all visible popup states, glossary Shift hover nested lookup stack behavior, child close parent preservation, parent-scroll child dismissal, result metadata, long-result scrolling, disabled Anki boundary, and narrow-window overflow.
    - Dictionary management UI coverage now has a minimal automated probe for empty/loading/error/ready states, counts, enable/order controls, actions, and narrow-window overflow.
-   - Bookshelf/import hardening is complete for staged EPUB imports, duplicate EPUB reuse, missing app-owned EPUB errors, dictionary replacement preservation, and import busy guards.
+   - Bookshelf/import hardening is complete for staged EPUB imports, duplicate EPUB reuse, missing app-owned EPUB errors, dictionary replacement preservation, import busy guards, and bookshelf Forget cleanup.
    - Final linked real dictionary validation with local `MK3Fix0213.zip` passed on 2026-06-12: `dict_id=93e8e532b599ba4a`, `term=140821`, `media=0`, `lookup_results=2`.
-   - Next recommended work: shift to the next product area in `AGENTS.md` unless the user opens a new lookup-hardening goal.
+   - Next recommended work: define a focused Anki boundary/product slice before implementing real card creation.
 2. Treat the storage/model migration as complete at the JSON-store level: reading progress, recent books, and session now live in Tauri app data `reading/state.json`, with one-time legacy `localStorage` import and browser fallback.
-3. Next recommended product area: bookshelf/import hardening, while preserving the bookshelf/import/reader/session main path described in `docs/READER_ENTRY_CHARACTERIZATION.md`.
+3. Next recommended product area: Anki, while preserving the lookup popup payload boundary described in `docs/LOOKUP_ROADMAP.md`.
 4. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 5. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
 
 ## Active Blockers
 
 - Compatibility imports that bypass legacy zip/media filename encoding issues intentionally skip media entries, so `MK3Fix0213.zip` imports with `mediaCount=0`.
-- Manually deleted app-owned `book.epub` files require re-import; no cleanup UI exists yet.
 
 ## Required Validation
 

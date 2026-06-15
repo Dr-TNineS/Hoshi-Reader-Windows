@@ -12,6 +12,7 @@
     bookRecordPath,
     clampUnit,
     clearReadingSession,
+    forgetReadingBook,
     importLegacyReadingState,
     loadBooks,
     mergeLibraryBooks,
@@ -214,6 +215,26 @@
     try {
       startAtEnd = false;
       await openBookLocator(book, book.chapter, "Loading...", book.chapterProgress ?? 0);
+    } catch (e) {
+      error = String(e);
+      debug = "Err";
+    }
+  }
+
+  async function forgetBook(book: BookRecord) {
+    const title = book.title || "this book";
+    const message = book.bookId
+      ? `Forget "${title}" from the bookshelf?\n\nThe app-owned EPUB copy will be removed. The original EPUB file is not touched.`
+      : `Forget "${title}" from the bookshelf?`;
+    if (!window.confirm(message)) return;
+
+    try {
+      if (book.bookId && isTauriRuntime()) {
+        await invoke<LibraryBookRecord[]>("library_forget_book", { bookId: book.bookId });
+      }
+      books = await forgetReadingBook(book, isTauriRuntime());
+      error = "";
+      debug = "Forgot book";
     } catch (e) {
       error = String(e);
       debug = "Err";
@@ -782,11 +803,14 @@
         {:else}
           <div class="book-list">
             {#each books as book (bookRecordKey(book))}
-              <button class="book-row" onclick={() => continueBook(book)}>
-                <span class="book-title">{book.title}</span>
-                <span class="book-meta">{progressLabel(book)} | {openedLabel(book.lastOpened)}</span>
-                <span class="book-path">{bookRecordPath(book)}</span>
-              </button>
+              <div class="book-row">
+                <button class="book-open" onclick={() => continueBook(book)}>
+                  <span class="book-title">{book.title}</span>
+                  <span class="book-meta">{progressLabel(book)} | {openedLabel(book.lastOpened)}</span>
+                  <span class="book-path">{bookRecordPath(book)}</span>
+                </button>
+                <button class="book-forget" title="Forget book" onclick={() => forgetBook(book)}>Forget</button>
+              </div>
             {/each}
           </div>
         {/if}
@@ -896,8 +920,11 @@
   .recent { display: flex; flex-direction: column; gap: 10px; min-height: 240px; }
   .empty { padding: 28px 0; color: #80868b; font-size: 13px; }
   .book-list { display: flex; flex-direction: column; gap: 8px; max-height: 54vh; overflow-y: auto; padding-right: 4px; }
-  .book-row { width: 100%; display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 12px 14px; text-align: left; background: #2b2d31; color: inherit; border: 1px solid #3c4043; border-radius: 6px; cursor: pointer; }
+  .book-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 8px; background: #2b2d31; color: inherit; border: 1px solid #3c4043; border-radius: 6px; }
   .book-row:hover { background: #32363b; border-color: #5f6368; }
+  .book-open { min-width: 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 12px 14px; text-align: left; background: transparent; color: inherit; border: none; cursor: pointer; }
+  .book-forget { align-self: center; margin-right: 8px; padding: 5px 9px; background: #303134; color: #c5c9ce; border: 1px solid #555c64; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .book-forget:hover { background: #3a3d41; color: #fff; }
   .book-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; color: #f1f3f4; }
   .book-meta { white-space: nowrap; font-size: 12px; color: #9aa0a6; }
   .book-path { grid-column: 1 / -1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: #80868b; }

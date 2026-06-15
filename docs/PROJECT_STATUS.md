@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Project Status
 
-Last updated: 2026-06-14
+Last updated: 2026-06-16
 
 This file records current implementation facts for `hoshi-reader-windows`. It is not an agent rule file, product roadmap, or substitute for checking the current code.
 
@@ -37,6 +37,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Re-importing identical EPUB content reuses the same app-owned record when the library file still exists.
   - New records open by `book_id` rather than original source path.
   - Opening an app-owned record with a missing `book.epub` returns a scoped re-import error for that book.
+  - Bookshelf records can be forgotten; app-owned records also remove the imported EPUB copy and manifest entry without touching the original source EPUB.
 - Bookshelf:
   - Minimal recent-books list.
   - EPUB import entry.
@@ -112,7 +113,6 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - On this machine, linked hoshidicts checks require a VS developer shell or equivalent `PATH` containing CMake and MSVC tools.
 - Without imported dictionaries in the app data manifest, `dict_status` reports `noDictionaries`.
 - Compatibility dictionary imports that hit Windows code-page failures skip media entries, so affected dictionaries such as `MK3Fix0213.zip` currently import with `mediaCount=0`.
-- If an app-owned library `book.epub` is manually deleted, the bookshelf record remains until the book is re-imported or future cleanup UI exists.
 - Reader layout correctness for arbitrary EPUBs is not fully verified.
 - Rust-side character counts and frontend DOM-based progress need further cross-validation.
 - Cover/image rendering depends on temporary extraction path mapping and asset URL rewriting.
