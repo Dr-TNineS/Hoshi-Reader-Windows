@@ -33,8 +33,10 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - `library_import_epub` copies EPUBs to `library/books/<book_id>/book.epub`.
   - `library/manifest.json` records app-owned books.
   - `book_id` is based on EPUB content hash.
-  - Re-importing identical EPUB content reuses the same record.
+  - EPUB import uses a staging directory and verifies the copied EPUB before writing the manifest.
+  - Re-importing identical EPUB content reuses the same app-owned record when the library file still exists.
   - New records open by `book_id` rather than original source path.
+  - Opening an app-owned record with a missing `book.epub` returns a scoped re-import error for that book.
 - Bookshelf:
   - Minimal recent-books list.
   - EPUB import entry.
@@ -82,6 +84,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Bookshelf has a minimal dictionary management panel for listing imported dictionaries, refreshing status, enabling/disabling dictionaries, and changing lookup order.
   - Dictionary management probe and `npm run check:dictionary-management` cover empty/loading/error/ready states, visible counts, enable toggles, order controls, import/refresh actions, and narrow-window overflow.
   - Dictionary import uses zip content hash as stable `dict_id` and records successful imports in the manifest.
+  - Dictionary import uses staging directories and preserves an existing dictionary dir if replacement fails.
   - `DictResult` includes rules, source dictionary, frequency entries, and pitch entries.
   - Local VS Build Tools, MSVC, Windows SDK, VS-bundled CMake, and VS-bundled Ninja can drive the hoshidicts CMake configure path from a VS developer shell.
   - VS developer-shell linked `cargo check` passes with hoshidicts linked.
@@ -109,6 +112,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - On this machine, linked hoshidicts checks require a VS developer shell or equivalent `PATH` containing CMake and MSVC tools.
 - Without imported dictionaries in the app data manifest, `dict_status` reports `noDictionaries`.
 - Compatibility dictionary imports that hit Windows code-page failures skip media entries, so affected dictionaries such as `MK3Fix0213.zip` currently import with `mediaCount=0`.
+- If an app-owned library `book.epub` is manually deleted, the bookshelf record remains until the book is re-imported or future cleanup UI exists.
 - Reader layout correctness for arbitrary EPUBs is not fully verified.
 - Rust-side character counts and frontend DOM-based progress need further cross-validation.
 - Cover/image rendering depends on temporary extraction path mapping and asset URL rewriting.

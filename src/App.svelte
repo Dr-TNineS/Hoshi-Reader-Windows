@@ -56,6 +56,7 @@
   let dictionaryListStatus = $state<DictionaryStatus | null>(null);
   let dictionaryListError = $state("");
   let dictionaryBusy = $state(false);
+  let bookImportBusy = $state(false);
   let debug = $state("");
   let triedStartup = false;
   let triedDictionaryList = false;
@@ -169,18 +170,33 @@
     await openBookLocator({ path }, chapter, status, chapterProgress);
   }
 
+  async function refreshLibraryBooks() {
+    if (!isTauriRuntime()) return;
+    const libraryBooks = await invoke<LibraryBookRecord[]>("library_list_books");
+    books = mergeLibraryBooks(books, libraryBooks);
+  }
+
   async function openBook() {
+    if (bookImportBusy) return;
     try {
+      if (!isTauriRuntime()) {
+        error = "EPUB import requires Tauri runtime.";
+        debug = "Browser";
+        return;
+      }
+
+      bookImportBusy = true;
       const selected = await open({
         multiple: false,
         filters: [{ name: "EPUB", extensions: ["epub"] }],
       });
       if (!selected) {
-        debug = "Cancelled";
+        debug = "Import cancelled.";
         return;
       }
       debug = "Importing...";
       const imported = await invoke<LibraryBookRecord>("library_import_epub", { sourcePath: selected });
+      await refreshLibraryBooks();
       await openBookLocator({
         bookId: imported.bookId,
         sourcePath: imported.sourcePath,
@@ -189,6 +205,8 @@
     } catch (e) {
       error = String(e);
       debug = "Err";
+    } finally {
+      bookImportBusy = false;
     }
   }
 
@@ -357,12 +375,14 @@
   }
 
   async function importDictionary() {
+    if (dictionaryBusy) return;
     try {
       if (!isTauriRuntime()) {
         dictionaryStatus = "Dictionary import requires Tauri runtime.";
         return;
       }
 
+      dictionaryBusy = true;
       dictionaryStatus = "Importing dictionary...";
       const selected = await open({
         multiple: false,
@@ -381,6 +401,8 @@
       reloadLookupPopups();
     } catch (e) {
       dictionaryStatus = String(e);
+    } finally {
+      dictionaryBusy = false;
     }
   }
 
@@ -730,8 +752,10 @@
           <button class="secondary-action" onclick={() => showDictionaryManager = !showDictionaryManager}>
             Dictionaries
           </button>
-          <button class="secondary-action" onclick={importDictionary}>Import Dictionary</button>
-          <button class="ob" onclick={openBook}>Open EPUB</button>
+          <button class="secondary-action" disabled={dictionaryBusy} onclick={importDictionary}>Import Dictionary</button>
+          <button class="ob" disabled={bookImportBusy} onclick={openBook}>
+            {bookImportBusy ? "Importing..." : "Open EPUB"}
+          </button>
         </div>
       </div>
 
@@ -863,6 +887,10 @@
   .ob:hover { background: #46a187; }
   .secondary-action { flex-shrink: 0; padding: 10px 16px; font-size: 14px; background: #303134; color: #d7d9dc; border: 1px solid #555c64; border-radius: 4px; cursor: pointer; }
   .secondary-action:hover { background: #3a3d41; }
+  .ob:disabled,
+  .secondary-action:disabled { color: #858b91; cursor: default; opacity: 0.72; }
+  .ob:disabled:hover { background: #3b8f78; }
+  .secondary-action:disabled:hover { background: #303134; }
   .err { color: #ff8a80; font-size: 13px; white-space: pre-wrap; }
   .dict-status { color: #b7bcc3; font-size: 13px; white-space: pre-wrap; }
   .recent { display: flex; flex-direction: column; gap: 10px; min-height: 240px; }

@@ -11,6 +11,7 @@ Use this before and after changes that touch bookshelf state, app-owned EPUB imp
 - From an empty or existing bookshelf, `Open EPUB` opens the system file picker.
 - Selecting an EPUB imports it into the app-owned library.
 - Imported EPUBs are copied to Tauri app data under `library/books/<book_id>/book.epub`.
+- EPUB import uses staging and should not create a manifest record if the copied EPUB cannot be opened.
 - The imported book opens in Reader immediately after import.
 - The reader renders the selected chapter and reports progress.
 - Returning to the shelf preserves the recent book row and progress.
@@ -26,6 +27,7 @@ Use this before and after changes that touch bookshelf state, app-owned EPUB imp
 
 - On Tauri startup, HSW attempts to restore the last saved reader session once.
 - A valid app-owned session opens by `bookId`.
+- If an app-owned `book.epub` is missing, opening should fail with a visible re-import error for that record only.
 - A valid legacy session opens by original path.
 - Failed restore clears the stale session and leaves the user on the shelf with an error.
 - Returning to the shelf should stay on the shelf; restore should not immediately reopen the book again.
