@@ -46,6 +46,7 @@ function stopServer(proc) {
 async function openProbe(page, state, options = {}) {
   const params = new URLSearchParams({ lookupPopupProbe: "1", lookupState: state });
   if (options.longResult) params.set("longResult", "1");
+  if (options.bottomEdge) params.set("bottomEdge", "1");
   if (options.mediaMode) params.set("mediaMode", options.mediaMode);
   if (options.ankiMode) params.set("ankiMode", options.ankiMode);
   if (options.ankiAddMode) params.set("ankiAddMode", options.ankiAddMode);
@@ -61,9 +62,11 @@ async function popupMetrics(page) {
     const styledGlossary = document.querySelector(".lookup-glossary-content .gloss-sc-div");
     const head = document.querySelector(".lookup-head");
     const anki = document.querySelector(".lookup-anki");
+    const controls = document.querySelector(".probe-ctrls");
     const rect = popup instanceof HTMLElement
       ? popup.getBoundingClientRect()
       : { x: 0, y: 0, width: 0, height: 0, right: 0, bottom: 0 };
+    const controlsRect = controls instanceof HTMLElement ? controls.getBoundingClientRect() : null;
     return {
       text: Array.from(document.querySelectorAll(".lookup-pop")).map((node) => node.textContent ?? "").join("\n"),
       state: state?.getAttribute("data-state") ?? "",
@@ -81,6 +84,7 @@ async function popupMetrics(page) {
       ankiLastFields: JSON.parse(state?.getAttribute("data-anki-last-fields") ?? "{}"),
       popup: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom },
       viewport: { width: window.innerWidth, height: window.innerHeight },
+      controlsTop: controlsRect?.top ?? window.innerHeight,
       horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
       hasResultsScroller: results instanceof HTMLElement && results.scrollHeight > results.clientHeight,
       ankiDisabled: document.querySelector(".lookup-anki")?.hasAttribute("disabled") ?? false,
@@ -254,6 +258,19 @@ async function main() {
     await page.getByRole("button", { name: "Add Anki" }).click();
     const ankiError = await popupMetrics(page);
     assert(ankiError.text.includes("Probe AnkiConnect failure"), "Anki error state should show failure details.", ankiError);
+
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await openProbe(page, "ready", { longResult: true, bottomEdge: true });
+    await page.waitForFunction(() => {
+      const popup = document.querySelector(".lookup-pop");
+      const controls = document.querySelector(".probe-ctrls");
+      if (!(popup instanceof HTMLElement) || !(controls instanceof HTMLElement)) return false;
+      return popup.getBoundingClientRect().bottom <= controls.getBoundingClientRect().top + 1;
+    });
+    const bottomEdge = await popupMetrics(page);
+    assert(bottomEdge.popup.bottom <= bottomEdge.controlsTop + 1, "Bottom-edge popup should not overlap the bottom controls.", bottomEdge);
+    assert(Math.abs(bottomEdge.popup.height - ready.popup.height) <= 2, "Bottom-edge positioning should not shrink the long popup.", { ready, bottomEdge });
+    assert(bottomEdge.hasResultsScroller, "Bottom-edge long results should still scroll inside the popup.", bottomEdge);
 
     await openProbe(page, "ready", { longResult: true, mediaMode: "fail" });
     await page.waitForFunction(() => (

@@ -1,6 +1,7 @@
 <script lang="ts">
   import LookupPopupContent from "./LookupPopupContent.svelte";
   import type { LookupState } from "./lookup-popup";
+  import { lookupPopupStyle } from "./lookup-popup-position";
   import type { AnkiAddNoteResult, AnkiNoteRequest, AnkiSettings, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
   const params = new URLSearchParams(window.location.search);
@@ -8,6 +9,7 @@
   const requestedState = params.get("lookupState") as LookupState | null;
   const lookupState = allowedStates.includes(requestedState ?? "loading") ? requestedState ?? "loading" : "loading";
   const longResult = params.has("longResult");
+  const bottomEdge = params.has("bottomEdge");
   const mediaMode = params.get("mediaMode") ?? "success";
   const ankiMode = params.get("ankiMode") ?? "disabled";
   const ankiAddMode = params.get("ankiAddMode") ?? "added";
@@ -15,7 +17,7 @@
   const rootSelection: ReaderSelection = {
     text: "school",
     chapterIndex: 0,
-    rect: { x: 460, y: 180, width: 36, height: 120 },
+    rect: { x: 460, y: bottomEdge ? Math.max(120, window.innerHeight - 118) : 180, width: 36, height: 120 },
   };
 
   const glossaryText = longResult
@@ -121,6 +123,54 @@
   let nestedLookupCount = $state(0);
   let nestedLookupText = $state("");
   let ankiAddRequests = $state<AnkiNoteRequest[]>([]);
+  let popupSizes = $state<Record<string, { width: number; height: number }>>({});
+
+  function readerBottomBoundary(): number {
+    const controls = document.querySelector<HTMLElement>(".probe-ctrls");
+    return Math.min(window.innerHeight, controls?.getBoundingClientRect().top ?? window.innerHeight);
+  }
+
+  function measureLookupPopup(node: HTMLElement, popupId: string) {
+    let id = popupId;
+
+    const sync = () => {
+      const rect = node.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const nextSize = { width: Math.ceil(rect.width), height: Math.ceil(rect.height) };
+      const previous = popupSizes[id];
+      if (previous?.width === nextSize.width && previous?.height === nextSize.height) return;
+      popupSizes = { ...popupSizes, [id]: nextSize };
+    };
+
+    const observer = new ResizeObserver(sync);
+    observer.observe(node);
+    const frame = requestAnimationFrame(sync);
+
+    return {
+      update(nextId: string) {
+        if (nextId === id) return;
+        const { [id]: _removed, ...rest } = popupSizes;
+        popupSizes = rest;
+        id = nextId;
+        sync();
+      },
+      destroy() {
+        cancelAnimationFrame(frame);
+        observer.disconnect();
+        const { [id]: _removed, ...rest } = popupSizes;
+        popupSizes = rest;
+      },
+    };
+  }
+
+  function positionedPopupStyle(popup: ProbePopup, index: number): string {
+    if (!bottomEdge) return `--offset:${index * 26}px;--popup-z:${125 + index}`;
+    const style = lookupPopupStyle(popup.selection, popupSizes[popup.id] ?? { width: 306, height: 154 }, {
+      width: window.innerWidth,
+      bottom: readerBottomBoundary(),
+    });
+    return `${style};--offset:${index * 26}px;--popup-z:${125 + index}`;
+  }
 
   function nestedResult(selection: ReaderSelection): DictResult {
     return {
@@ -290,7 +340,13 @@
 
 <main class="probe">
   {#each popups as popup, index (popup.id)}
-    <aside class="lookup-pop" data-state={lookupState} data-popup-id={popup.id} style={`--offset:${index * 26}px;--popup-z:${125 + index}`}>
+    <aside
+      class="lookup-pop"
+      data-state={lookupState}
+      data-popup-id={popup.id}
+      use:measureLookupPopup={popup.id}
+      style={positionedPopupStyle(popup, index)}
+    >
       <LookupPopupContent
         popupId={popup.id}
         selection={popup.selection}
@@ -341,7 +397,10 @@
     data-anki-last-fields={JSON.stringify(ankiAddRequests[ankiAddRequests.length - 1]?.fields ?? {})}
     data-state={lookupState}
     aria-hidden="true"
-  ></div>
+    ></div>
+  {#if bottomEdge}
+    <div class="probe-ctrls">bottom controls</div>
+  {/if}
 </main>
 
 <style>
@@ -374,6 +433,19 @@
     border-radius: 6px;
     box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42);
     overflow: hidden;
+  }
+  .probe-ctrls {
+    position: fixed;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    z-index: 100;
+    padding: 5px;
+    background: #111;
+    border-top: 1px solid #333;
+    color: #888;
+    font-size: 12px;
+    text-align: center;
   }
   .probe-state {
     position: fixed;

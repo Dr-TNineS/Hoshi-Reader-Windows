@@ -7,6 +7,7 @@
   import { resolveChapterAssets } from "./lib/epub-assets";
   import LookupPopupContent from "./lib/LookupPopupContent.svelte";
   import { resultDictionaryLabel, type LookupState } from "./lib/lookup-popup";
+  import { lookupPopupStyle } from "./lib/lookup-popup-position";
   import Reader from "./lib/reader/Reader.svelte";
   import {
     buildReadingProgressUpdate,
@@ -52,7 +53,7 @@
   let readerInitialProgress = $state(0);
   let currentReaderProgress = $state<ReaderProgress | null>(null);
   let readerSelection = $state<ReaderSelection | null>(null);
-  let lookupPopupSize = $state({ width: 306, height: 154 });
+  let lookupPopupSizes = $state<Record<string, { width: number; height: number }>>({});
   let lookupPopups = $state<LookupPopupItem[]>([]);
   let lookupRequestId = 0;
   let showToc = $state(false);
@@ -842,60 +843,53 @@
     }
   }
 
-  function clamp(value: number, min: number, max: number): number {
-    return Math.max(min, Math.min(max, value));
+  function readerBottomBoundary(): number {
+    const controls = document.querySelector<HTMLElement>(".ctrls");
+    const readerViewport = document.querySelector<HTMLElement>(".rv");
+    const controlsTop = controls?.getBoundingClientRect().top ?? window.innerHeight;
+    const readerBottom = readerViewport?.getBoundingClientRect().bottom ?? window.innerHeight;
+    return Math.min(window.innerHeight, controlsTop, readerBottom);
   }
 
-  function popupStyle(selection: ReaderSelection): string {
-    const anchor = selection.anchorRect ?? selection.rect;
-    const contentWidth = 280;
-    const width = contentWidth;
-    const height = lookupPopupSize.height;
-    const margin = 12;
-    const gap = 10;
-    const topMargin = 44;
-    const bottomMargin = 48;
-    const maxLeft = Math.max(margin, window.innerWidth - width - margin);
-    const maxTop = Math.max(topMargin, window.innerHeight - height - bottomMargin);
-    const leftSpace = anchor.x - margin - gap;
-    const rightSpace = window.innerWidth - anchor.x - anchor.width - margin - gap;
-    const canFitLeft = leftSpace >= width;
-    const canFitRight = rightSpace >= width;
-    const verticalAnchor = selection.rect.height > selection.rect.width * 1.4 || anchor.height > anchor.width * 1.4;
-    let left: number;
+  function measureLookupPopup(node: HTMLElement, popupId: string) {
+    let id = popupId;
 
-    if (verticalAnchor) {
-      if (canFitRight) {
-        left = anchor.x + anchor.width + gap;
-      } else if (canFitLeft) {
-        left = anchor.x - width - gap;
-      } else {
-        left = rightSpace >= leftSpace ? anchor.x + anchor.width + gap : anchor.x - width - gap;
-      }
-      const top = clamp(anchor.y, topMargin, maxTop);
-      return `left:${clamp(left, margin, maxLeft)}px;top:${top}px;width:${contentWidth}px`;
-    }
+    const sync = () => {
+      const rect = node.getBoundingClientRect();
+      if (rect.width <= 0 || rect.height <= 0) return;
+      const nextSize = { width: Math.ceil(rect.width), height: Math.ceil(rect.height) };
+      const previous = lookupPopupSizes[id];
+      if (previous?.width === nextSize.width && previous?.height === nextSize.height) return;
+      lookupPopupSizes = { ...lookupPopupSizes, [id]: nextSize };
+    };
 
-    if (canFitLeft || canFitRight) {
-      const placeRight = canFitRight && (!canFitLeft || rightSpace >= leftSpace);
-      left = placeRight ? anchor.x + anchor.width + gap : anchor.x - width - gap;
-      const top = clamp(anchor.y, topMargin, maxTop);
-      return `left:${clamp(left, margin, maxLeft)}px;top:${top}px;width:${contentWidth}px`;
-    }
+    const observer = new ResizeObserver(sync);
+    observer.observe(node);
+    const frame = requestAnimationFrame(sync);
 
-    if (Math.max(leftSpace, rightSpace) >= width * 0.6) {
-      left = rightSpace >= leftSpace ? anchor.x + anchor.width + gap : anchor.x - width - gap;
-      const top = clamp(anchor.y, topMargin, maxTop);
-      return `left:${clamp(left, margin, maxLeft)}px;top:${top}px;width:${contentWidth}px`;
-    }
+    return {
+      update(nextId: string) {
+        if (nextId === id) return;
+        const { [id]: _removed, ...rest } = lookupPopupSizes;
+        lookupPopupSizes = rest;
+        id = nextId;
+        sync();
+      },
+      destroy() {
+        cancelAnimationFrame(frame);
+        observer.disconnect();
+        const { [id]: _removed, ...rest } = lookupPopupSizes;
+        lookupPopupSizes = rest;
+      },
+    };
+  }
 
-    left = clamp(anchor.x + anchor.width / 2 - width / 2, margin, maxLeft);
-    const below = anchor.y + anchor.height + 10;
-    const above = anchor.y - height - 10;
-    const topCandidate = below <= maxTop ? below : above;
-    const top = clamp(topCandidate, topMargin, maxTop);
-
-    return `left:${left}px;top:${top}px;width:${contentWidth}px`;
+  function popupStyle(popupId: string, selection: ReaderSelection): string {
+    const measuredSize = lookupPopupSizes[popupId];
+    return lookupPopupStyle(selection, measuredSize ?? { width: 306, height: 154 }, {
+      width: window.innerWidth,
+      bottom: readerBottomBoundary(),
+    });
   }
 
 </script>
@@ -998,7 +992,8 @@
       <aside
         class="lookup-pop"
         data-popup-id={popup.id}
-        style={`${popupStyle(popup.selection)};--popup-z:${125 + popupIndex}`}
+        use:measureLookupPopup={popup.id}
+        style={`${popupStyle(popup.id, popup.selection)};--popup-z:${125 + popupIndex}`}
       >
         <LookupPopupContent
           popupId={popup.id}
