@@ -22,6 +22,7 @@
     restoreScrollTop = 0,
     restoreScrollSignal = 0,
     loadDictionaryStyles,
+    loadDictionaryMediaResource,
     ankiTitle = () => "Payload prepared for current book",
   }: {
     popupId: string;
@@ -41,6 +42,7 @@
     restoreScrollTop?: number;
     restoreScrollSignal?: number;
     loadDictionaryStyles?: (dictionary: string) => Promise<DictionaryStyleResource>;
+    loadDictionaryMediaResource?: (dictionary: string, path: string) => Promise<DictionaryMediaResource>;
     ankiTitle?: (result: DictResult, resultIndex: number) => string;
   } = $props();
 
@@ -82,9 +84,9 @@
   });
 
   $effect(() => {
-    if (lookupState !== "ready" || !contentRoot || !isTauri()) return;
+    if (lookupState !== "ready" || !contentRoot) return;
 
-    const frame = window.requestAnimationFrame(() => loadDictionaryMedia(contentRoot));
+    const frame = window.requestAnimationFrame(() => hydrateDictionaryMedia(contentRoot));
     return () => window.cancelAnimationFrame(frame);
   });
 
@@ -165,7 +167,7 @@
     });
   }
 
-  function loadDictionaryMedia(root: HTMLElement | null) {
+  function hydrateDictionaryMedia(root: HTMLElement | null) {
     if (!root) return;
     const placeholders = [
       ...root.querySelectorAll<HTMLElement>(".gloss-media-placeholder[data-media-path][data-media-dictionary]"),
@@ -173,7 +175,7 @@
 
     if (placeholders.length === 0) return;
     if (!("IntersectionObserver" in window)) {
-      for (const placeholder of placeholders) void loadDictionaryMediaPlaceholder(placeholder);
+      for (const placeholder of placeholders) void hydrateDictionaryMediaPlaceholder(placeholder);
       return;
     }
 
@@ -182,7 +184,7 @@
         if (!entry.isIntersecting) continue;
         const placeholder = entry.target as HTMLElement;
         observer.unobserve(placeholder);
-        void loadDictionaryMediaPlaceholder(placeholder);
+        void hydrateDictionaryMediaPlaceholder(placeholder);
       }
     }, { rootMargin: "160px" });
 
@@ -192,29 +194,40 @@
     }
   }
 
-  async function loadDictionaryMediaPlaceholder(placeholder: HTMLElement) {
+  async function hydrateDictionaryMediaPlaceholder(placeholder: HTMLElement) {
     const dictionary = placeholder.dataset.mediaDictionary ?? "";
     const path = placeholder.dataset.mediaPath ?? "";
     if (!dictionary || !path) return;
 
+    const originalLabel = placeholder.textContent?.trim() || "Dictionary media";
     placeholder.dataset.mediaStatus = "loading";
+    placeholder.classList.add("gloss-media-placeholder-loading");
+    placeholder.textContent = "Loading media...";
     try {
-      const resource = await invoke<DictionaryMediaResource>("dictionary_media", { dictionary, path });
+      const resource = await loadDictionaryMedia(dictionary, path);
       if (!placeholder.isConnected) return;
 
       const image = document.createElement("img");
       image.className = "gloss-media-image";
-      image.alt = placeholder.textContent?.trim() || "Dictionary media";
+      image.alt = originalLabel;
       image.src = `data:${resource.mimeType};base64,${resource.dataBase64}`;
       placeholder.replaceChildren(image);
       placeholder.dataset.mediaStatus = "loaded";
+      placeholder.classList.remove("gloss-media-placeholder-loading");
       placeholder.classList.add("gloss-media-placeholder-loaded");
     } catch {
       if (!placeholder.isConnected) return;
       placeholder.textContent = "Media unavailable";
       placeholder.dataset.mediaStatus = "error";
+      placeholder.classList.remove("gloss-media-placeholder-loading");
       placeholder.classList.add("gloss-media-placeholder-error");
     }
+  }
+
+  async function loadDictionaryMedia(dictionary: string, path: string): Promise<DictionaryMediaResource> {
+    if (loadDictionaryMediaResource) return loadDictionaryMediaResource(dictionary, path);
+    if (!isTauri()) throw new Error("Dictionary media requires Tauri runtime.");
+    return invoke<DictionaryMediaResource>("dictionary_media", { dictionary, path });
   }
 
   function resultDictionaries(lookupResults: DictResult[]): string[] {
@@ -388,6 +401,7 @@
   .lookup-glossary-content :global(a[data-lookup-redirect]) { border-bottom: 1px dotted currentColor; cursor: pointer; text-decoration: none; }
   .lookup-glossary-content :global(rt) { color: #b7bcc3; font-size: 0.72em; }
   .lookup-glossary-content :global(.gloss-media-placeholder) { display: inline-block; max-width: 100%; padding: 4px 7px; border: 1px dashed #5a6169; border-radius: 4px; color: #b7bcc3; background: #2b2f34; font-size: 11px; }
+  .lookup-glossary-content :global(.gloss-media-placeholder-loading) { color: #d2d6dc; border-color: #6f7782; }
   .lookup-glossary-content :global(.gloss-media-placeholder-loaded) { display: block; padding: 2px; border-style: solid; }
   .lookup-glossary-content :global(.gloss-media-placeholder-error) { color: #f28b82; border-color: #7d4f4b; }
   .lookup-glossary-content :global(.gloss-media-image) { display: block; max-width: 100%; max-height: 180px; object-fit: contain; }

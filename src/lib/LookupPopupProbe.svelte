@@ -8,6 +8,7 @@
   const requestedState = params.get("lookupState") as LookupState | null;
   const lookupState = allowedStates.includes(requestedState ?? "loading") ? requestedState ?? "loading" : "loading";
   const longResult = params.has("longResult");
+  const mediaMode = params.get("mediaMode") ?? "success";
 
   const rootSelection: ReaderSelection = {
     text: "school",
@@ -228,6 +229,14 @@
       `,
     };
   }
+
+  async function loadDictionaryMediaResource(dictionary: string, path: string) {
+    if (mediaMode === "fail") throw new Error(`Missing probe media: ${dictionary}/${path}`);
+    return {
+      mimeType: "image/svg+xml",
+      dataBase64: "PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSI2NCIgaGVpZ2h0PSI0MCIgdmlld0JveD0iMCAwIDY0IDQwIj48cmVjdCB3aWR0aD0iNjQiIGhlaWdodD0iNDAiIHJ4PSI2IiBmaWxsPSIjMzAzNDNhIi8+PHBhdGggZD0iTTEwIDI4aDQ0TDM5IDEyIDI4IDI0bC02LTYiIGZpbGw9Im5vbmUiIHN0cm9rZT0iIzc5ZDI5MSIgc3Ryb2tlLXdpZHRoPSIzIi8+PC9zdmc+",
+    };
+  }
 </script>
 
 <main class="probe">
@@ -259,6 +268,7 @@
         restoreScrollTop={popup.restoreScrollTop}
         restoreScrollSignal={popup.restoreScrollSignal}
         {loadDictionaryStyles}
+        loadDictionaryMediaResource={mediaMode === "none" ? undefined : loadDictionaryMediaResource}
         ankiTitle={() => "Payload prepared for Probe Book"}
       />
     </aside>

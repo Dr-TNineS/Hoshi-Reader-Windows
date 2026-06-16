@@ -1,6 +1,6 @@
 # Dictionary Popup HSA Alignment
 
-Last updated: 2026-06-14
+Last updated: 2026-06-16
 
 This document records a read-only comparison of Hoshi Reader Android (HSA),
 Hibiki, and current Hoshi Reader Windows (HSW) dictionary popup behavior.
@@ -134,6 +134,12 @@ Current note: HSW now supports a first-pass scoped dictionary `styles.css`
 path. This is a safe subset for glossary styling, not a full HSA iframe/CSS
 compatibility promise.
 
+Current note: HSW also supports the Svelte popup dictionary media path through
+lazy placeholders backed by the read-only `dictionary_media` Tauri command.
+Automated popup probes cover successful image replacement, unavailable media,
+and non-Tauri fallback behavior. Runtime validation with a normal media-bearing
+Yomitan dictionary is still manual/not verified in this document.
+
 ## Follow-Up Implementation Slices
 
 ### Slice 1: HSA-Style Renderer Parity
@@ -169,6 +175,9 @@ Validation:
 
 ### Slice 2: Dictionary Media Resource Path
 
+Status: implemented at the HSW Svelte popup level; real media-bearing dictionary
+runtime validation remains manual/not verified.
+
 Goal: support HSA-style dictionary media images when imported media exists.
 
 Key changes:
@@ -188,6 +197,8 @@ Acceptance:
 - A dictionary media image renders in the popup when the file exists.
 - Missing media does not break text lookup or recursive lookup.
 - Path traversal attempts are rejected by Rust tests.
+- Automated lookup popup checks verify loaded, unavailable, and non-Tauri media
+  placeholder states.
 
 Validation:
 

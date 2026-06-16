@@ -46,6 +46,7 @@ function stopServer(proc) {
 async function openProbe(page, state, options = {}) {
   const params = new URLSearchParams({ lookupPopupProbe: "1", lookupState: state });
   if (options.longResult) params.set("longResult", "1");
+  if (options.mediaMode) params.set("mediaMode", options.mediaMode);
   await page.goto(`${origin}/?${params}`);
   await page.locator(".lookup-pop").waitFor({ timeout: 10000 });
 }
@@ -83,6 +84,14 @@ async function popupMetrics(page) {
       structuredTables: document.querySelectorAll(".lookup-glossary-content table").length,
       structuredRuby: document.querySelectorAll(".lookup-glossary-content ruby rt").length,
       mediaPlaceholders: document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder").length,
+      mediaLoaded: document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='loaded']").length,
+      mediaErrors: document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='error']").length,
+      mediaLoading: document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='loading']").length,
+      mediaImages: document.querySelectorAll(".lookup-glossary-content .gloss-media-image").length,
+      mediaImageMaxHeight: (() => {
+        const image = document.querySelector(".lookup-glossary-content .gloss-media-image");
+        return image instanceof HTMLElement ? getComputedStyle(image).maxHeight : "";
+      })(),
       glossaryGroups: document.querySelectorAll(".lookup-glossary-group").length,
       redirectLinks: document.querySelectorAll(".lookup-glossary-content a[data-lookup-redirect]").length,
       canGoBack: !document.querySelector(".lookup-pop[data-popup-id='root'] button[aria-label='Back']")?.hasAttribute("disabled"),
@@ -176,6 +185,9 @@ async function main() {
       const target = document.querySelector(".lookup-glossary-content .gloss-sc-div");
       return target instanceof HTMLElement && getComputedStyle(target).color === "rgb(123, 210, 145)";
     });
+    await page.waitForFunction(() => (
+      document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='loaded']").length >= 1
+    ));
     const ready = await popupMetrics(page);
     assert(ready.text.includes("school"), "Ready popup should render expression.", ready);
     assert(ready.text.includes("Jitendex.org [probe]"), "Ready popup should render dictionary source.", ready);
@@ -184,7 +196,10 @@ async function main() {
     assert(ready.structuredListItems >= 2 && ready.structuredBreaks >= 1, "Ready popup should preserve structured glossary list and line breaks.", ready);
     assert(ready.structuredTables >= 1, "Ready popup should preserve structured glossary tables.", ready);
     assert(ready.structuredRuby >= 1, "Ready popup should preserve structured glossary ruby.", ready);
-    assert(ready.mediaPlaceholders >= 1, "Ready popup should render safe placeholders for dictionary media before media loading exists.", ready);
+    assert(ready.mediaPlaceholders >= 1, "Ready popup should render safe placeholders for dictionary media.", ready);
+    assert(ready.mediaLoaded >= 1 && ready.mediaImages >= 1, "Ready popup should lazy-load dictionary media into an image.", ready);
+    assert(ready.mediaErrors === 0 && ready.mediaLoading === 0, "Successful dictionary media should not remain loading or error.", ready);
+    assert(ready.mediaImageMaxHeight === "180px", "Dictionary media image should be constrained inside the popup.", ready);
     assert(ready.glossaryGroups >= 2, "Ready popup should group glossary entries by dictionary.", ready);
     assert(ready.redirectLinks >= 1, "Ready popup should render dictionary cross-reference links.", ready);
     assert(!ready.canGoBack && !ready.canGoForward, "Root popup should start without redirect history.", ready);
@@ -201,6 +216,28 @@ async function main() {
     assert(ready.text.includes("Anki not configured") && ready.ankiDisabled, "Anki boundary should remain disabled.", ready);
     assert(ready.ankiTitle.includes("Probe Book"), "Anki payload title should be exposed as disabled affordance text.", ready);
     assert(ready.hasResultsScroller, "Long ready results should scroll inside the popup.", ready);
+
+    await openProbe(page, "ready", { longResult: true, mediaMode: "fail" });
+    await page.waitForFunction(() => (
+      document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='error']").length >= 1
+    ));
+    const mediaFailed = await popupMetrics(page);
+    assert(mediaFailed.mediaErrors >= 1, "Missing dictionary media should render a non-fatal unavailable state.", mediaFailed);
+    assert(mediaFailed.text.includes("Media unavailable"), "Missing dictionary media should show an understandable placeholder.", mediaFailed);
+    assert(mediaFailed.text.includes("classroom school room"), "Missing dictionary media should not break text glossary rendering.", mediaFailed);
+
+    await openProbe(page, "ready", { longResult: true, mediaMode: "none" });
+    await page.waitForFunction(() => (
+      document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='error']").length >= 1
+    ));
+    const mediaNoTauri = await popupMetrics(page);
+    assert(mediaNoTauri.mediaErrors >= 1, "Non-Tauri media fallback should render unavailable instead of hanging.", mediaNoTauri);
+    assert(mediaNoTauri.mediaImages === 0, "Non-Tauri media fallback should not fake loaded images.", mediaNoTauri);
+
+    await openProbe(page, "ready", { longResult: true });
+    await page.waitForFunction(() => (
+      document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='loaded']").length >= 1
+    ));
 
     await page.locator(".lookup-pop[data-popup-id='root'] a[data-lookup-redirect]").first().evaluate((link) => {
       const scroller = link.closest(".lookup-results");
@@ -261,7 +298,7 @@ async function main() {
     assert(!narrow.horizontalOverflow, "Narrow lookup popup should not create horizontal overflow.", narrow);
     assert(narrow.popup.right <= narrow.viewport.width, "Narrow lookup popup should stay within the viewport.", narrow);
 
-    console.log(JSON.stringify({ ready, nested, childClosed, scrolled, narrow }, null, 2));
+    console.log(JSON.stringify({ ready, mediaFailed, mediaNoTauri, nested, childClosed, scrolled, narrow }, null, 2));
   } finally {
     if (browser) await browser.close();
     stopServer(vite);
