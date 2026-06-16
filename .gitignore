@@ -37,3 +37,4 @@ reference/*
 # Local e-book test files
 *.epub
 
+.vite/
