@@ -88,6 +88,8 @@ export interface LookupAnkiPayload {
   matched: string;
   deinflected: string;
   rules: string;
+  frequencies: FrequencyEntry[];
+  pitches: PitchEntry[];
   sourceBook: LookupAnkiSourceBook;
   sourceChapter: LookupAnkiSourceChapter;
 }
@@ -176,6 +178,7 @@ export interface AnkiSettings {
   selectedNoteType: string | null;
   decks: AnkiDeck[];
   noteTypes: AnkiNoteType[];
+  fieldMappings: AnkiFieldMapping[];
   lastFetchedAt: number | null;
 }
 
@@ -183,4 +186,15 @@ export interface AnkiConnectionStatus {
   ok: boolean;
   message: string;
   version: number | null;
+}
+
+export interface AnkiFieldMapping {
+  field: string;
+  template: string;
+}
+
+export interface AnkiFieldPreview {
+  field: string;
+  template: string;
+  value: string;
 }

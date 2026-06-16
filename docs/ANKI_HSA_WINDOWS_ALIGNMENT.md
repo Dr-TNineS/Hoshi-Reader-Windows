@@ -6,9 +6,10 @@ This document evaluates how Hoshi Reader Windows (HSW) should move from the
 current disabled lookup-to-Anki payload boundary toward a Windows-native Anki
 integration.
 
-Implementation status as of 2026-06-17: Slice 1 readiness/configuration is
-implemented. Card creation, duplicate checks, field mapping, settings beyond the
-minimal Anki panel, and media export are still not implemented.
+Implementation status as of 2026-06-17: Slice 1 readiness/configuration and
+Slice 2 field mapping/preview are implemented. Card creation, duplicate checks,
+settings beyond the minimal Anki panel, and media export are still not
+implemented.
 
 Do not modify `reference/`, `third_party/hoshidicts`, HSA, Anki, or Yomitan
 from this document.
@@ -27,9 +28,10 @@ from this document.
   - `anki_fetch_config` fetches deck names, note types, and note fields through
     AnkiConnect v6 and persists selected deck/note type.
   - The bookshelf Anki panel can edit endpoint, test connection, fetch config,
-    and select deck/note type.
-- There is no field mapping UI, duplicate check, card creation, sync, or Anki
-  media export.
+    select deck/note type, and edit field templates.
+  - Configured lookup popup results can preview rendered Anki fields from the
+    current `LookupAnkiPayload`; this does not call AnkiConnect card creation.
+- There is no duplicate check, card creation, sync, or Anki media export.
 - Existing lookup popup probes cover that the disabled Anki boundary remains
   visible/click-safe and cannot be styled away by dictionary CSS.
 
@@ -116,6 +118,8 @@ Validation:
 Goal: turn `LookupAnkiPayload` into previewable note fields without sending
 cards to Anki.
 
+Status: implemented on 2026-06-17.
+
 Key changes:
 
 - Add a frontend/Rust shared field-rendering shape for selected note type fields
@@ -138,6 +142,7 @@ Validation:
 - `npm run check`
 - `npm run build`
 - `npm run check:lookup-popup`
+- `npm run check:anki-connect`
 
 ### Slice 3: Duplicate Check And Minimal Add Note
 

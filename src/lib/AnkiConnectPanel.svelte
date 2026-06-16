@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { effectiveTemplateForField } from "./anki-field-renderer";
   import type { AnkiSettings } from "./types";
 
   let {
@@ -13,6 +14,7 @@
     onSave = () => {},
     onSelectDeck = (_deck: string) => {},
     onSelectNoteType = (_noteType: string) => {},
+    onSetFieldTemplate = (_field: string, _template: string) => {},
   }: {
     settings?: AnkiSettings | null;
     endpoint?: string;
@@ -25,6 +27,7 @@
     onSave?: () => void;
     onSelectDeck?: (deck: string) => void;
     onSelectNoteType?: (noteType: string) => void;
+    onSetFieldTemplate?: (field: string, template: string) => void;
   } = $props();
 
   const selectedNote = $derived(
@@ -107,15 +110,23 @@
   </div>
 
   <div class="fields-row">
-    <p class="fields-title">Fields</p>
+    <p class="fields-title">Field Templates</p>
     {#if selectedNote?.fields.length}
-      <div class="field-list">
+      <div class="field-template-list">
         {#each selectedNote.fields as field}
-          <span>{field}</span>
+          <label class="field-template-row">
+            <span>{field}</span>
+            <input
+              value={effectiveTemplateForField(field, settings)}
+              disabled={busy}
+              spellcheck="false"
+              onchange={(event) => onSetFieldTemplate(field, event.currentTarget.value)}
+            />
+          </label>
         {/each}
       </div>
     {:else}
-      <p class="empty">Fetch AnkiConnect config to preview fields.</p>
+      <p class="empty">Fetch AnkiConnect config to edit field templates.</p>
     {/if}
   </div>
 
@@ -137,8 +148,11 @@
   .config-grid[aria-busy="true"] { opacity: 0.72; }
   .fields-row { display: flex; flex-direction: column; gap: 7px; }
   .fields-title { color: #9aa0a6; font-size: 11px; font-weight: 600; text-transform: uppercase; }
-  .field-list { display: flex; flex-wrap: wrap; gap: 6px; }
-  .field-list span { max-width: 100%; overflow-wrap: anywhere; padding: 3px 7px; color: #d8eadf; background: #24352f; border: 1px solid #3b6956; border-radius: 4px; font-size: 12px; }
+  .field-template-list { display: flex; flex-direction: column; gap: 7px; }
+  .field-template-row { min-width: 0; display: grid; grid-template-columns: minmax(90px, 0.32fr) minmax(0, 1fr); align-items: center; gap: 8px; }
+  .field-template-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #d8eadf; font-size: 12px; }
+  .field-template-row input { width: 100%; min-width: 0; padding: 6px 7px; background: #202124; color: #f1f3f4; border: 1px solid #555c64; border-radius: 4px; font-size: 12px; }
+  .field-template-row input:disabled { color: #747a80; }
   .anki-status { color: #9ad5b5; font-size: 13px; line-height: 1.4; }
   .err { color: #ff8a80; font-size: 13px; white-space: pre-wrap; }
   .empty, .fetched-at { color: #80868b; font-size: 12px; }
@@ -147,5 +161,6 @@
     .anki-actions { width: 100%; }
     .anki-actions button { flex: 1 1 0; }
     .config-grid { grid-template-columns: 1fr; }
+    .field-template-row { grid-template-columns: 1fr; gap: 4px; }
   }
 </style>

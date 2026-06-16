@@ -1,7 +1,7 @@
 <script lang="ts">
   import LookupPopupContent from "./LookupPopupContent.svelte";
   import type { LookupState } from "./lookup-popup";
-  import type { DictResult, ReaderSelection } from "./types";
+  import type { AnkiSettings, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
   const params = new URLSearchParams(window.location.search);
   const allowedStates: LookupState[] = ["loading", "noDictionaries", "engineUnavailable", "empty", "error", "ready"];
@@ -9,6 +9,7 @@
   const lookupState = allowedStates.includes(requestedState ?? "loading") ? requestedState ?? "loading" : "loading";
   const longResult = params.has("longResult");
   const mediaMode = params.get("mediaMode") ?? "success";
+  const ankiMode = params.get("ankiMode") ?? "disabled";
 
   const rootSelection: ReaderSelection = {
     text: "school",
@@ -72,6 +73,25 @@
     frequencies: [{ dictionary: "Freq Probe", items: [{ value: 120, displayValue: "120" }] }],
     pitches: [{ dictionary: "Pitch Probe", positions: [0, 2], transcriptions: ["school"] }],
   };
+
+  const ankiSettings: AnkiSettings | null = ankiMode === "configured"
+    ? {
+      version: 1,
+      endpoint: "http://127.0.0.1:8765",
+      selectedDeck: "Mining",
+      selectedNoteType: "Hoshi Vocabulary",
+      decks: [{ name: "Mining" }],
+      noteTypes: [{ name: "Hoshi Vocabulary", fields: ["Expression", "Meaning", "Frequency", "Pitch", "Unknown"] }],
+      fieldMappings: [
+        { field: "Expression", template: "{expression} / {reading}" },
+        { field: "Meaning", template: "{glossary-first}" },
+        { field: "Frequency", template: "{frequencies}" },
+        { field: "Pitch", template: "{pitch-accent-positions}" },
+        { field: "Unknown", template: "before{not-a-token}after" },
+      ],
+      lastFetchedAt: 1780000000000,
+    }
+    : null;
 
   interface ProbePopup {
     id: string;
@@ -216,6 +236,24 @@
     ));
   }
 
+  function buildAnkiPayload(selection: ReaderSelection, result: DictResult, resultIndex: number): LookupAnkiPayload {
+    return {
+      selectedText: selection.text,
+      resultIndex,
+      expression: result.expression,
+      reading: result.reading,
+      glossary: result.glossary,
+      dictionary: result.dictionary,
+      matched: result.matched,
+      deinflected: result.deinflected,
+      rules: result.rules,
+      frequencies: result.frequencies,
+      pitches: result.pitches,
+      sourceBook: { title: "Probe Book" },
+      sourceChapter: { chapterIndex: 0, chapterNumber: 1, totalChapters: 1, idref: "probe" },
+    };
+  }
+
   async function loadDictionaryStyles(dictionary: string) {
     if (dictionary !== "Jitendex.org [probe]") return { source: dictionary, css: "" };
     return {
@@ -270,6 +308,8 @@
         {loadDictionaryStyles}
         loadDictionaryMediaResource={mediaMode === "none" ? undefined : loadDictionaryMediaResource}
         ankiTitle={() => "Payload prepared for Probe Book"}
+        {ankiSettings}
+        buildAnkiPayload={(result, resultIndex) => buildAnkiPayload(popup.selection, result, resultIndex)}
       />
     </aside>
   {/each}

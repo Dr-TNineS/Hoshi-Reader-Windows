@@ -1,8 +1,9 @@
 <script lang="ts">
   import { invoke, isTauri } from "@tauri-apps/api/core";
+  import { isAnkiPreviewConfigured, renderAnkiFieldPreview } from "./anki-field-renderer";
   import { formatLookupMatch, frequencyLabel, glossaryGroups, pitchLabel, renderGlossaryContent, resultDictionaryLabel, ruleTags, scopeDictionaryCss, type LookupState } from "./lookup-popup";
   import { selectPopupTextFromPoint } from "./popup-selection";
-  import type { DictResult, ReaderSelection } from "./types";
+  import type { AnkiFieldPreview, AnkiSettings, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
   let {
     popupId,
@@ -24,6 +25,8 @@
     loadDictionaryStyles,
     loadDictionaryMediaResource,
     ankiTitle = () => "Payload prepared for current book",
+    ankiSettings = null,
+    buildAnkiPayload,
   }: {
     popupId: string;
     selection: ReaderSelection;
@@ -44,6 +47,8 @@
     loadDictionaryStyles?: (dictionary: string) => Promise<DictionaryStyleResource>;
     loadDictionaryMediaResource?: (dictionary: string, path: string) => Promise<DictionaryMediaResource>;
     ankiTitle?: (result: DictResult, resultIndex: number) => string;
+    ankiSettings?: AnkiSettings | null;
+    buildAnkiPayload?: (result: DictResult, resultIndex: number) => LookupAnkiPayload;
   } = $props();
 
   let shiftHoverLastX = -1;
@@ -53,8 +58,11 @@
   let previousRestoreScrollSignal: number | null = null;
   let contentRoot: HTMLDivElement | null = null;
   let dictionaryStyleCss = $state("");
+  let ankiPreviewKey = $state("");
+  let ankiPreviewFields = $state<AnkiFieldPreview[]>([]);
   let styleRequestId = 0;
   const styleTag = "style";
+  const canPreviewAnki = $derived(isAnkiPreviewConfigured(ankiSettings) && Boolean(buildAnkiPayload));
 
   interface DictionaryMediaResource {
     mimeType: string;
@@ -93,6 +101,8 @@
   $effect(() => {
     if (lookupState !== "ready") {
       dictionaryStyleCss = "";
+      ankiPreviewKey = "";
+      ankiPreviewFields = [];
       return;
     }
 
@@ -264,6 +274,18 @@
     if (!isTauri()) return { css: "", source: dictionary };
     return invoke<DictionaryStyleResource>("dictionary_styles", { dictionary });
   }
+
+  function previewAnki(result: DictResult, resultIndex: number) {
+    if (!buildAnkiPayload || !canPreviewAnki) return;
+    const key = `${resultIndex}:${result.expression}:${result.reading}`;
+    if (ankiPreviewKey === key) {
+      ankiPreviewKey = "";
+      ankiPreviewFields = [];
+      return;
+    }
+    ankiPreviewKey = key;
+    ankiPreviewFields = renderAnkiFieldPreview(buildAnkiPayload(result, resultIndex), ankiSettings);
+  }
 </script>
 
 <svelte:head>
@@ -354,9 +376,29 @@
           {#if pitchLabel(result)}
             <p class="lookup-detail"><span>Pitch</span>{pitchLabel(result)}</p>
           {/if}
-          <button class="lookup-anki" disabled title={ankiTitle(result, resultIndex)}>
-            Anki not configured
+          <button
+            class:ready={canPreviewAnki}
+            class="lookup-anki"
+            disabled={!canPreviewAnki}
+            title={canPreviewAnki ? "Preview rendered Anki fields" : ankiTitle(result, resultIndex)}
+            onclick={() => previewAnki(result, resultIndex)}
+          >
+            {canPreviewAnki ? "Preview Anki" : "Anki not configured"}
           </button>
+          {#if ankiPreviewKey === `${resultIndex}:${result.expression}:${result.reading}`}
+            <section class="anki-preview" aria-label="Anki field preview">
+              <div class="anki-preview-head">
+                <span>{ankiSettings?.selectedDeck}</span>
+                <span>{ankiSettings?.selectedNoteType}</span>
+              </div>
+              {#each ankiPreviewFields as field (field.field)}
+                <div class="anki-preview-row">
+                  <span>{field.field}</span>
+                  <pre>{field.value}</pre>
+                </div>
+              {/each}
+            </section>
+          {/if}
         </section>
       {/each}
     </div>
@@ -408,4 +450,11 @@
   .lookup-detail { color: #c8ccd1; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
   .lookup-detail span { margin-right: 6px; color: #fdd663; }
   .lookup-anki { align-self: flex-start; margin-top: 2px; padding: 3px 7px; background: #2b2f34; color: #7f858c; border: 1px solid #444a51; border-radius: 4px; cursor: not-allowed; font-size: 11px; }
+  .lookup-anki.ready { color: #d8eadf; background: #24352f; border-color: #3b6956; cursor: pointer; }
+  .lookup-anki.ready:hover { background: #2c4038; }
+  .anki-preview { display: flex; flex-direction: column; gap: 6px; padding: 8px; background: #202326; border: 1px solid #3c4043; border-radius: 4px; }
+  .anki-preview-head { display: flex; flex-wrap: wrap; gap: 6px; color: #9ad5b5; font-size: 11px; line-height: 1.3; }
+  .anki-preview-row { display: grid; grid-template-columns: minmax(72px, 0.35fr) minmax(0, 1fr); gap: 7px; align-items: start; min-width: 0; }
+  .anki-preview-row > span { min-width: 0; overflow-wrap: anywhere; color: #fdd663; font-size: 11px; line-height: 1.35; }
+  .anki-preview-row pre { min-width: 0; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #d7d9dc; font-family: inherit; font-size: 11px; line-height: 1.35; }
 </style>

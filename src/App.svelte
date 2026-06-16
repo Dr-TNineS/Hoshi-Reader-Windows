@@ -2,6 +2,7 @@
   import { invoke, isTauri as isTauriRuntime } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-dialog";
   import AnkiConnectPanel from "./lib/AnkiConnectPanel.svelte";
+  import { pruneFieldMappings, upsertFieldTemplate } from "./lib/anki-field-renderer";
   import DictionaryManagementPanel from "./lib/DictionaryManagementPanel.svelte";
   import { resolveChapterAssets } from "./lib/epub-assets";
   import LookupPopupContent from "./lib/LookupPopupContent.svelte";
@@ -371,6 +372,7 @@
       selectedNoteType: null,
       decks: [],
       noteTypes: [],
+      fieldMappings: [],
       lastFetchedAt: null,
     };
   }
@@ -441,7 +443,7 @@
     ankiError = "";
     try {
       const settings = await invoke<AnkiSettings>("anki_fetch_config", { endpoint: ankiEndpointDraft });
-      ankiSettings = settings;
+      ankiSettings = { ...settings, fieldMappings: pruneFieldMappings(settings) };
       ankiEndpointDraft = settings.endpoint;
       ankiStatus = `Fetched ${settings.decks.length} decks and ${settings.noteTypes.length} note types.`;
     } catch (e) {
@@ -460,7 +462,16 @@
 
   async function selectAnkiNoteType(noteType: string) {
     if (!noteType || ankiBusy) return;
-    const next = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft, selectedNoteType: noteType };
+    const changed = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft, selectedNoteType: noteType };
+    const next = { ...changed, fieldMappings: pruneFieldMappings(changed) };
+    ankiSettings = next;
+    await saveAnkiSettings();
+  }
+
+  async function setAnkiFieldTemplate(field: string, template: string) {
+    if (ankiBusy) return;
+    const base = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft };
+    const next = { ...base, fieldMappings: upsertFieldTemplate(base.fieldMappings, field, template) };
     ankiSettings = next;
     await saveAnkiSettings();
   }
@@ -498,6 +509,8 @@
       matched: result.matched,
       deinflected: result.deinflected,
       rules: result.rules,
+      frequencies: result.frequencies,
+      pitches: result.pitches,
       sourceBook: {
         title: meta?.title ?? null,
         bookId: currentBookLocator?.bookId,
@@ -931,6 +944,7 @@
           onSave={saveAnkiSettings}
           onSelectDeck={selectAnkiDeck}
           onSelectNoteType={selectAnkiNoteType}
+          onSetFieldTemplate={setAnkiFieldTemplate}
         />
       {/if}
 
@@ -997,6 +1011,8 @@
           restoreScrollTop={popup.restoreScrollTop}
           restoreScrollSignal={popup.restoreScrollSignal}
           ankiTitle={(result, resultIndex) => lookupAnkiTitle(popup.selection, result, resultIndex)}
+          ankiSettings={ankiSettings}
+          buildAnkiPayload={(result, resultIndex) => buildAnkiPayload(popup.selection, result, resultIndex)}
         />
       </aside>
     {/each}

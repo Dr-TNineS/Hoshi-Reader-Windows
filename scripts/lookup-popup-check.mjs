@@ -47,6 +47,7 @@ async function openProbe(page, state, options = {}) {
   const params = new URLSearchParams({ lookupPopupProbe: "1", lookupState: state });
   if (options.longResult) params.set("longResult", "1");
   if (options.mediaMode) params.set("mediaMode", options.mediaMode);
+  if (options.ankiMode) params.set("ankiMode", options.ankiMode);
   await page.goto(`${origin}/?${params}`);
   await page.locator(".lookup-pop").waitFor({ timeout: 10000 });
 }
@@ -79,6 +80,7 @@ async function popupMetrics(page) {
       hasResultsScroller: results instanceof HTMLElement && results.scrollHeight > results.clientHeight,
       ankiDisabled: document.querySelector(".lookup-anki")?.hasAttribute("disabled") ?? false,
       ankiTitle: document.querySelector(".lookup-anki")?.getAttribute("title") ?? "",
+      ankiPreviewRows: document.querySelectorAll(".anki-preview-row").length,
       structuredListItems: document.querySelectorAll(".lookup-glossary-content ul li").length,
       structuredBreaks: document.querySelectorAll(".lookup-glossary-content br").length,
       structuredTables: document.querySelectorAll(".lookup-glossary-content table").length,
@@ -216,6 +218,18 @@ async function main() {
     assert(ready.text.includes("Anki not configured") && ready.ankiDisabled, "Anki boundary should remain disabled.", ready);
     assert(ready.ankiTitle.includes("Probe Book"), "Anki payload title should be exposed as disabled affordance text.", ready);
     assert(ready.hasResultsScroller, "Long ready results should scroll inside the popup.", ready);
+
+    await openProbe(page, "ready", { ankiMode: "configured" });
+    await page.getByRole("button", { name: "Preview Anki" }).click();
+    const ankiPreview = await popupMetrics(page);
+    assert(!ankiPreview.ankiDisabled, "Configured Anki preview action should be enabled.", ankiPreview);
+    assert(ankiPreview.ankiPreviewRows === 5, "Anki preview should render configured note fields.", ankiPreview);
+    assert(ankiPreview.text.includes("Mining") && ankiPreview.text.includes("Hoshi Vocabulary"), "Anki preview should show selected deck and note type.", ankiPreview);
+    assert(ankiPreview.text.includes("school / school"), "Anki preview should render expression and reading tokens.", ankiPreview);
+    assert(ankiPreview.text.includes("school; a place of study") || ankiPreview.text.includes("structured-content"), "Anki preview should render glossary tokens.", ankiPreview);
+    assert(ankiPreview.text.includes("Freq Probe: 120"), "Anki preview should render frequency tokens.", ankiPreview);
+    assert(ankiPreview.text.includes("Pitch Probe: pitch 0, 2"), "Anki preview should render pitch tokens.", ankiPreview);
+    assert(ankiPreview.text.includes("beforeafter"), "Unknown Anki handlebars should render empty.", ankiPreview);
 
     await openProbe(page, "ready", { longResult: true, mediaMode: "fail" });
     await page.waitForFunction(() => (

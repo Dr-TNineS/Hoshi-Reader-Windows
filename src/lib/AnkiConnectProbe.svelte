@@ -15,6 +15,10 @@
       { name: "Basic", fields: ["Front", "Back"] },
       { name: "Hoshi Vocabulary", fields: ["Expression", "Reading", "Glossary", "Sentence"] },
     ],
+    fieldMappings: [
+      { field: "Front", template: "{expression}" },
+      { field: "Back", template: "{glossary-first}" },
+    ],
     lastFetchedAt: 1780000000000,
   };
 
@@ -25,6 +29,7 @@
   let saveClicks = $state(0);
   let deckEvents = $state<string[]>([]);
   let noteTypeEvents = $state<string[]>([]);
+  let fieldTemplateEvents = $state<string[]>([]);
 
   function selectDeck(deck: string) {
     deckEvents = [...deckEvents, deck];
@@ -34,6 +39,18 @@
   function selectNoteType(noteType: string) {
     noteTypeEvents = [...noteTypeEvents, noteType];
     if (settings) settings = { ...settings, selectedNoteType: noteType };
+  }
+
+  function setFieldTemplate(field: string, template: string) {
+    fieldTemplateEvents = [...fieldTemplateEvents, `${field}:${template}`];
+    if (!settings) return;
+    settings = {
+      ...settings,
+      fieldMappings: [
+        ...settings.fieldMappings.filter((mapping) => mapping.field !== field),
+        { field, template },
+      ],
+    };
   }
 </script>
 
@@ -50,6 +67,7 @@
     onSave={() => saveClicks += 1}
     onSelectDeck={selectDeck}
     onSelectNoteType={selectNoteType}
+    onSetFieldTemplate={setFieldTemplate}
   />
   <div
     class="probe-state"
@@ -59,8 +77,10 @@
     data-save-clicks={saveClicks}
     data-deck-events={deckEvents.join(",")}
     data-note-type-events={noteTypeEvents.join(",")}
+    data-field-template-events={fieldTemplateEvents.join(",")}
     data-selected-deck={settings?.selectedDeck ?? ""}
     data-selected-note-type={settings?.selectedNoteType ?? ""}
+    data-field-mappings={settings?.fieldMappings.map((mapping) => `${mapping.field}:${mapping.template}`).join("|") ?? ""}
     aria-hidden="true"
   ></div>
 </main>

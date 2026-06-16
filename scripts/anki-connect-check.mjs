@@ -63,8 +63,10 @@ async function panelMetrics(page) {
       saveClicks: Number(state?.getAttribute("data-save-clicks") ?? 0),
       deckEvents: state?.getAttribute("data-deck-events") ?? "",
       noteTypeEvents: state?.getAttribute("data-note-type-events") ?? "",
+      fieldTemplateEvents: state?.getAttribute("data-field-template-events") ?? "",
       selectedDeck: state?.getAttribute("data-selected-deck") ?? "",
       selectedNoteType: state?.getAttribute("data-selected-note-type") ?? "",
+      fieldMappings: state?.getAttribute("data-field-mappings") ?? "",
       horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
       panel: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom },
       viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -90,7 +92,7 @@ async function main() {
     await openProbe(page, "empty");
     let metrics = await panelMetrics(page);
     assert(metrics.text.includes("Desktop Anki configuration only"), "Empty panel should describe readiness scope.", metrics);
-    assert(metrics.text.includes("Fetch AnkiConnect config to preview fields."), "Empty panel should show field preview guidance.", metrics);
+    assert(metrics.text.includes("Fetch AnkiConnect config to edit field templates."), "Empty panel should show field template guidance.", metrics);
 
     await openProbe(page, "error");
     metrics = await panelMetrics(page);
@@ -105,12 +107,15 @@ async function main() {
     assert(metrics.text.includes("2 decks, 2 note types"), "Ready panel should summarize fetched config.", metrics);
     assert(metrics.text.includes("Mining"), "Ready panel should show deck names.", metrics);
     assert(metrics.text.includes("Basic"), "Ready panel should show note type names.", metrics);
-    assert(metrics.text.includes("Front") && metrics.text.includes("Back"), "Ready panel should preview note fields.", metrics);
+    assert(metrics.text.includes("Front") && metrics.text.includes("Back"), "Ready panel should show note fields.", metrics);
+    assert(metrics.fieldMappings.includes("Front:{expression}") && metrics.fieldMappings.includes("Back:{glossary-first}"), "Ready panel should expose saved field templates.", metrics);
 
     await page.getByLabel("Endpoint").fill("http://localhost:8765");
     await page.getByRole("button", { name: "Test" }).click();
     await page.getByRole("button", { name: "Fetch" }).click();
     await page.getByRole("button", { name: "Save" }).click();
+    await page.locator(".field-template-row").filter({ hasText: "Back" }).locator("input").fill("{glossary}");
+    await page.locator(".field-template-row").filter({ hasText: "Back" }).locator("input").blur();
     await page.getByLabel("Deck").selectOption("Japanese::Reading");
     await page.getByLabel("Note Type").selectOption("Hoshi Vocabulary");
     metrics = await panelMetrics(page);
@@ -118,6 +123,8 @@ async function main() {
     assert(metrics.pingClicks === 1 && metrics.fetchClicks === 1 && metrics.saveClicks === 1, "Action buttons should be wired.", metrics);
     assert(metrics.deckEvents.includes("Japanese::Reading"), "Deck select should emit selected deck.", metrics);
     assert(metrics.noteTypeEvents.includes("Hoshi Vocabulary"), "Note type select should emit selected note type.", metrics);
+    assert(metrics.fieldTemplateEvents.includes("Back:{glossary}"), "Field template edits should emit the field and template.", metrics);
+    assert(metrics.fieldMappings.includes("Back:{glossary}"), "Field template edits should update visible state.", metrics);
     assert(metrics.selectedDeck === "Japanese::Reading", "Deck select should update visible state.", metrics);
     assert(metrics.selectedNoteType === "Hoshi Vocabulary", "Note type select should update visible state.", metrics);
 

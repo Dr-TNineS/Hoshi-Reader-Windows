@@ -26,6 +26,13 @@ pub struct AnkiNoteType {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct AnkiFieldMapping {
+    pub field: String,
+    pub template: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct AnkiSettings {
     pub version: u32,
     pub endpoint: String,
@@ -33,6 +40,8 @@ pub struct AnkiSettings {
     pub selected_note_type: Option<String>,
     pub decks: Vec<AnkiDeck>,
     pub note_types: Vec<AnkiNoteType>,
+    #[serde(default)]
+    pub field_mappings: Vec<AnkiFieldMapping>,
     pub last_fetched_at: Option<u64>,
 }
 
@@ -45,6 +54,7 @@ impl Default for AnkiSettings {
             selected_note_type: None,
             decks: Vec::new(),
             note_types: Vec::new(),
+            field_mappings: Vec::new(),
             last_fetched_at: None,
         }
     }
@@ -112,6 +122,11 @@ pub fn anki_fetch_config(endpoint: String, app: AppHandle) -> Result<AnkiSetting
         .selected_note_type
         .filter(|name| note_types.iter().any(|note_type| note_type.name == *name))
         .or_else(|| note_types.first().map(|note_type| note_type.name.clone()));
+    let field_mappings = retain_field_mappings_for_note_type(
+        &current.field_mappings,
+        selected_note_type.as_deref(),
+        &note_types,
+    );
     let next = AnkiSettings {
         version: SETTINGS_VERSION,
         endpoint,
@@ -119,6 +134,7 @@ pub fn anki_fetch_config(endpoint: String, app: AppHandle) -> Result<AnkiSetting
         selected_note_type,
         decks,
         note_types,
+        field_mappings,
         last_fetched_at: Some(now_millis()?),
     };
     write_settings(&root, &next)?;
@@ -177,7 +193,30 @@ fn normalize_settings(mut settings: AnkiSettings) -> AnkiSettings {
     } else {
         settings.endpoint = settings.endpoint.trim().trim_end_matches('/').into();
     }
+    settings.field_mappings = retain_field_mappings_for_note_type(
+        &settings.field_mappings,
+        settings.selected_note_type.as_deref(),
+        &settings.note_types,
+    );
     settings
+}
+
+fn retain_field_mappings_for_note_type(
+    mappings: &[AnkiFieldMapping],
+    selected_note_type: Option<&str>,
+    note_types: &[AnkiNoteType],
+) -> Vec<AnkiFieldMapping> {
+    let Some(selected_note_type) = selected_note_type else {
+        return Vec::new();
+    };
+    let Some(note_type) = note_types.iter().find(|note_type| note_type.name == selected_note_type) else {
+        return Vec::new();
+    };
+    mappings
+        .iter()
+        .filter(|mapping| note_type.fields.iter().any(|field| field == &mapping.field))
+        .cloned()
+        .collect()
 }
 
 fn fetch_decks(endpoint: &str) -> Result<Vec<AnkiDeck>, String> {
@@ -387,6 +426,52 @@ mod tests {
         assert_eq!(loaded.selected_deck.as_deref(), Some("Mining"));
         assert!(!root.join("settings.json.tmp").exists());
         let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn missing_field_mappings_in_old_settings_defaults_empty() {
+        let root = temp_root("legacy_mapping");
+        fs::write(
+            settings_path(&root),
+            r#"{
+              "version": 1,
+              "endpoint": "http://127.0.0.1:8765",
+              "selectedDeck": null,
+              "selectedNoteType": null,
+              "decks": [],
+              "noteTypes": [],
+              "lastFetchedAt": null
+            }"#,
+        )
+        .unwrap();
+        let loaded = read_settings(&root).unwrap();
+        assert!(loaded.field_mappings.is_empty());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn normalize_settings_prunes_field_mappings_to_selected_note_type() {
+        let settings = AnkiSettings {
+            selected_note_type: Some("Basic".into()),
+            note_types: vec![AnkiNoteType {
+                name: "Basic".into(),
+                fields: vec!["Front".into()],
+            }],
+            field_mappings: vec![
+                AnkiFieldMapping {
+                    field: "Front".into(),
+                    template: "{expression}".into(),
+                },
+                AnkiFieldMapping {
+                    field: "Back".into(),
+                    template: "{glossary}".into(),
+                },
+            ],
+            ..AnkiSettings::default()
+        };
+        let normalized = normalize_settings(settings);
+        assert_eq!(normalized.field_mappings.len(), 1);
+        assert_eq!(normalized.field_mappings[0].field, "Front");
     }
 
     #[test]
