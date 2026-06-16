@@ -138,7 +138,8 @@ Current note: HSW also supports the Svelte popup dictionary media path through
 lazy placeholders backed by the read-only `dictionary_media` Tauri command.
 Automated popup probes cover successful image replacement, unavailable media,
 and non-Tauri fallback behavior. Runtime validation with a normal media-bearing
-Yomitan dictionary is still manual/not verified in this document.
+Yomitan dictionary is still blocked/not verified; on 2026-06-16 no suitable
+local media-bearing Yomitan zip was available.
 
 ## Follow-Up Implementation Slices
 

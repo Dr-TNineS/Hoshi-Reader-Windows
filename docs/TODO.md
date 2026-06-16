@@ -37,7 +37,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
 ## Active Blockers
 
 - Compatibility imports that bypass legacy zip/media filename encoding issues intentionally skip media entries, so `MK3Fix0213.zip` imports with `mediaCount=0`.
-- Runtime validation with a normal media-bearing Yomitan dictionary is still not verified.
+- Runtime validation with a normal media-bearing Yomitan dictionary is still blocked pending a suitable local zip; 2026-06-16 checks found only `OALDPE10.zip` with `mediaCount=0` and unsuitable MK3 compatibility media.
 
 ## Required Validation
 

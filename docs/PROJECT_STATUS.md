@@ -104,7 +104,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - No sync implementation.
 - No settings or appearance panel.
 - No verified app-owned cover thumbnail cache.
-- Runtime validation with a normal media-bearing Yomitan dictionary is not verified.
+- Runtime validation with a normal media-bearing Yomitan dictionary is not verified; on 2026-06-16, `HSW_MEDIA_YOMITAN_ZIP` was unset, `OALDPE10.zip` had `mediaCount=0`, and `MK3Fix0213.zip` remained unsuitable because compatibility import intentionally skips media.
 - No verified release packaging flow.
 
 ## Known Issues
