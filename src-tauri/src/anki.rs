@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
@@ -66,6 +67,33 @@ pub struct AnkiConnectionStatus {
     pub ok: bool,
     pub message: String,
     pub version: Option<u64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AnkiNoteRequest {
+    pub endpoint: String,
+    pub deck_name: String,
+    pub model_name: String,
+    pub fields: BTreeMap<String, String>,
+    #[serde(default)]
+    pub tags: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AnkiNoteCheckResult {
+    pub can_add: bool,
+    pub duplicate: bool,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AnkiAddNoteResult {
+    pub status: String,
+    pub note_id: Option<i64>,
+    pub message: String,
 }
 
 #[tauri::command]
@@ -139,6 +167,34 @@ pub fn anki_fetch_config(endpoint: String, app: AppHandle) -> Result<AnkiSetting
     };
     write_settings(&root, &next)?;
     Ok(next)
+}
+
+#[tauri::command]
+pub fn anki_check_note(note: AnkiNoteRequest) -> Result<AnkiNoteCheckResult, String> {
+    check_note(&note)
+}
+
+#[tauri::command]
+pub fn anki_add_note(note: AnkiNoteRequest) -> Result<AnkiAddNoteResult, String> {
+    let check = check_note(&note)?;
+    if !check.can_add {
+        return Ok(AnkiAddNoteResult {
+            status: "duplicate".into(),
+            note_id: None,
+            message: check.message,
+        });
+    }
+
+    let endpoint = normalize_endpoint(&note.endpoint)?;
+    let result = anki_request(&endpoint, "addNote", Some(json!({ "note": note_json(&note)? })))?;
+    let note_id = result
+        .as_i64()
+        .ok_or_else(|| "AnkiConnect addNote returned an unexpected response.".to_string())?;
+    Ok(AnkiAddNoteResult {
+        status: "added".into(),
+        note_id: Some(note_id),
+        message: format!("Added Anki note {note_id}."),
+    })
 }
 
 fn anki_root(app: &AppHandle) -> Result<PathBuf, String> {
@@ -217,6 +273,69 @@ fn retain_field_mappings_for_note_type(
         .filter(|mapping| note_type.fields.iter().any(|field| field == &mapping.field))
         .cloned()
         .collect()
+}
+
+fn check_note(note: &AnkiNoteRequest) -> Result<AnkiNoteCheckResult, String> {
+    let endpoint = normalize_endpoint(&note.endpoint)?;
+    let result = anki_request(
+        &endpoint,
+        "canAddNotesWithErrorDetail",
+        Some(json!({ "notes": [note_json(note)?] })),
+    )?;
+    parse_note_check_result(result)
+}
+
+fn parse_note_check_result(result: Value) -> Result<AnkiNoteCheckResult, String> {
+    let first = result
+        .as_array()
+        .and_then(|items| items.first())
+        .ok_or_else(|| "AnkiConnect duplicate check returned an unexpected response.".to_string())?;
+    let can_add = first
+        .get("canAdd")
+        .and_then(Value::as_bool)
+        .ok_or_else(|| "AnkiConnect duplicate check did not include canAdd.".to_string())?;
+    let error = first.get("error").and_then(Value::as_str).unwrap_or("").trim();
+    if can_add {
+        return Ok(AnkiNoteCheckResult {
+            can_add: true,
+            duplicate: false,
+            message: "Anki note can be added.".into(),
+        });
+    }
+    Ok(AnkiNoteCheckResult {
+        can_add: false,
+        duplicate: true,
+        message: if error.is_empty() {
+            "Anki reported this note cannot be added.".into()
+        } else {
+            error.into()
+        },
+    })
+}
+
+fn note_json(note: &AnkiNoteRequest) -> Result<Value, String> {
+    normalize_endpoint(&note.endpoint)?;
+    if note.deck_name.trim().is_empty() {
+        return Err("Anki deck is not configured.".into());
+    }
+    if note.model_name.trim().is_empty() {
+        return Err("Anki note type is not configured.".into());
+    }
+    if note.fields.is_empty() {
+        return Err("Anki note fields are empty.".into());
+    }
+    if note.fields.keys().any(|field| field.trim().is_empty()) {
+        return Err("Anki note contains an empty field name.".into());
+    }
+    Ok(json!({
+        "deckName": note.deck_name.trim(),
+        "modelName": note.model_name.trim(),
+        "fields": note.fields,
+        "tags": note.tags,
+        "options": {
+            "allowDuplicate": false,
+        },
+    }))
 }
 
 fn fetch_decks(endpoint: &str) -> Result<Vec<AnkiDeck>, String> {
@@ -487,5 +606,49 @@ mod tests {
         assert!(normalize_endpoint("https://127.0.0.1:8765").is_err());
         assert!(normalize_endpoint("http://example.com:8765").is_err());
         assert!(normalize_endpoint("http://127.0.0.1:notaport").is_err());
+    }
+
+    #[test]
+    fn note_json_requires_configured_note_shape() {
+        let mut fields = BTreeMap::new();
+        fields.insert("Expression".into(), "学校".into());
+        let note = AnkiNoteRequest {
+            endpoint: DEFAULT_ENDPOINT.into(),
+            deck_name: "Mining".into(),
+            model_name: "Basic".into(),
+            fields,
+            tags: vec!["hoshi-reader".into()],
+        };
+        let value = note_json(&note).unwrap();
+        assert_eq!(value["deckName"], "Mining");
+        assert_eq!(value["modelName"], "Basic");
+        assert_eq!(value["fields"]["Expression"], "学校");
+        assert_eq!(value["tags"][0], "hoshi-reader");
+        assert_eq!(value["options"]["allowDuplicate"], false);
+
+        let missing_deck = AnkiNoteRequest {
+            deck_name: "".into(),
+            ..note.clone()
+        };
+        assert!(note_json(&missing_deck).unwrap_err().contains("deck"));
+        let empty_fields = AnkiNoteRequest {
+            fields: BTreeMap::new(),
+            ..note
+        };
+        assert!(note_json(&empty_fields).unwrap_err().contains("fields"));
+    }
+
+    #[test]
+    fn parses_duplicate_check_response() {
+        let can_add = parse_note_check_result(json!([{ "canAdd": true, "error": null }])).unwrap();
+        assert!(can_add.can_add);
+        assert!(!can_add.duplicate);
+
+        let duplicate = parse_note_check_result(json!([{ "canAdd": false, "error": "cannot create note because it is a duplicate" }])).unwrap();
+        assert!(!duplicate.can_add);
+        assert!(duplicate.duplicate);
+        assert!(duplicate.message.contains("duplicate"));
+
+        assert!(parse_note_check_result(json!({ "bad": true })).is_err());
     }
 }

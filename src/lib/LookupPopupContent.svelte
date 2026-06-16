@@ -1,9 +1,9 @@
 <script lang="ts">
   import { invoke, isTauri } from "@tauri-apps/api/core";
-  import { isAnkiPreviewConfigured, renderAnkiFieldPreview } from "./anki-field-renderer";
+  import { buildAnkiNoteRequest, isAnkiPreviewConfigured, renderAnkiFieldPreview } from "./anki-field-renderer";
   import { formatLookupMatch, frequencyLabel, glossaryGroups, pitchLabel, renderGlossaryContent, resultDictionaryLabel, ruleTags, scopeDictionaryCss, type LookupState } from "./lookup-popup";
   import { selectPopupTextFromPoint } from "./popup-selection";
-  import type { AnkiFieldPreview, AnkiSettings, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
+  import type { AnkiAddNoteResult, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
   let {
     popupId,
@@ -27,6 +27,7 @@
     ankiTitle = () => "Payload prepared for current book",
     ankiSettings = null,
     buildAnkiPayload,
+    onAddAnkiNote,
   }: {
     popupId: string;
     selection: ReaderSelection;
@@ -49,6 +50,7 @@
     ankiTitle?: (result: DictResult, resultIndex: number) => string;
     ankiSettings?: AnkiSettings | null;
     buildAnkiPayload?: (result: DictResult, resultIndex: number) => LookupAnkiPayload;
+    onAddAnkiNote?: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
   } = $props();
 
   let shiftHoverLastX = -1;
@@ -60,6 +62,9 @@
   let dictionaryStyleCss = $state("");
   let ankiPreviewKey = $state("");
   let ankiPreviewFields = $state<AnkiFieldPreview[]>([]);
+  let ankiActionKey = $state("");
+  let ankiActionState = $state<"idle" | "adding" | "added" | "duplicate" | "error">("idle");
+  let ankiActionMessage = $state("");
   let styleRequestId = 0;
   const styleTag = "style";
   const canPreviewAnki = $derived(isAnkiPreviewConfigured(ankiSettings) && Boolean(buildAnkiPayload));
@@ -103,6 +108,9 @@
       dictionaryStyleCss = "";
       ankiPreviewKey = "";
       ankiPreviewFields = [];
+      ankiActionKey = "";
+      ankiActionState = "idle";
+      ankiActionMessage = "";
       return;
     }
 
@@ -286,6 +294,40 @@
     ankiPreviewKey = key;
     ankiPreviewFields = renderAnkiFieldPreview(buildAnkiPayload(result, resultIndex), ankiSettings);
   }
+
+  async function addAnki(result: DictResult, resultIndex: number) {
+    if (!buildAnkiPayload || !canPreviewAnki || !onAddAnkiNote || ankiActionState === "adding") return;
+    const key = `${resultIndex}:${result.expression}:${result.reading}`;
+    const payload = buildAnkiPayload(result, resultIndex);
+    const note = buildAnkiNoteRequest(payload, ankiSettings);
+    if (!note) return;
+
+    ankiPreviewKey = key;
+    ankiPreviewFields = renderAnkiFieldPreview(payload, ankiSettings);
+    ankiActionKey = key;
+    ankiActionState = "adding";
+    ankiActionMessage = "Adding note...";
+    try {
+      const result = await onAddAnkiNote(note);
+      if (ankiActionKey !== key) return;
+      ankiActionState = result.status === "added" ? "added" : "duplicate";
+      ankiActionMessage = result.message;
+    } catch (error) {
+      if (ankiActionKey !== key) return;
+      ankiActionState = "error";
+      ankiActionMessage = String(error);
+    }
+  }
+
+  function ankiButtonLabel(result: DictResult, resultIndex: number): string {
+    const key = `${resultIndex}:${result.expression}:${result.reading}`;
+    if (ankiActionKey !== key) return canPreviewAnki ? "Add Anki" : "Anki not configured";
+    if (ankiActionState === "adding") return "Adding...";
+    if (ankiActionState === "added") return "Added";
+    if (ankiActionState === "duplicate") return "Duplicate";
+    if (ankiActionState === "error") return "Anki error";
+    return canPreviewAnki ? "Add Anki" : "Anki not configured";
+  }
 </script>
 
 <svelte:head>
@@ -378,13 +420,19 @@
           {/if}
           <button
             class:ready={canPreviewAnki}
+            class:added={ankiActionKey === `${resultIndex}:${result.expression}:${result.reading}` && ankiActionState === "added"}
+            class:duplicate={ankiActionKey === `${resultIndex}:${result.expression}:${result.reading}` && ankiActionState === "duplicate"}
+            class:error={ankiActionKey === `${resultIndex}:${result.expression}:${result.reading}` && ankiActionState === "error"}
             class="lookup-anki"
-            disabled={!canPreviewAnki}
-            title={canPreviewAnki ? "Preview rendered Anki fields" : ankiTitle(result, resultIndex)}
-            onclick={() => previewAnki(result, resultIndex)}
+            disabled={!canPreviewAnki || ankiActionState === "adding"}
+            title={canPreviewAnki ? "Create an Anki note after duplicate check" : ankiTitle(result, resultIndex)}
+            onclick={() => addAnki(result, resultIndex)}
           >
-            {canPreviewAnki ? "Preview Anki" : "Anki not configured"}
+            {ankiButtonLabel(result, resultIndex)}
           </button>
+          {#if canPreviewAnki}
+            <button class="lookup-anki-preview" onclick={() => previewAnki(result, resultIndex)}>Preview fields</button>
+          {/if}
           {#if ankiPreviewKey === `${resultIndex}:${result.expression}:${result.reading}`}
             <section class="anki-preview" aria-label="Anki field preview">
               <div class="anki-preview-head">
@@ -397,6 +445,11 @@
                   <pre>{field.value}</pre>
                 </div>
               {/each}
+              {#if ankiActionKey === ankiPreviewKey && ankiActionMessage}
+                <p class:ok={ankiActionState === "added"} class:warn={ankiActionState === "duplicate"} class:bad={ankiActionState === "error"} class="anki-action-message">
+                  {ankiActionMessage}
+                </p>
+              {/if}
             </section>
           {/if}
         </section>
@@ -452,9 +505,17 @@
   .lookup-anki { align-self: flex-start; margin-top: 2px; padding: 3px 7px; background: #2b2f34; color: #7f858c; border: 1px solid #444a51; border-radius: 4px; cursor: not-allowed; font-size: 11px; }
   .lookup-anki.ready { color: #d8eadf; background: #24352f; border-color: #3b6956; cursor: pointer; }
   .lookup-anki.ready:hover { background: #2c4038; }
+  .lookup-anki.added { color: #d8eadf; border-color: #4d8f6b; }
+  .lookup-anki.duplicate { color: #ffd89b; border-color: #8d6a33; }
+  .lookup-anki.error { color: #ffb4ac; border-color: #7d4f4b; }
+  .lookup-anki-preview { align-self: flex-start; margin-top: -2px; padding: 0; color: #9bbdf9; background: transparent; border: none; cursor: pointer; font-size: 11px; text-decoration: underline; }
   .anki-preview { display: flex; flex-direction: column; gap: 6px; padding: 8px; background: #202326; border: 1px solid #3c4043; border-radius: 4px; }
   .anki-preview-head { display: flex; flex-wrap: wrap; gap: 6px; color: #9ad5b5; font-size: 11px; line-height: 1.3; }
   .anki-preview-row { display: grid; grid-template-columns: minmax(72px, 0.35fr) minmax(0, 1fr); gap: 7px; align-items: start; min-width: 0; }
   .anki-preview-row > span { min-width: 0; overflow-wrap: anywhere; color: #fdd663; font-size: 11px; line-height: 1.35; }
   .anki-preview-row pre { min-width: 0; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #d7d9dc; font-family: inherit; font-size: 11px; line-height: 1.35; }
+  .anki-action-message { margin: 0; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
+  .anki-action-message.ok { color: #9ad5b5; }
+  .anki-action-message.warn { color: #ffd89b; }
+  .anki-action-message.bad { color: #ffb4ac; }
 </style>

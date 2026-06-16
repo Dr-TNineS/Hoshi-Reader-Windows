@@ -42,6 +42,8 @@ pub fn run() {
             anki::anki_save_settings,
             anki::anki_ping,
             anki::anki_fetch_config,
+            anki::anki_check_note,
+            anki::anki_add_note,
         ])
         .setup(|app| {
             app.state::<DictState>().initialize(app.handle());

@@ -28,9 +28,9 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Dictionary management UI coverage now has a minimal automated probe for empty/loading/error/ready states, counts, enable/order controls, actions, and narrow-window overflow.
    - Bookshelf/import hardening is complete for staged EPUB imports, duplicate EPUB reuse, missing app-owned EPUB errors, dictionary replacement preservation, import busy guards, and bookshelf Forget cleanup.
    - Final linked real dictionary validation with local `MK3Fix0213.zip` passed on 2026-06-12: `dict_id=93e8e532b599ba4a`, `term=140821`, `media=0`, `lookup_results=2`.
-   - Anki HSA/Windows alignment is documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`; AnkiConnect readiness/configuration and field preview are implemented.
+   - Anki HSA/Windows alignment is documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`; AnkiConnect readiness/configuration, field preview, and minimal duplicate-check/add-note plumbing are implemented.
 2. Treat the storage/model migration as complete at the JSON-store level: reading progress, recent books, and session now live in Tauri app data `reading/state.json`, with one-time legacy `localStorage` import and browser fallback.
-3. Next recommended product area: Anki duplicate check + minimal `addNote`, while preserving the field preview boundary described in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`.
+3. Next recommended product area: real desktop Anki runtime validation with a throwaway deck before starting Anki media/audio export.
 4. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 5. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
 
@@ -38,6 +38,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
 
 - Compatibility imports that bypass legacy zip/media filename encoding issues intentionally skip media entries, so `MK3Fix0213.zip` imports with `mediaCount=0`.
 - Runtime validation with a normal media-bearing Yomitan dictionary is still blocked pending a suitable local zip; 2026-06-16 checks found only `OALDPE10.zip` with `mediaCount=0` and unsuitable MK3 compatibility media.
+- Real desktop Anki add-note runtime validation is not verified; automated coverage currently uses popup probe mocks for added/duplicate/error states.
 
 ## Required Validation
 
@@ -56,7 +57,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
 
 - Settings.
 - Sync.
-- Anki card creation.
+- Anki media/audio export.
 - Sasayaki/audio.
 - Release packaging.
 - Broad UI redesign.

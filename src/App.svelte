@@ -24,6 +24,8 @@
   import { findChapterIndex, flattenToc } from "./lib/toc";
   import type {
     AnkiConnectionStatus,
+    AnkiAddNoteResult,
+    AnkiNoteRequest,
     AnkiSettings,
     DictImportSummary,
     DictResult,
@@ -563,6 +565,11 @@
     return `Payload prepared for ${buildAnkiPayload(selection, result, resultIndex).sourceBook.title ?? "current book"}`;
   }
 
+  async function addAnkiNote(note: AnkiNoteRequest): Promise<AnkiAddNoteResult> {
+    if (!isTauriRuntime()) throw new Error("Anki note creation requires Tauri runtime.");
+    return invoke<AnkiAddNoteResult>("anki_add_note", { note });
+  }
+
   async function setDictionaryEnabled(dictionary: DictionaryManifestEntry, enabled: boolean) {
     dictionaryBusy = true;
     dictionaryListError = "";
@@ -1013,6 +1020,7 @@
           ankiTitle={(result, resultIndex) => lookupAnkiTitle(popup.selection, result, resultIndex)}
           ankiSettings={ankiSettings}
           buildAnkiPayload={(result, resultIndex) => buildAnkiPayload(popup.selection, result, resultIndex)}
+          onAddAnkiNote={addAnkiNote}
         />
       </aside>
     {/each}

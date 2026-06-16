@@ -48,6 +48,7 @@ async function openProbe(page, state, options = {}) {
   if (options.longResult) params.set("longResult", "1");
   if (options.mediaMode) params.set("mediaMode", options.mediaMode);
   if (options.ankiMode) params.set("ankiMode", options.ankiMode);
+  if (options.ankiAddMode) params.set("ankiAddMode", options.ankiAddMode);
   await page.goto(`${origin}/?${params}`);
   await page.locator(".lookup-pop").waitFor({ timeout: 10000 });
 }
@@ -74,6 +75,10 @@ async function popupMetrics(page) {
       popupCount: Number(state?.getAttribute("data-popup-count") ?? 0),
       rootClearSelectionSignal: Number(state?.getAttribute("data-root-clear-selection-signal") ?? 0),
       topPopupId: state?.getAttribute("data-top-popup-id") ?? "",
+      ankiAddCount: Number(state?.getAttribute("data-anki-add-count") ?? 0),
+      ankiLastDeck: state?.getAttribute("data-anki-last-deck") ?? "",
+      ankiLastModel: state?.getAttribute("data-anki-last-model") ?? "",
+      ankiLastFields: JSON.parse(state?.getAttribute("data-anki-last-fields") ?? "{}"),
       popup: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom },
       viewport: { width: window.innerWidth, height: window.innerHeight },
       horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
@@ -220,7 +225,7 @@ async function main() {
     assert(ready.hasResultsScroller, "Long ready results should scroll inside the popup.", ready);
 
     await openProbe(page, "ready", { ankiMode: "configured" });
-    await page.getByRole("button", { name: "Preview Anki" }).click();
+    await page.getByRole("button", { name: "Preview fields" }).click();
     const ankiPreview = await popupMetrics(page);
     assert(!ankiPreview.ankiDisabled, "Configured Anki preview action should be enabled.", ankiPreview);
     assert(ankiPreview.ankiPreviewRows === 5, "Anki preview should render configured note fields.", ankiPreview);
@@ -230,6 +235,25 @@ async function main() {
     assert(ankiPreview.text.includes("Freq Probe: 120"), "Anki preview should render frequency tokens.", ankiPreview);
     assert(ankiPreview.text.includes("Pitch Probe: pitch 0, 2"), "Anki preview should render pitch tokens.", ankiPreview);
     assert(ankiPreview.text.includes("beforeafter"), "Unknown Anki handlebars should render empty.", ankiPreview);
+    assert(ankiPreview.ankiAddCount === 0, "Previewing fields should not add an Anki note.", ankiPreview);
+
+    await page.getByRole("button", { name: "Add Anki" }).click();
+    const ankiAdded = await popupMetrics(page);
+    assert(ankiAdded.ankiAddCount === 1, "Add Anki should call the note creation callback once.", ankiAdded);
+    assert(ankiAdded.ankiLastDeck === "Mining" && ankiAdded.ankiLastModel === "Hoshi Vocabulary", "Add Anki should send selected deck and note type.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.Expression === "school / school", "Add Anki should send rendered field values.", ankiAdded);
+    assert(ankiAdded.text.includes("Added Anki note 4242."), "Added state should show the Anki note id message.", ankiAdded);
+
+    await openProbe(page, "ready", { ankiMode: "configured", ankiAddMode: "duplicate" });
+    await page.getByRole("button", { name: "Add Anki" }).click();
+    const ankiDuplicate = await popupMetrics(page);
+    assert(ankiDuplicate.ankiAddCount === 1, "Duplicate check should still make a single add attempt callback.", ankiDuplicate);
+    assert(ankiDuplicate.text.includes("cannot create note because it is a duplicate"), "Duplicate state should show duplicate details.", ankiDuplicate);
+
+    await openProbe(page, "ready", { ankiMode: "configured", ankiAddMode: "error" });
+    await page.getByRole("button", { name: "Add Anki" }).click();
+    const ankiError = await popupMetrics(page);
+    assert(ankiError.text.includes("Probe AnkiConnect failure"), "Anki error state should show failure details.", ankiError);
 
     await openProbe(page, "ready", { longResult: true, mediaMode: "fail" });
     await page.waitForFunction(() => (

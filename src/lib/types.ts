@@ -198,3 +198,23 @@ export interface AnkiFieldPreview {
   template: string;
   value: string;
 }
+
+export interface AnkiNoteRequest {
+  endpoint: string;
+  deckName: string;
+  modelName: string;
+  fields: Record<string, string>;
+  tags: string[];
+}
+
+export interface AnkiNoteCheckResult {
+  canAdd: boolean;
+  duplicate: boolean;
+  message: string;
+}
+
+export interface AnkiAddNoteResult {
+  status: "added" | "duplicate" | "error";
+  noteId: number | null;
+  message: string;
+}

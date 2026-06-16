@@ -6,9 +6,10 @@ This document evaluates how Hoshi Reader Windows (HSW) should move from the
 current disabled lookup-to-Anki payload boundary toward a Windows-native Anki
 integration.
 
-Implementation status as of 2026-06-17: Slice 1 readiness/configuration and
-Slice 2 field mapping/preview are implemented. Card creation, duplicate checks,
-settings beyond the minimal Anki panel, and media export are still not
+Implementation status as of 2026-06-17: Slice 1 readiness/configuration,
+Slice 2 field mapping/preview, and Slice 3 minimal duplicate-check/add-note
+plumbing are implemented. Real desktop Anki runtime add-note validation is not
+verified. Settings beyond the minimal Anki panel and media export are still not
 implemented.
 
 Do not modify `reference/`, `third_party/hoshidicts`, HSA, Anki, or Yomitan
@@ -31,7 +32,10 @@ from this document.
     select deck/note type, and edit field templates.
   - Configured lookup popup results can preview rendered Anki fields from the
     current `LookupAnkiPayload`; this does not call AnkiConnect card creation.
-- There is no duplicate check, card creation, sync, or Anki media export.
+  - Configured lookup popup results can call Rust `anki_add_note`, which checks
+    `canAddNotesWithErrorDetail` before calling AnkiConnect `addNote`.
+- Real Anki runtime add-note validation with a throwaway deck is not verified.
+- There is no sync or Anki media export.
 - Existing lookup popup probes cover that the disabled Anki boundary remains
   visible/click-safe and cannot be styled away by dictionary CSS.
 
@@ -148,6 +152,9 @@ Validation:
 
 Goal: create a basic vocabulary card through AnkiConnect.
 
+Status: implemented on 2026-06-17; real desktop Anki runtime validation is not
+verified.
+
 Key changes:
 
 - Add Rust/Tauri commands for duplicate check and `addNote`.
@@ -168,6 +175,7 @@ Validation:
 - `cd src-tauri; cargo check`
 - `npm run check`
 - `npm run build`
+- `npm run check:lookup-popup`
 - Manual add-note and duplicate-check flow with a throwaway Anki deck.
 
 ### Slice 4: Media, Audio, And Sync Follow-Up

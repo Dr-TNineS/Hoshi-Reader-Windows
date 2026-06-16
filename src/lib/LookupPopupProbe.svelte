@@ -1,7 +1,7 @@
 <script lang="ts">
   import LookupPopupContent from "./LookupPopupContent.svelte";
   import type { LookupState } from "./lookup-popup";
-  import type { AnkiSettings, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
+  import type { AnkiAddNoteResult, AnkiNoteRequest, AnkiSettings, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
   const params = new URLSearchParams(window.location.search);
   const allowedStates: LookupState[] = ["loading", "noDictionaries", "engineUnavailable", "empty", "error", "ready"];
@@ -10,6 +10,7 @@
   const longResult = params.has("longResult");
   const mediaMode = params.get("mediaMode") ?? "success";
   const ankiMode = params.get("ankiMode") ?? "disabled";
+  const ankiAddMode = params.get("ankiAddMode") ?? "added";
 
   const rootSelection: ReaderSelection = {
     text: "school",
@@ -119,6 +120,7 @@
   let scrollCloseCount = $state(0);
   let nestedLookupCount = $state(0);
   let nestedLookupText = $state("");
+  let ankiAddRequests = $state<AnkiNoteRequest[]>([]);
 
   function nestedResult(selection: ReaderSelection): DictResult {
     return {
@@ -254,6 +256,15 @@
     };
   }
 
+  async function addAnkiNote(note: AnkiNoteRequest): Promise<AnkiAddNoteResult> {
+    ankiAddRequests = [...ankiAddRequests, note];
+    if (ankiAddMode === "error") throw new Error("Probe AnkiConnect failure");
+    if (ankiAddMode === "duplicate") {
+      return { status: "duplicate", noteId: null, message: "cannot create note because it is a duplicate" };
+    }
+    return { status: "added", noteId: 4242, message: "Added Anki note 4242." };
+  }
+
   async function loadDictionaryStyles(dictionary: string) {
     if (dictionary !== "Jitendex.org [probe]") return { source: dictionary, css: "" };
     return {
@@ -310,6 +321,7 @@
         ankiTitle={() => "Payload prepared for Probe Book"}
         {ankiSettings}
         buildAnkiPayload={(result, resultIndex) => buildAnkiPayload(popup.selection, result, resultIndex)}
+        onAddAnkiNote={addAnkiNote}
       />
     </aside>
   {/each}
@@ -323,6 +335,10 @@
     data-popup-count={popups.length}
     data-root-clear-selection-signal={popups[0]?.clearSelectionSignal ?? 0}
     data-top-popup-id={popups[popups.length - 1]?.id ?? ""}
+    data-anki-add-count={ankiAddRequests.length}
+    data-anki-last-deck={ankiAddRequests[ankiAddRequests.length - 1]?.deckName ?? ""}
+    data-anki-last-model={ankiAddRequests[ankiAddRequests.length - 1]?.modelName ?? ""}
+    data-anki-last-fields={JSON.stringify(ankiAddRequests[ankiAddRequests.length - 1]?.fields ?? {})}
     data-state={lookupState}
     aria-hidden="true"
   ></div>

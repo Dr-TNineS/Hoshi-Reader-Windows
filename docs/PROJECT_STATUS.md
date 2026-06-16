@@ -97,17 +97,18 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Final linked validation on 2026-06-12 ran `imports_real_yomitan_zip_and_loads_runtime` against local `MK3Fix0213.zip`: `dict_id=93e8e532b599ba4a`, `term=140821`, `media=0`, and `lookup_results=2`.
   - Lookup responses map compatibility-import internal ASCII titles back to manifest titles for result, glossary, frequency, and pitch source labels.
 - Anki:
-  - Lookup popup still only exposes a disabled Anki boundary affordance and does not create cards.
+  - Lookup popup keeps the Anki affordance disabled until endpoint, deck, note type, and fields are configured.
   - Bookshelf now has a minimal AnkiConnect readiness/configuration panel for endpoint editing, connection testing, deck/note-type fetch, deck selection, note-type selection, field template editing, and note field preview.
-  - Configured lookup popup results can render an Anki field preview from the current `LookupAnkiPayload` without calling `addNote`.
+  - Configured lookup popup results can render an Anki field preview from the current `LookupAnkiPayload`.
+  - Configured lookup popup results can call Rust `anki_add_note`; Rust performs `canAddNotesWithErrorDetail` before `addNote` and returns added/duplicate/error states.
   - Rust/Tauri stores Anki settings in app data `anki/settings.json` and restricts AnkiConnect endpoints to localhost/127.0.0.1 HTTP.
   - `npm run check:anki-connect` covers Anki panel empty/error/connected/ready states, action wiring, selections, field template edits, and narrow-window overflow.
-  - `npm run check:lookup-popup` covers configured Anki field preview, unknown handlebars rendering empty, and the unconfigured disabled Anki boundary.
+  - `npm run check:lookup-popup` covers configured Anki field preview, unknown handlebars rendering empty, added/duplicate/error UI states, rendered note shape, and the unconfigured disabled Anki boundary.
 
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata and reading state are still JSON.
-- No Anki card creation; AnkiConnect readiness/configuration and field preview exist, but duplicate checks, `addNote`, sync, and media/audio export remain unimplemented. Follow-up slices are documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`.
+- Real desktop Anki add-note runtime validation is not verified; automated probes mock added/duplicate/error states. Sync and media/audio export remain unimplemented. Follow-up slices are documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`.
 - No sync implementation.
 - No settings or appearance panel.
 - No verified app-owned cover thumbnail cache.

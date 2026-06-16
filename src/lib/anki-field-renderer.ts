@@ -1,5 +1,5 @@
 import { frequencyLabel, pitchLabel } from "./lookup-popup";
-import type { AnkiFieldMapping, AnkiFieldPreview, AnkiSettings, LookupAnkiPayload } from "./types";
+import type { AnkiFieldMapping, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, LookupAnkiPayload } from "./types";
 
 const TOKEN_PATTERN = /\{([a-z0-9-]+)\}/gi;
 
@@ -51,6 +51,25 @@ export function renderAnkiFieldPreview(
       value: renderTemplate(template, payload),
     };
   });
+}
+
+export function buildAnkiNoteRequest(
+  payload: LookupAnkiPayload,
+  settings: AnkiSettings | null | undefined,
+): AnkiNoteRequest | null {
+  const noteType = selectedNoteType(settings);
+  if (!settings?.selectedDeck || !noteType) return null;
+  const fields: Record<string, string> = {};
+  for (const preview of renderAnkiFieldPreview(payload, settings)) {
+    fields[preview.field] = preview.value;
+  }
+  return {
+    endpoint: settings.endpoint,
+    deckName: settings.selectedDeck,
+    modelName: noteType.name,
+    fields,
+    tags: ["hoshi-reader"],
+  };
 }
 
 export function renderTemplate(template: string, payload: LookupAnkiPayload): string {
