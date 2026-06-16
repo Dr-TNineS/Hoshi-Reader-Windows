@@ -96,11 +96,16 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - `MK3Fix0213.zip` imports on Windows through a compatibility retry path that skips legacy-encoded media entries, preserves the original manifest title, and loads real lookup results.
   - Final linked validation on 2026-06-12 ran `imports_real_yomitan_zip_and_loads_runtime` against local `MK3Fix0213.zip`: `dict_id=93e8e532b599ba4a`, `term=140821`, `media=0`, and `lookup_results=2`.
   - Lookup responses map compatibility-import internal ASCII titles back to manifest titles for result, glossary, frequency, and pitch source labels.
+- Anki:
+  - Lookup popup still only exposes a disabled Anki boundary affordance and does not create cards.
+  - Bookshelf now has a minimal AnkiConnect readiness/configuration panel for endpoint editing, connection testing, deck/note-type fetch, deck selection, note-type selection, and note field preview.
+  - Rust/Tauri stores Anki settings in app data `anki/settings.json` and restricts AnkiConnect endpoints to localhost/127.0.0.1 HTTP.
+  - `npm run check:anki-connect` covers Anki panel empty/error/connected/ready states, action wiring, selections, field preview, and narrow-window overflow.
 
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata and reading state are still JSON.
-- No real Anki integration; only the frontend payload boundary exists. Windows AnkiConnect alignment and follow-up slices are documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`.
+- No Anki card creation; AnkiConnect readiness/configuration exists, but field mapping, duplicate checks, `addNote`, sync, and media/audio export remain unimplemented. Follow-up slices are documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`.
 - No sync implementation.
 - No settings or appearance panel.
 - No verified app-owned cover thumbnail cache.
@@ -150,6 +155,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Documentation-only changes: `git diff --check`
 - Frontend/type changes: `npm run check`
 - Frontend production build: `npm run build`
+- AnkiConnect panel regression probe: `npm run check:anki-connect`
 - Dictionary management regression probe: `npm run check:dictionary-management`
 - Lookup popup regression probe: `npm run check:lookup-popup`
 - Reader visual regression probe: `npm run check:reader-visual`

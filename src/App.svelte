@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke, isTauri as isTauriRuntime } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-dialog";
+  import AnkiConnectPanel from "./lib/AnkiConnectPanel.svelte";
   import DictionaryManagementPanel from "./lib/DictionaryManagementPanel.svelte";
   import { resolveChapterAssets } from "./lib/epub-assets";
   import LookupPopupContent from "./lib/LookupPopupContent.svelte";
@@ -21,6 +22,8 @@
   } from "./lib/storage";
   import { findChapterIndex, flattenToc } from "./lib/toc";
   import type {
+    AnkiConnectionStatus,
+    AnkiSettings,
     DictImportSummary,
     DictResult,
     DictionaryManifestEntry,
@@ -57,10 +60,17 @@
   let dictionaryListStatus = $state<DictionaryStatus | null>(null);
   let dictionaryListError = $state("");
   let dictionaryBusy = $state(false);
+  let showAnkiPanel = $state(false);
+  let ankiSettings = $state<AnkiSettings | null>(null);
+  let ankiEndpointDraft = $state("http://127.0.0.1:8765");
+  let ankiStatus = $state("");
+  let ankiError = $state("");
+  let ankiBusy = $state(false);
   let bookImportBusy = $state(false);
   let debug = $state("");
   let triedStartup = false;
   let triedDictionaryList = false;
+  let triedAnkiSettings = false;
   let progressSaveVersion = 0;
 
   let tocEntries = $derived(meta ? flattenToc(meta.toc, meta) : []);
@@ -122,6 +132,13 @@
     triedDictionaryList = true;
     if (!isTauriRuntime()) return;
     void refreshDictionaries();
+  });
+
+  $effect(() => {
+    if (triedAnkiSettings) return;
+    triedAnkiSettings = true;
+    if (!isTauriRuntime()) return;
+    void loadAnkiSettings();
   });
 
   function saveProgress(
@@ -344,6 +361,108 @@
     } finally {
       dictionaryBusy = false;
     }
+  }
+
+  function defaultAnkiSettings(): AnkiSettings {
+    return {
+      version: 1,
+      endpoint: "http://127.0.0.1:8765",
+      selectedDeck: null,
+      selectedNoteType: null,
+      decks: [],
+      noteTypes: [],
+      lastFetchedAt: null,
+    };
+  }
+
+  async function loadAnkiSettings() {
+    if (!isTauriRuntime()) {
+      ankiError = "AnkiConnect settings require Tauri runtime.";
+      return;
+    }
+    ankiError = "";
+    try {
+      const settings = await invoke<AnkiSettings>("anki_load_settings");
+      ankiSettings = settings;
+      ankiEndpointDraft = settings.endpoint;
+    } catch (e) {
+      ankiError = String(e);
+    }
+  }
+
+  async function saveAnkiSettings() {
+    if (!isTauriRuntime()) {
+      ankiError = "AnkiConnect settings require Tauri runtime.";
+      return;
+    }
+    if (ankiBusy) return;
+    ankiBusy = true;
+    ankiError = "";
+    try {
+      const next = await invoke<AnkiSettings>("anki_save_settings", {
+        settings: { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft },
+      });
+      ankiSettings = next;
+      ankiEndpointDraft = next.endpoint;
+      ankiStatus = "AnkiConnect settings saved.";
+    } catch (e) {
+      ankiError = String(e);
+    } finally {
+      ankiBusy = false;
+    }
+  }
+
+  async function pingAnkiConnect() {
+    if (!isTauriRuntime()) {
+      ankiError = "AnkiConnect requires Tauri runtime.";
+      return;
+    }
+    if (ankiBusy) return;
+    ankiBusy = true;
+    ankiError = "";
+    try {
+      const status = await invoke<AnkiConnectionStatus>("anki_ping", { endpoint: ankiEndpointDraft });
+      ankiStatus = status.version ? `${status.message} Version ${status.version}.` : status.message;
+      if (!status.ok) ankiError = status.message;
+    } catch (e) {
+      ankiError = String(e);
+    } finally {
+      ankiBusy = false;
+    }
+  }
+
+  async function fetchAnkiConfig() {
+    if (!isTauriRuntime()) {
+      ankiError = "AnkiConnect requires Tauri runtime.";
+      return;
+    }
+    if (ankiBusy) return;
+    ankiBusy = true;
+    ankiError = "";
+    try {
+      const settings = await invoke<AnkiSettings>("anki_fetch_config", { endpoint: ankiEndpointDraft });
+      ankiSettings = settings;
+      ankiEndpointDraft = settings.endpoint;
+      ankiStatus = `Fetched ${settings.decks.length} decks and ${settings.noteTypes.length} note types.`;
+    } catch (e) {
+      ankiError = String(e);
+    } finally {
+      ankiBusy = false;
+    }
+  }
+
+  async function selectAnkiDeck(deck: string) {
+    if (!deck || ankiBusy) return;
+    const next = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft, selectedDeck: deck };
+    ankiSettings = next;
+    await saveAnkiSettings();
+  }
+
+  async function selectAnkiNoteType(noteType: string) {
+    if (!noteType || ankiBusy) return;
+    const next = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft, selectedNoteType: noteType };
+    ankiSettings = next;
+    await saveAnkiSettings();
   }
 
   function closeReaderSelection() {
@@ -770,6 +889,9 @@
           <p class="subtitle">Lightweight Japanese EPUB Reader</p>
         </div>
         <div class="head-actions">
+          <button class="secondary-action" onclick={() => showAnkiPanel = !showAnkiPanel}>
+            Anki
+          </button>
           <button class="secondary-action" onclick={() => showDictionaryManager = !showDictionaryManager}>
             Dictionaries
           </button>
@@ -793,6 +915,22 @@
           onImport={importDictionary}
           onSetEnabled={setDictionaryEnabled}
           onMove={moveDictionary}
+        />
+      {/if}
+
+      {#if showAnkiPanel}
+        <AnkiConnectPanel
+          settings={ankiSettings}
+          endpoint={ankiEndpointDraft}
+          status={ankiStatus}
+          error={ankiError}
+          busy={ankiBusy}
+          onEndpointChange={(endpoint) => ankiEndpointDraft = endpoint}
+          onPing={pingAnkiConnect}
+          onFetch={fetchAnkiConfig}
+          onSave={saveAnkiSettings}
+          onSelectDeck={selectAnkiDeck}
+          onSelectNoteType={selectAnkiNoteType}
         />
       {/if}
 

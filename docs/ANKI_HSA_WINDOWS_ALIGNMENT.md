@@ -4,8 +4,11 @@ Last updated: 2026-06-17
 
 This document evaluates how Hoshi Reader Windows (HSW) should move from the
 current disabled lookup-to-Anki payload boundary toward a Windows-native Anki
-integration. It is read-only planning: no AnkiConnect backend, card creation,
-settings UI, or media export is implemented by this document.
+integration.
+
+Implementation status as of 2026-06-17: Slice 1 readiness/configuration is
+implemented. Card creation, duplicate checks, field mapping, settings beyond the
+minimal Anki panel, and media export are still not implemented.
 
 Do not modify `reference/`, `third_party/hoshidicts`, HSA, Anki, or Yomitan
 from this document.
@@ -17,8 +20,16 @@ from this document.
   data, source book locator, and source chapter.
 - The popup exposes only a disabled `Anki not configured` affordance. It does
   not call any backend and does not pretend card creation is available.
-- There is no Anki settings store, AnkiConnect client, deck/note-type fetch,
-  field mapping UI, duplicate check, card creation, sync, or Anki media export.
+- HSW has a minimal Windows AnkiConnect readiness/configuration path:
+  - Rust/Tauri commands load/save `anki/settings.json` under app data.
+  - `anki_ping` checks a localhost AnkiConnect endpoint without throwing UI
+    errors for normal connection failure.
+  - `anki_fetch_config` fetches deck names, note types, and note fields through
+    AnkiConnect v6 and persists selected deck/note type.
+  - The bookshelf Anki panel can edit endpoint, test connection, fetch config,
+    and select deck/note type.
+- There is no field mapping UI, duplicate check, card creation, sync, or Anki
+  media export.
 - Existing lookup popup probes cover that the disabled Anki boundary remains
   visible/click-safe and cannot be styled away by dictionary CSS.
 
@@ -72,6 +83,8 @@ AnkiConnect as the first backend.
 
 Goal: add Windows AnkiConnect configuration and status without creating cards.
 
+Status: implemented on 2026-06-17.
+
 Key changes:
 
 - Add Rust/Tauri commands for Anki settings load/save, endpoint ping, and deck /
@@ -95,6 +108,7 @@ Validation:
 - `cd src-tauri; cargo check`
 - `npm run check`
 - `npm run build`
+- `npm run check:anki-connect`
 - Manual AnkiConnect ping/fetch with desktop Anki open.
 
 ### Slice 2: Field Mapping And Preview

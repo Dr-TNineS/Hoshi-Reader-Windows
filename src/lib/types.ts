@@ -159,3 +159,28 @@ export interface DictionaryManifestEntry {
   mediaCount: number;
   lastImported: number;
 }
+
+export interface AnkiDeck {
+  name: string;
+}
+
+export interface AnkiNoteType {
+  name: string;
+  fields: string[];
+}
+
+export interface AnkiSettings {
+  version: number;
+  endpoint: string;
+  selectedDeck: string | null;
+  selectedNoteType: string | null;
+  decks: AnkiDeck[];
+  noteTypes: AnkiNoteType[];
+  lastFetchedAt: number | null;
+}
+
+export interface AnkiConnectionStatus {
+  ok: boolean;
+  message: string;
+  version: number | null;
+}

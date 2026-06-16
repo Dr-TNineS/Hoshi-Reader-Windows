@@ -1,4 +1,5 @@
 import { mount } from "svelte";
+import AnkiConnectProbe from "./lib/AnkiConnectProbe.svelte";
 import App from "./App.svelte";
 import DictionaryManagementProbe from "./lib/DictionaryManagementProbe.svelte";
 import LookupPopupProbe from "./lib/LookupPopupProbe.svelte";
@@ -7,6 +8,8 @@ import ReaderVisualProbe from "./lib/reader/ReaderVisualProbe.svelte";
 const params = new URLSearchParams(window.location.search);
 const Component = params.has("readerVisualProbe")
   ? ReaderVisualProbe
+  : params.has("ankiConnectProbe")
+    ? AnkiConnectProbe
   : params.has("dictionaryManagementProbe")
     ? DictionaryManagementProbe
   : params.has("lookupPopupProbe")

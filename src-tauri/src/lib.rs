@@ -1,3 +1,4 @@
+mod anki;
 mod dict;
 mod epub;
 mod library;
@@ -37,6 +38,10 @@ pub fn run() {
             dict::commands::dictionary_set_order,
             dict::commands::dict_lookup,
             dict::commands::dict_status,
+            anki::anki_load_settings,
+            anki::anki_save_settings,
+            anki::anki_ping,
+            anki::anki_fetch_config,
         ])
         .setup(|app| {
             app.state::<DictState>().initialize(app.handle());

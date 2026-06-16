@@ -28,9 +28,9 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Dictionary management UI coverage now has a minimal automated probe for empty/loading/error/ready states, counts, enable/order controls, actions, and narrow-window overflow.
    - Bookshelf/import hardening is complete for staged EPUB imports, duplicate EPUB reuse, missing app-owned EPUB errors, dictionary replacement preservation, import busy guards, and bookshelf Forget cleanup.
    - Final linked real dictionary validation with local `MK3Fix0213.zip` passed on 2026-06-12: `dict_id=93e8e532b599ba4a`, `term=140821`, `media=0`, `lookup_results=2`.
-   - Anki HSA/Windows alignment is documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`; next Anki work should start with the AnkiConnect readiness/configuration slice.
+   - Anki HSA/Windows alignment is documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`; AnkiConnect readiness/configuration is implemented and covered by `npm run check:anki-connect`.
 2. Treat the storage/model migration as complete at the JSON-store level: reading progress, recent books, and session now live in Tauri app data `reading/state.json`, with one-time legacy `localStorage` import and browser fallback.
-3. Next recommended product area: AnkiConnect readiness/configuration, while preserving the lookup popup payload boundary described in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`.
+3. Next recommended product area: Anki field mapping/template preview, while preserving the lookup popup payload boundary described in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`.
 4. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 5. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
 
@@ -44,6 +44,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
 - Documentation-only changes: `git diff --check`
 - Frontend changes: `npm run check`
 - Frontend production changes: `npm run build`
+- AnkiConnect panel probe changes: `npm run check:anki-connect`
 - Dictionary management probe changes: `npm run check:dictionary-management`
 - Lookup popup probe changes: `npm run check:lookup-popup`
 - Reader visual probe changes: `npm run check:reader-visual`
