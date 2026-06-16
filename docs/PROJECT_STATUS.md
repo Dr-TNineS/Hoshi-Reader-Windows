@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Project Status
 
-Last updated: 2026-06-16
+Last updated: 2026-06-17
 
 This file records current implementation facts for `hoshi-reader-windows`. It is not an agent rule file, product roadmap, or substitute for checking the current code.
 
@@ -100,7 +100,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata and reading state are still JSON.
-- No real Anki integration; only the frontend payload boundary exists.
+- No real Anki integration; only the frontend payload boundary exists. Windows AnkiConnect alignment and follow-up slices are documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`.
 - No sync implementation.
 - No settings or appearance panel.
 - No verified app-owned cover thumbnail cache.
