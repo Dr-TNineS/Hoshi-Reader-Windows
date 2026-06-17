@@ -55,7 +55,7 @@ shared iframe-based popup system:
   `https://appassets.androidplatform.net/image?dictionary=...&path=...` and
   the legacy `image://` scheme. It supports png, jpeg, gif, webp, avif, heic,
   and svg mime types.
-- `popup.js` is a rich Yomitan-derived renderer. It groups glossaries by
+- HSA's popup renderer is the behavior reference for HSW. It groups glossaries by
   dictionary, renders furigana, tags, pitch/frequency, structured content,
   dictionary media images, dictionary-specific CSS, collapsed dictionaries,
   compact glossary modes, action buttons, popup tap selection, lookup redirects,
@@ -152,7 +152,7 @@ Key changes:
 - Expand `DictResult` frontend shape only as needed to represent HSA-style
   glossary metadata: dictionary name, content, definition tags, term tags,
   rules, frequencies, pitches.
-- Improve `renderGlossaryContent(...)` for HSA/Yomitan structured content:
+- Improve `renderGlossaryContent(...)` for HSA structured glossary behavior:
   tables, forms tables, ruby, image placeholders, inline/block tags, data
   attributes, title/lang, and safe links.
 - Group glossary entries by dictionary and render dictionary headers/details

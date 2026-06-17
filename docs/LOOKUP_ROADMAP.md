@@ -157,6 +157,6 @@ Tests:
 - Implement manifest/config first, then result shape, then popup UX.
 - The current machine may not have CMake/C++ toolchain. Real hoshidicts lookup and zip import end-to-end validation requires a suitable toolchain and a real dictionary zip.
 - The default local hoshidicts checkout path is `third_party/hoshidicts`; `HSW_HOSHIDICTS_DIR` may override it.
-- Do not modify HSA, `hoshidicts`, `hibiki-windows-x64`, or `yomitan`.
+- Do not modify HSA, `hoshidicts`, or `hibiki-windows-x64`.
 - Do not automatically scan user disks, migrate old dictionary paths, or delete user data.
 - Do not implement settings, sync, actual Anki card creation, Sasayaki/audio, or Android-only features in these slices.

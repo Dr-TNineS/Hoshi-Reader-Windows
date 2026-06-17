@@ -4,7 +4,7 @@
 
 The reader lookup implementation slices are complete. The next phase is to verify the real hoshidicts path end to end with local CMake/C++ tooling, a real Yomitan dictionary zip, and the Tauri runtime.
 
-This plan only covers validation and minimal HSW fixes discovered by validation. Do not modify `reference/`, `third_party/hoshidicts/`, HSA, yomitan, settings, sync, Anki card creation, audio, release packaging, or broad reader UI.
+This plan only covers validation and minimal HSW fixes discovered by validation. Do not modify `reference/`, `third_party/hoshidicts`, HSA, settings, sync, Anki card creation, audio, release packaging, or broad reader UI.
 
 ## Progress
 

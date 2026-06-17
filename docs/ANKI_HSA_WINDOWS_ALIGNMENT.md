@@ -7,15 +7,14 @@ current disabled lookup-to-Anki payload boundary toward a Windows-native Anki
 integration.
 
 Implementation status as of 2026-06-18: Slice 1 readiness/configuration,
-Slice 2 field mapping/preview, and Slice 3 minimal duplicate-check/add-note
-plumbing are implemented. Real desktop Anki runtime add-note validation passed
-against AnkiConnect v6 on localhost. Settings beyond the minimal Anki panel and
-Rust `storeMediaFile` support is implemented, but add-note media integration is
-still not implemented. The first media-export scope is tracked in
-`docs/ANKI_MEDIA_EXPORT_PLAN.md`.
+Slice 2 field mapping/preview, Slice 3 minimal duplicate-check/add-note
+plumbing, dictionary image media export, and word-audio settings boundary are
+implemented. Real desktop Anki runtime add-note validation passed against
+AnkiConnect v6 on localhost. Follow-up media/audio work is tracked in
+`docs/ANKI_MEDIA_EXPORT_PLAN.md` and `docs/ANKI_AUDIO_SYNC_PLAN.md`.
 
-Do not modify `reference/`, `third_party/hoshidicts`, HSA, Anki, or Yomitan
-from this document.
+Do not modify `reference/`, `third_party/hoshidicts`, HSA, or Anki from this
+document.
 
 ## Current HSW State
 

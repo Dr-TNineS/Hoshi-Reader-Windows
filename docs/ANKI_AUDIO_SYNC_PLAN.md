@@ -23,9 +23,7 @@ Sasayaki audio, and sync are not implemented.
   media-bearing Yomitan dictionary is not verified because no suitable local
   dictionary zip is available.
 
-## Reference Summary
-
-### HSA
+## HSA Reference Summary
 
 - HSA exposes Anki media through the backend boundary:
   `addMediaFromUri`, `addMediaFromBytes`, and `sync`.
@@ -37,15 +35,6 @@ Sasayaki audio, and sync are not implemented.
   export clipped cue audio for Anki, but it depends on playback metadata, cue
   matching, and Android Media3 export machinery.
 - HSA force-sync runs only after a successful note add.
-
-### Yomitan
-
-- Yomitan injects note media before note creation and returns filenames plus
-  errors for optional media.
-- Word audio download uses configured sources, validates audio, stores it with
-  AnkiConnect `storeMediaFile`, and renders Anki audio as `[sound:filename]`.
-- Media failures are collected as non-fatal errors when possible; missing audio
-  should not block text note creation.
 
 ## Windows Direction
 

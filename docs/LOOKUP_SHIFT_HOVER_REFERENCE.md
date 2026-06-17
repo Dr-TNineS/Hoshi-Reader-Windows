@@ -141,7 +141,7 @@ Hibiki's popup renderer is much richer than HSW's current `LookupPopupContent.sv
 Important behaviors to reference, but not wholesale copy:
 
 - Group entries by dictionary/result structure.
-- Render structured glossary content with Yomitan-like tag handling.
+- Render structured glossary content according to HSA structured glossary behavior.
 - Wrap structured-content tables in a scrollable table container.
 - Preserve dictionary-provided styles carefully.
 - Keep popup content internally scrollable.
