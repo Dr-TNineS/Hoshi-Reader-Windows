@@ -86,15 +86,19 @@
       selectedDeck: "Mining",
       selectedNoteType: "Hoshi Vocabulary",
       decks: [{ name: "Mining" }],
-      noteTypes: [{ name: "Hoshi Vocabulary", fields: ["Expression", "Meaning", "Media", "Frequency", "Pitch", "Unknown"] }],
+      noteTypes: [{ name: "Hoshi Vocabulary", fields: ["Expression", "Meaning", "Media", "Audio", "Frequency", "Pitch", "Unknown"] }],
       fieldMappings: [
         { field: "Expression", template: "{expression} / {reading}" },
         { field: "Meaning", template: "{glossary-first}" },
         { field: "Media", template: "{dictionary-media}" },
+        { field: "Audio", template: "{audio}" },
         { field: "Frequency", template: "{frequencies}" },
         { field: "Pitch", template: "{pitch-accent-positions}" },
         { field: "Unknown", template: "before{not-a-token}after" },
       ],
+      audioEnabled: true,
+      audioSources: [{ name: "Probe Audio", url: "https://example.invalid/audio?term={term}&reading={reading}", enabled: true }],
+      audioDownloadTimeoutMs: 5000,
       lastFetchedAt: 1780000000000,
     }
     : null;

@@ -98,6 +98,8 @@ function tokenValue(token: string, payload: LookupAnkiPayload): string {
       return pitchLabel({ pitches: payload.pitches } as Parameters<typeof pitchLabel>[0]);
     case "dictionary-media":
       return renderDictionaryMedia(payload.media);
+    case "audio":
+      return "";
     default:
       return "";
   }
@@ -163,6 +165,7 @@ function defaultTemplateForField(field: string): string {
   if (["frequency", "frequencies", "freq"].includes(normalized)) return "{frequencies}";
   if (["pitch", "pitchaccent", "pitchaccentpositions"].includes(normalized)) return "{pitch-accent-positions}";
   if (["media", "image", "images", "picture", "pictures", "dictionarymedia"].includes(normalized)) return "{dictionary-media}";
+  if (["audio", "sound", "wordaudio", "expressionaudio"].includes(normalized)) return "{audio}";
   return "";
 }
 

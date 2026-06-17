@@ -191,7 +191,9 @@ image media reference extraction, `{dictionary-media}` preview, Rust
 `storeMediaFile` support, and add-note media integration are implemented. Rust
 store-media runtime validation passed; combined add-note-plus-media validation
 with a real media-bearing dictionary is not verified. Audio and sync follow-up
-slices are planned in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
+slices are planned in `docs/ANKI_AUDIO_SYNC_PLAN.md`; the word-audio settings
+and `{audio}` preview boundary are implemented, but audio download/storage is
+not implemented.
 
 Deferred items:
 

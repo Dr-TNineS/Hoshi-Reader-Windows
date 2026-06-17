@@ -40,6 +40,14 @@ pub struct AnkiFieldMapping {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct AnkiAudioSource {
+    pub name: String,
+    pub url: String,
+    pub enabled: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct AnkiSettings {
     pub version: u32,
     pub endpoint: String,
@@ -49,6 +57,12 @@ pub struct AnkiSettings {
     pub note_types: Vec<AnkiNoteType>,
     #[serde(default)]
     pub field_mappings: Vec<AnkiFieldMapping>,
+    #[serde(default)]
+    pub audio_enabled: bool,
+    #[serde(default = "default_audio_sources")]
+    pub audio_sources: Vec<AnkiAudioSource>,
+    #[serde(default = "default_audio_download_timeout_ms")]
+    pub audio_download_timeout_ms: u32,
     pub last_fetched_at: Option<u64>,
 }
 
@@ -62,6 +76,9 @@ impl Default for AnkiSettings {
             decks: Vec::new(),
             note_types: Vec::new(),
             field_mappings: Vec::new(),
+            audio_enabled: false,
+            audio_sources: default_audio_sources(),
+            audio_download_timeout_ms: default_audio_download_timeout_ms(),
             last_fetched_at: None,
         }
     }
@@ -184,7 +201,7 @@ pub fn anki_fetch_config(endpoint: String, app: AppHandle) -> Result<AnkiSetting
         selected_note_type.as_deref(),
         &note_types,
     );
-    let next = AnkiSettings {
+    let next = normalize_settings(AnkiSettings {
         version: SETTINGS_VERSION,
         endpoint,
         selected_deck,
@@ -192,8 +209,11 @@ pub fn anki_fetch_config(endpoint: String, app: AppHandle) -> Result<AnkiSetting
         decks,
         note_types,
         field_mappings,
+        audio_enabled: current.audio_enabled,
+        audio_sources: current.audio_sources,
+        audio_download_timeout_ms: current.audio_download_timeout_ms,
         last_fetched_at: Some(now_millis()?),
-    };
+    });
     write_settings(&root, &next)?;
     Ok(next)
 }
@@ -293,7 +313,37 @@ fn normalize_settings(mut settings: AnkiSettings) -> AnkiSettings {
         settings.selected_note_type.as_deref(),
         &settings.note_types,
     );
+    settings.audio_sources = normalize_audio_sources(settings.audio_sources);
+    settings.audio_download_timeout_ms = settings.audio_download_timeout_ms.clamp(1000, 30000);
     settings
+}
+
+fn default_audio_sources() -> Vec<AnkiAudioSource> {
+    vec![AnkiAudioSource {
+        name: "Default".into(),
+        url: String::new(),
+        enabled: false,
+    }]
+}
+
+fn default_audio_download_timeout_ms() -> u32 {
+    5000
+}
+
+fn normalize_audio_sources(sources: Vec<AnkiAudioSource>) -> Vec<AnkiAudioSource> {
+    let mut normalized: Vec<AnkiAudioSource> = sources
+        .into_iter()
+        .map(|source| AnkiAudioSource {
+            name: source.name.trim().into(),
+            url: source.url.trim().into(),
+            enabled: source.enabled,
+        })
+        .filter(|source| !source.name.is_empty() || !source.url.is_empty())
+        .collect();
+    if normalized.is_empty() {
+        normalized = default_audio_sources();
+    }
+    normalized
 }
 
 fn retain_field_mappings_for_note_type(
@@ -663,6 +713,9 @@ mod tests {
         .unwrap();
         let loaded = read_settings(&root).unwrap();
         assert!(loaded.field_mappings.is_empty());
+        assert!(!loaded.audio_enabled);
+        assert_eq!(loaded.audio_sources, default_audio_sources());
+        assert_eq!(loaded.audio_download_timeout_ms, default_audio_download_timeout_ms());
         let _ = fs::remove_dir_all(root);
     }
 
@@ -689,6 +742,29 @@ mod tests {
         let normalized = normalize_settings(settings);
         assert_eq!(normalized.field_mappings.len(), 1);
         assert_eq!(normalized.field_mappings[0].field, "Front");
+    }
+
+    #[test]
+    fn normalize_settings_trims_audio_sources_and_clamps_timeout() {
+        let settings = AnkiSettings {
+            audio_enabled: true,
+            audio_sources: vec![AnkiAudioSource {
+                name: " Probe ".into(),
+                url: " https://example.invalid/audio?term={term} ".into(),
+                enabled: true,
+            }],
+            audio_download_timeout_ms: 999_999,
+            ..AnkiSettings::default()
+        };
+        let normalized = normalize_settings(settings);
+        assert!(normalized.audio_enabled);
+        assert_eq!(normalized.audio_sources[0].name, "Probe");
+        assert_eq!(
+            normalized.audio_sources[0].url,
+            "https://example.invalid/audio?term={term}"
+        );
+        assert_eq!(normalized.audio_sources[0].enabled, true);
+        assert_eq!(normalized.audio_download_timeout_ms, 30000);
     }
 
     #[test]

@@ -26,6 +26,7 @@
   import type {
     AnkiConnectionStatus,
     AnkiAddNoteResult,
+    AnkiAudioSource,
     AnkiDictionaryMediaRef,
     AnkiNoteRequest,
     AnkiSettings,
@@ -378,8 +379,15 @@
       decks: [],
       noteTypes: [],
       fieldMappings: [],
+      audioEnabled: false,
+      audioSources: defaultAnkiAudioSources(),
+      audioDownloadTimeoutMs: 5000,
       lastFetchedAt: null,
     };
+  }
+
+  function defaultAnkiAudioSources(): AnkiAudioSource[] {
+    return [{ name: "Default", url: "", enabled: false }];
   }
 
   async function loadAnkiSettings() {
@@ -478,6 +486,18 @@
     const base = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft };
     const next = { ...base, fieldMappings: upsertFieldTemplate(base.fieldMappings, field, template) };
     ankiSettings = next;
+    await saveAnkiSettings();
+  }
+
+  async function setAnkiAudioConfig(audioEnabled: boolean, audioSources: AnkiAudioSource[], audioDownloadTimeoutMs: number) {
+    if (ankiBusy) return;
+    const base = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft };
+    ankiSettings = {
+      ...base,
+      audioEnabled,
+      audioSources,
+      audioDownloadTimeoutMs,
+    };
     await saveAnkiSettings();
   }
 
@@ -956,6 +976,7 @@
           onSelectDeck={selectAnkiDeck}
           onSelectNoteType={selectAnkiNoteType}
           onSetFieldTemplate={setAnkiFieldTemplate}
+          onSetAudioConfig={setAnkiAudioConfig}
         />
       {/if}
 

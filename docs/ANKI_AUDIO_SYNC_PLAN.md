@@ -3,8 +3,11 @@
 Last updated: 2026-06-18
 
 This document defines the next Anki scope after text note creation and
-dictionary image media export. It is a planning document only; no audio, sync,
-or Sasayaki implementation is completed by this document.
+dictionary image media export.
+
+Implementation status as of 2026-06-18: Slice 5A word-audio settings and
+`{audio}` preview boundary are implemented. Audio download/storage, local audio,
+Sasayaki audio, and sync are not implemented.
 
 ## Current Baseline
 
@@ -13,6 +16,8 @@ or Sasayaki implementation is completed by this document.
 - HSW can store dictionary image media through AnkiConnect `storeMediaFile`.
 - HSW add-note flow now stores dictionary image media before note creation and
   renders stored filenames into `{dictionary-media}` fields.
+- HSW Anki settings include a minimal word-audio boundary: enable flag, one
+  editable source, download timeout, and `{audio}` template recognition.
 - Real store-media runtime validation passed with a throwaway SVG media file.
 - Real combined add-note-plus-dictionary-media validation with a normal
   media-bearing Yomitan dictionary is not verified because no suitable local
@@ -61,6 +66,8 @@ or Sasayaki implementation is completed by this document.
 
 Goal: add a minimal Windows word-audio configuration boundary without
 downloading or storing audio.
+
+Status: implemented on 2026-06-18.
 
 Key changes:
 
@@ -193,7 +200,6 @@ HSW should first decide whether Sasayaki itself is in scope for Windows.
 
 ## Recommended Next Step
 
-Implement Slice 5A first. It is small, keeps current Anki behavior stable, and
-creates the settings/token boundary needed for remote or local word audio
-without committing to a downloader yet.
-
+Implement Slice 5B next. It should add remote word-audio fetch/store while
+preserving the current behavior where `{audio}` remains empty if no audio is
+resolved.

@@ -12,13 +12,16 @@
     selectedNoteType: "Basic",
     decks: [{ name: "Mining" }, { name: "Japanese::Reading" }],
     noteTypes: [
-      { name: "Basic", fields: ["Front", "Back"] },
-      { name: "Hoshi Vocabulary", fields: ["Expression", "Reading", "Glossary", "Sentence"] },
+      { name: "Basic", fields: ["Front", "Back", "Audio"] },
+      { name: "Hoshi Vocabulary", fields: ["Expression", "Reading", "Glossary", "Sentence", "ExpressionAudio"] },
     ],
     fieldMappings: [
       { field: "Front", template: "{expression}" },
       { field: "Back", template: "{glossary-first}" },
     ],
+    audioEnabled: false,
+    audioSources: [{ name: "Default", url: "", enabled: false }],
+    audioDownloadTimeoutMs: 5000,
     lastFetchedAt: 1780000000000,
   };
 
@@ -30,6 +33,7 @@
   let deckEvents = $state<string[]>([]);
   let noteTypeEvents = $state<string[]>([]);
   let fieldTemplateEvents = $state<string[]>([]);
+  let audioEvents = $state<string[]>([]);
 
   function selectDeck(deck: string) {
     deckEvents = [...deckEvents, deck];
@@ -52,6 +56,17 @@
       ],
     };
   }
+
+  function setAudioConfig(audioEnabled: boolean, audioSources: AnkiSettings["audioSources"], timeoutMs: number) {
+    audioEvents = [...audioEvents, `${audioEnabled}:${audioSources[0]?.name ?? ""}:${audioSources[0]?.url ?? ""}:${timeoutMs}`];
+    if (!settings) return;
+    settings = {
+      ...settings,
+      audioEnabled,
+      audioSources,
+      audioDownloadTimeoutMs: timeoutMs,
+    };
+  }
 </script>
 
 <main class="probe">
@@ -68,6 +83,7 @@
     onSelectDeck={selectDeck}
     onSelectNoteType={selectNoteType}
     onSetFieldTemplate={setFieldTemplate}
+    onSetAudioConfig={setAudioConfig}
   />
   <div
     class="probe-state"
@@ -78,9 +94,14 @@
     data-deck-events={deckEvents.join(",")}
     data-note-type-events={noteTypeEvents.join(",")}
     data-field-template-events={fieldTemplateEvents.join(",")}
+    data-audio-events={audioEvents.join("|")}
     data-selected-deck={settings?.selectedDeck ?? ""}
     data-selected-note-type={settings?.selectedNoteType ?? ""}
     data-field-mappings={settings?.fieldMappings.map((mapping) => `${mapping.field}:${mapping.template}`).join("|") ?? ""}
+    data-audio-enabled={settings?.audioEnabled ? "true" : "false"}
+    data-audio-source={settings?.audioSources[0]?.name ?? ""}
+    data-audio-url={settings?.audioSources[0]?.url ?? ""}
+    data-audio-timeout={settings?.audioDownloadTimeoutMs ?? 0}
     aria-hidden="true"
   ></div>
 </main>

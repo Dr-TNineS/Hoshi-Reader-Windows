@@ -205,6 +205,9 @@ export interface AnkiSettings {
   decks: AnkiDeck[];
   noteTypes: AnkiNoteType[];
   fieldMappings: AnkiFieldMapping[];
+  audioEnabled: boolean;
+  audioSources: AnkiAudioSource[];
+  audioDownloadTimeoutMs: number;
   lastFetchedAt: number | null;
 }
 
@@ -217,6 +220,12 @@ export interface AnkiConnectionStatus {
 export interface AnkiFieldMapping {
   field: string;
   template: string;
+}
+
+export interface AnkiAudioSource {
+  name: string;
+  url: string;
+  enabled: boolean;
 }
 
 export interface AnkiFieldPreview {

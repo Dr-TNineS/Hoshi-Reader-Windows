@@ -64,9 +64,14 @@ async function panelMetrics(page) {
       deckEvents: state?.getAttribute("data-deck-events") ?? "",
       noteTypeEvents: state?.getAttribute("data-note-type-events") ?? "",
       fieldTemplateEvents: state?.getAttribute("data-field-template-events") ?? "",
+      audioEvents: state?.getAttribute("data-audio-events") ?? "",
       selectedDeck: state?.getAttribute("data-selected-deck") ?? "",
       selectedNoteType: state?.getAttribute("data-selected-note-type") ?? "",
       fieldMappings: state?.getAttribute("data-field-mappings") ?? "",
+      audioEnabled: state?.getAttribute("data-audio-enabled") ?? "",
+      audioSource: state?.getAttribute("data-audio-source") ?? "",
+      audioUrl: state?.getAttribute("data-audio-url") ?? "",
+      audioTimeout: Number(state?.getAttribute("data-audio-timeout") ?? 0),
       horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
       panel: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom },
       viewport: { width: window.innerWidth, height: window.innerHeight },
@@ -108,6 +113,7 @@ async function main() {
     assert(metrics.text.includes("Mining"), "Ready panel should show deck names.", metrics);
     assert(metrics.text.includes("Basic"), "Ready panel should show note type names.", metrics);
     assert(metrics.text.includes("Front") && metrics.text.includes("Back"), "Ready panel should show note fields.", metrics);
+    assert(metrics.text.includes("Word Audio") && metrics.text.includes("Audio export disabled"), "Ready panel should expose word audio settings boundary.", metrics);
     assert(metrics.fieldMappings.includes("Front:{expression}") && metrics.fieldMappings.includes("Back:{glossary-first}"), "Ready panel should expose saved field templates.", metrics);
 
     await page.getByLabel("Endpoint").fill("http://localhost:8765");
@@ -116,6 +122,13 @@ async function main() {
     await page.getByRole("button", { name: "Save" }).click();
     await page.locator(".field-template-row").filter({ hasText: "Back" }).locator("input").fill("{glossary}");
     await page.locator(".field-template-row").filter({ hasText: "Back" }).locator("input").blur();
+    await page.getByLabel("Enable").check();
+    await page.getByLabel("Source Name").fill("Probe Audio");
+    await page.getByLabel("Source Name").blur();
+    await page.getByLabel("Audio URL Template").fill("https://example.invalid/audio?term={term}&reading={reading}");
+    await page.getByLabel("Audio URL Template").blur();
+    await page.getByLabel("Timeout Ms").fill("7000");
+    await page.getByLabel("Timeout Ms").blur();
     await page.getByLabel("Deck").selectOption("Japanese::Reading");
     await page.getByLabel("Note Type").selectOption("Hoshi Vocabulary");
     metrics = await panelMetrics(page);
@@ -125,6 +138,10 @@ async function main() {
     assert(metrics.noteTypeEvents.includes("Hoshi Vocabulary"), "Note type select should emit selected note type.", metrics);
     assert(metrics.fieldTemplateEvents.includes("Back:{glossary}"), "Field template edits should emit the field and template.", metrics);
     assert(metrics.fieldMappings.includes("Back:{glossary}"), "Field template edits should update visible state.", metrics);
+    assert(metrics.audioEnabled === "true", "Audio enable checkbox should update visible state.", metrics);
+    assert(metrics.audioSource === "Probe Audio", "Audio source name should update visible state.", metrics);
+    assert(metrics.audioUrl.includes("{term}") && metrics.audioTimeout === 7000, "Audio URL and timeout should update visible state.", metrics);
+    assert(metrics.audioEvents.includes("true:"), "Audio settings edits should emit changes.", metrics);
     assert(metrics.selectedDeck === "Japanese::Reading", "Deck select should update visible state.", metrics);
     assert(metrics.selectedNoteType === "Hoshi Vocabulary", "Note type select should update visible state.", metrics);
 

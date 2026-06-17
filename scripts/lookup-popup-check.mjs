@@ -235,13 +235,14 @@ async function main() {
     await page.getByRole("button", { name: "Preview fields" }).click();
     const ankiPreview = await popupMetrics(page);
     assert(!ankiPreview.ankiDisabled, "Configured Anki preview action should be enabled.", ankiPreview);
-    assert(ankiPreview.ankiPreviewRows === 6, "Anki preview should render configured note fields.", ankiPreview);
+    assert(ankiPreview.ankiPreviewRows === 7, "Anki preview should render configured note fields.", ankiPreview);
     assert(ankiPreview.text.includes("Mining") && ankiPreview.text.includes("Hoshi Vocabulary"), "Anki preview should show selected deck and note type.", ankiPreview);
     assert(ankiPreview.text.includes("school / school"), "Anki preview should render expression and reading tokens.", ankiPreview);
     assert(ankiPreview.text.includes("school; a place of study") || ankiPreview.text.includes("structured-content"), "Anki preview should render glossary tokens.", ankiPreview);
     assert(ankiPreview.text.includes("<img src=\"hsw_") && ankiPreview.text.includes("school icon"), "Anki preview should render dictionary media placeholders.", ankiPreview);
     assert(ankiPreview.text.includes("Freq Probe: 120"), "Anki preview should render frequency tokens.", ankiPreview);
     assert(ankiPreview.text.includes("Pitch Probe: pitch 0, 2"), "Anki preview should render pitch tokens.", ankiPreview);
+    assert(ankiPreview.text.includes("Word audio token present"), "Anki preview should expose the word-audio boundary.", ankiPreview);
     assert(ankiPreview.text.includes("beforeafter"), "Unknown Anki handlebars should render empty.", ankiPreview);
     assert(ankiPreview.ankiAddCount === 0, "Previewing fields should not add an Anki note.", ankiPreview);
 
@@ -252,6 +253,7 @@ async function main() {
     assert(ankiAdded.ankiLastMedia.length === 1 && ankiAdded.ankiLastMedia[0].filename.startsWith("hsw_"), "Stored media request should use deterministic HSW filenames.", ankiAdded);
     assert(ankiAdded.ankiLastDeck === "Mining" && ankiAdded.ankiLastModel === "Hoshi Vocabulary", "Add Anki should send selected deck and note type.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Expression === "school / school", "Add Anki should send rendered field values.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.Audio === "", "Add Anki should keep audio fields empty until audio export is implemented.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Media.includes("<img src=\"stored_hsw_") && ankiAdded.ankiLastFields.Media.includes(".svg"), "Add Anki should include stored dictionary media filenames.", ankiAdded);
     assert(ankiAdded.text.includes("Added Anki note 4242."), "Added state should show the Anki note id message.", ankiAdded);
 

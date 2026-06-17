@@ -1,6 +1,6 @@
 <script lang="ts">
   import { effectiveTemplateForField } from "./anki-field-renderer";
-  import type { AnkiSettings } from "./types";
+  import type { AnkiAudioSource, AnkiSettings } from "./types";
 
   let {
     settings = null,
@@ -15,6 +15,7 @@
     onSelectDeck = (_deck: string) => {},
     onSelectNoteType = (_noteType: string) => {},
     onSetFieldTemplate = (_field: string, _template: string) => {},
+    onSetAudioConfig = (_enabled: boolean, _sources: AnkiAudioSource[], _timeoutMs: number) => {},
   }: {
     settings?: AnkiSettings | null;
     endpoint?: string;
@@ -28,6 +29,7 @@
     onSelectDeck?: (deck: string) => void;
     onSelectNoteType?: (noteType: string) => void;
     onSetFieldTemplate?: (field: string, template: string) => void;
+    onSetAudioConfig?: (enabled: boolean, sources: AnkiAudioSource[], timeoutMs: number) => void;
   } = $props();
 
   const selectedNote = $derived(
@@ -39,6 +41,28 @@
     const date = new Date(timestamp);
     if (Number.isNaN(date.getTime())) return "Fetch time unknown";
     return `Fetched ${date.toLocaleString()}`;
+  }
+
+  function audioSource(): AnkiAudioSource {
+    return settings?.audioSources[0] ?? { name: "Default", url: "", enabled: false };
+  }
+
+  function updateAudioSource(patch: Partial<AnkiAudioSource>) {
+    const source = { ...audioSource(), ...patch };
+    onSetAudioConfig(Boolean(settings?.audioEnabled), [source], settings?.audioDownloadTimeoutMs ?? 5000);
+  }
+
+  function updateAudioEnabled(enabled: boolean) {
+    onSetAudioConfig(enabled, [{ ...audioSource(), enabled }], settings?.audioDownloadTimeoutMs ?? 5000);
+  }
+
+  function updateAudioTimeout(value: string) {
+    const timeout = Number(value);
+    onSetAudioConfig(
+      Boolean(settings?.audioEnabled),
+      [audioSource()],
+      Number.isFinite(timeout) ? Math.max(1000, Math.min(30000, Math.round(timeout))) : 5000,
+    );
   }
 </script>
 
@@ -130,6 +154,59 @@
     {/if}
   </div>
 
+  <div class="audio-row">
+    <div class="audio-head">
+      <div>
+        <p class="fields-title">Word Audio</p>
+        <p class="audio-summary">
+          {settings?.audioEnabled ? "Audio token boundary enabled" : "Audio export disabled"}
+        </p>
+      </div>
+      <label class="audio-toggle">
+        <input
+          type="checkbox"
+          checked={settings?.audioEnabled ?? false}
+          disabled={busy}
+          onchange={(event) => updateAudioEnabled(event.currentTarget.checked)}
+        />
+        <span>Enable</span>
+      </label>
+    </div>
+    <div class="audio-grid">
+      <label class="select-row">
+        <span>Source Name</span>
+        <input
+          value={audioSource().name}
+          disabled={busy}
+          spellcheck="false"
+          onchange={(event) => updateAudioSource({ name: event.currentTarget.value })}
+        />
+      </label>
+      <label class="select-row">
+        <span>Timeout Ms</span>
+        <input
+          type="number"
+          min="1000"
+          max="30000"
+          step="500"
+          value={settings?.audioDownloadTimeoutMs ?? 5000}
+          disabled={busy}
+          onchange={(event) => updateAudioTimeout(event.currentTarget.value)}
+        />
+      </label>
+    </div>
+    <label class="endpoint-row">
+      <span>Audio URL Template</span>
+      <input
+        value={audioSource().url}
+        disabled={busy}
+        spellcheck="false"
+        placeholder={`https://example.invalid/audio?term={term}&reading={reading}`}
+        onchange={(event) => updateAudioSource({ url: event.currentTarget.value })}
+      />
+    </label>
+  </div>
+
   <p class="fetched-at">{fetchedLabel(settings?.lastFetchedAt)}</p>
 </section>
 
@@ -142,12 +219,18 @@
   .compact-action:hover:not(:disabled) { background: #3a3d41; }
   .compact-action:disabled { color: #747a80; cursor: default; }
   .endpoint-row, .select-row { min-width: 0; display: flex; flex-direction: column; gap: 5px; color: #9aa0a6; font-size: 11px; text-transform: uppercase; }
-  .endpoint-row input, .select-row select { width: 100%; min-width: 0; padding: 7px 8px; background: #202124; color: #f1f3f4; border: 1px solid #555c64; border-radius: 4px; font-size: 13px; text-transform: none; }
-  .endpoint-row input:disabled, .select-row select:disabled { color: #747a80; }
+  .endpoint-row input, .select-row input, .select-row select { width: 100%; min-width: 0; padding: 7px 8px; background: #202124; color: #f1f3f4; border: 1px solid #555c64; border-radius: 4px; font-size: 13px; text-transform: none; }
+  .endpoint-row input:disabled, .select-row input:disabled, .select-row select:disabled { color: #747a80; }
   .config-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
   .config-grid[aria-busy="true"] { opacity: 0.72; }
   .fields-row { display: flex; flex-direction: column; gap: 7px; }
   .fields-title { color: #9aa0a6; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+  .audio-row { display: flex; flex-direction: column; gap: 8px; padding-top: 2px; }
+  .audio-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
+  .audio-summary { margin-top: 3px; color: #80868b; font-size: 12px; line-height: 1.35; }
+  .audio-toggle { display: inline-flex; align-items: center; gap: 6px; color: #d7d9dc; font-size: 12px; }
+  .audio-toggle input { width: 14px; height: 14px; accent-color: #3b8f78; }
+  .audio-grid { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 10px; }
   .field-template-list { display: flex; flex-direction: column; gap: 7px; }
   .field-template-row { min-width: 0; display: grid; grid-template-columns: minmax(90px, 0.32fr) minmax(0, 1fr); align-items: center; gap: 8px; }
   .field-template-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #d8eadf; font-size: 12px; }
@@ -161,6 +244,7 @@
     .anki-actions { width: 100%; }
     .anki-actions button { flex: 1 1 0; }
     .config-grid { grid-template-columns: 1fr; }
+    .audio-grid { grid-template-columns: 1fr; }
     .field-template-row { grid-template-columns: 1fr; gap: 4px; }
   }
 </style>

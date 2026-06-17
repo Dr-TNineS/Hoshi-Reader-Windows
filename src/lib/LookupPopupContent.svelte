@@ -68,6 +68,7 @@
   let ankiActionState = $state<"idle" | "adding" | "added" | "duplicate" | "error">("idle");
   let ankiActionMessage = $state("");
   let ankiMediaWarnings = $state<string[]>([]);
+  let ankiAudioHint = $state("");
   let styleRequestId = 0;
   const styleTag = "style";
   const canPreviewAnki = $derived(isAnkiPreviewConfigured(ankiSettings) && Boolean(buildAnkiPayload));
@@ -115,6 +116,7 @@
       ankiActionState = "idle";
       ankiActionMessage = "";
       ankiMediaWarnings = [];
+      ankiAudioHint = "";
       return;
     }
 
@@ -293,10 +295,13 @@
     if (ankiPreviewKey === key) {
       ankiPreviewKey = "";
       ankiPreviewFields = [];
+      ankiAudioHint = "";
       return;
     }
     ankiPreviewKey = key;
-    ankiPreviewFields = renderAnkiFieldPreview(buildAnkiPayload(result, resultIndex), ankiSettings);
+    const payload = buildAnkiPayload(result, resultIndex);
+    ankiPreviewFields = renderAnkiFieldPreview(payload, ankiSettings);
+    ankiAudioHint = audioBoundaryHint(payload, ankiPreviewFields);
   }
 
   async function addAnki(result: DictResult, resultIndex: number) {
@@ -306,6 +311,7 @@
 
     ankiPreviewKey = key;
     ankiPreviewFields = renderAnkiFieldPreview(payload, ankiSettings);
+    ankiAudioHint = audioBoundaryHint(payload, ankiPreviewFields);
     ankiActionKey = key;
     ankiActionState = "adding";
     ankiActionMessage = "Adding note...";
@@ -318,6 +324,7 @@
         : payload;
       ankiMediaWarnings = storeResult?.warnings ?? [];
       ankiPreviewFields = renderAnkiFieldPreview(notePayload, ankiSettings);
+      ankiAudioHint = audioBoundaryHint(notePayload, ankiPreviewFields);
       const note = buildAnkiNoteRequest(notePayload, ankiSettings);
       if (!note) return;
       const result = await onAddAnkiNote(note);
@@ -334,6 +341,14 @@
   async function storeAnkiMediaForPayload(payload: LookupAnkiPayload): Promise<AnkiStoreMediaResult | null> {
     if (!onStoreAnkiMedia || payload.media.length === 0) return null;
     return onStoreAnkiMedia(ankiDictionaryMediaRefs(payload.media));
+  }
+
+  function audioBoundaryHint(payload: LookupAnkiPayload, fields: AnkiFieldPreview[]): string {
+    if (!fields.some((field) => field.template.toLowerCase().includes("{audio}"))) return "";
+    const source = ankiSettings?.audioSources.find((item) => item.enabled && item.url.trim());
+    if (!ankiSettings?.audioEnabled || !source) return "Word audio token present; no enabled audio source is configured.";
+    if (!payload.expression.trim()) return "Word audio token present; this lookup has no expression to resolve.";
+    return "Word audio token present; audio export will be resolved in a later slice.";
   }
 
   function ankiButtonLabel(result: DictResult, resultIndex: number): string {
@@ -462,6 +477,9 @@
                   <pre>{field.value}</pre>
                 </div>
               {/each}
+              {#if ankiAudioHint}
+                <p class="anki-action-message warn">{ankiAudioHint}</p>
+              {/if}
               {#if ankiActionKey === ankiPreviewKey && ankiActionMessage}
                 <p class:ok={ankiActionState === "added"} class:warn={ankiActionState === "duplicate"} class:bad={ankiActionState === "error"} class="anki-action-message">
                   {ankiActionMessage}
