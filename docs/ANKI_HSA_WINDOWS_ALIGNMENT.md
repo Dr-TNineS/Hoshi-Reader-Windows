@@ -190,7 +190,8 @@ Status: first scope decided in `docs/ANKI_MEDIA_EXPORT_PLAN.md`. Dictionary
 image media reference extraction, `{dictionary-media}` preview, Rust
 `storeMediaFile` support, and add-note media integration are implemented. Rust
 store-media runtime validation passed; combined add-note-plus-media validation
-with a real media-bearing dictionary is not verified.
+with a real media-bearing dictionary is not verified. Audio and sync follow-up
+slices are planned in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
 
 Deferred items:
 

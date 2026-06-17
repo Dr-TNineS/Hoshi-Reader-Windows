@@ -109,6 +109,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Rust `anki_store_dictionary_media` stores imported dictionary image media through AnkiConnect `storeMediaFile`; missing media returns warnings, while unsafe paths and unsupported types are blocked.
   - `npm run check:lookup-popup` covers Anki media store success, missing-media warnings with text-card creation, and hard media-store failure without note creation.
   - Real AnkiConnect store-media runtime validation passed on 2026-06-18 with a throwaway SVG media file.
+  - Anki audio/sync follow-up is planned in `docs/ANKI_AUDIO_SYNC_PLAN.md`; no audio download, local audio, Sasayaki audio, or sync implementation is present.
 
 ## Not Implemented Or Not Verified
 
@@ -181,5 +182,6 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - `docs/REAL_LOOKUP_VALIDATION_PLAN.md`
 - `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`
 - `docs/ANKI_MEDIA_EXPORT_PLAN.md`
+- `docs/ANKI_AUDIO_SYNC_PLAN.md`
 - `docs/READER_ENTRY_CHARACTERIZATION.md`
 - `docs/reader-layout-baseline.md`
