@@ -50,6 +50,7 @@ async function openProbe(page, state, options = {}) {
   if (options.mediaMode) params.set("mediaMode", options.mediaMode);
   if (options.ankiMode) params.set("ankiMode", options.ankiMode);
   if (options.ankiAddMode) params.set("ankiAddMode", options.ankiAddMode);
+  if (options.ankiStoreMode) params.set("ankiStoreMode", options.ankiStoreMode);
   await page.goto(`${origin}/?${params}`);
   await page.locator(".lookup-pop").waitFor({ timeout: 10000 });
 }
@@ -79,6 +80,8 @@ async function popupMetrics(page) {
       rootClearSelectionSignal: Number(state?.getAttribute("data-root-clear-selection-signal") ?? 0),
       topPopupId: state?.getAttribute("data-top-popup-id") ?? "",
       ankiAddCount: Number(state?.getAttribute("data-anki-add-count") ?? 0),
+      ankiStoreCount: Number(state?.getAttribute("data-anki-store-count") ?? 0),
+      ankiLastMedia: JSON.parse(state?.getAttribute("data-anki-last-media") ?? "[]"),
       ankiLastDeck: state?.getAttribute("data-anki-last-deck") ?? "",
       ankiLastModel: state?.getAttribute("data-anki-last-model") ?? "",
       ankiLastFields: JSON.parse(state?.getAttribute("data-anki-last-fields") ?? "{}"),
@@ -245,10 +248,27 @@ async function main() {
     await page.getByRole("button", { name: "Add Anki" }).click();
     const ankiAdded = await popupMetrics(page);
     assert(ankiAdded.ankiAddCount === 1, "Add Anki should call the note creation callback once.", ankiAdded);
+    assert(ankiAdded.ankiStoreCount === 1, "Add Anki should store dictionary media before note creation.", ankiAdded);
+    assert(ankiAdded.ankiLastMedia.length === 1 && ankiAdded.ankiLastMedia[0].filename.startsWith("hsw_"), "Stored media request should use deterministic HSW filenames.", ankiAdded);
     assert(ankiAdded.ankiLastDeck === "Mining" && ankiAdded.ankiLastModel === "Hoshi Vocabulary", "Add Anki should send selected deck and note type.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Expression === "school / school", "Add Anki should send rendered field values.", ankiAdded);
-    assert(ankiAdded.ankiLastFields.Media.includes("<img src=\"hsw_") && ankiAdded.ankiLastFields.Media.includes(".svg"), "Add Anki should include rendered dictionary media placeholders.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.Media.includes("<img src=\"stored_hsw_") && ankiAdded.ankiLastFields.Media.includes(".svg"), "Add Anki should include stored dictionary media filenames.", ankiAdded);
     assert(ankiAdded.text.includes("Added Anki note 4242."), "Added state should show the Anki note id message.", ankiAdded);
+
+    await openProbe(page, "ready", { ankiMode: "configured", ankiStoreMode: "missing" });
+    await page.getByRole("button", { name: "Add Anki" }).click();
+    const ankiMissingMedia = await popupMetrics(page);
+    assert(ankiMissingMedia.ankiStoreCount === 1, "Missing media path should still attempt media storage.", ankiMissingMedia);
+    assert(ankiMissingMedia.ankiAddCount === 1, "Missing media warnings should not block text note creation.", ankiMissingMedia);
+    assert(ankiMissingMedia.ankiLastFields.Media === "", "Missing media should be removed from the final note field.", ankiMissingMedia);
+    assert(ankiMissingMedia.text.includes("Missing probe media:"), "Missing media warnings should be visible in the popup.", ankiMissingMedia);
+
+    await openProbe(page, "ready", { ankiMode: "configured", ankiStoreMode: "error" });
+    await page.getByRole("button", { name: "Add Anki" }).click();
+    const ankiMediaError = await popupMetrics(page);
+    assert(ankiMediaError.ankiStoreCount === 1, "Media store errors should be surfaced after one store attempt.", ankiMediaError);
+    assert(ankiMediaError.ankiAddCount === 0, "Hard media storage errors should stop note creation.", ankiMediaError);
+    assert(ankiMediaError.text.includes("Probe media store failure"), "Media store errors should be visible in the popup.", ankiMediaError);
 
     await openProbe(page, "ready", { ankiMode: "configured", ankiAddMode: "duplicate" });
     await page.getByRole("button", { name: "Add Anki" }).click();

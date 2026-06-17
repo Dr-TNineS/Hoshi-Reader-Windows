@@ -26,8 +26,10 @@
   import type {
     AnkiConnectionStatus,
     AnkiAddNoteResult,
+    AnkiDictionaryMediaRef,
     AnkiNoteRequest,
     AnkiSettings,
+    AnkiStoreMediaResult,
     DictImportSummary,
     DictResult,
     DictionaryManifestEntry,
@@ -572,6 +574,13 @@
     return invoke<AnkiAddNoteResult>("anki_add_note", { note });
   }
 
+  async function storeAnkiMedia(media: AnkiDictionaryMediaRef[]): Promise<AnkiStoreMediaResult> {
+    if (!isTauriRuntime()) throw new Error("Anki media storage requires Tauri runtime.");
+    const endpoint = ankiSettings?.endpoint;
+    if (!endpoint) throw new Error("Anki endpoint is not configured.");
+    return invoke<AnkiStoreMediaResult>("anki_store_dictionary_media", { endpoint, media });
+  }
+
   async function setDictionaryEnabled(dictionary: DictionaryManifestEntry, enabled: boolean) {
     dictionaryBusy = true;
     dictionaryListError = "";
@@ -1016,6 +1025,7 @@
           ankiTitle={(result, resultIndex) => lookupAnkiTitle(popup.selection, result, resultIndex)}
           ankiSettings={ankiSettings}
           buildAnkiPayload={(result, resultIndex) => buildAnkiPayload(popup.selection, result, resultIndex)}
+          onStoreAnkiMedia={storeAnkiMedia}
           onAddAnkiNote={addAnkiNote}
         />
       </aside>

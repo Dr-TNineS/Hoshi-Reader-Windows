@@ -1,9 +1,9 @@
 <script lang="ts">
   import { invoke, isTauri } from "@tauri-apps/api/core";
-  import { buildAnkiNoteRequest, isAnkiPreviewConfigured, renderAnkiFieldPreview } from "./anki-field-renderer";
+  import { ankiDictionaryMediaRefs, buildAnkiNoteRequest, isAnkiPreviewConfigured, payloadWithStoredDictionaryMedia, renderAnkiFieldPreview } from "./anki-field-renderer";
   import { formatLookupMatch, frequencyLabel, glossaryGroups, pitchLabel, renderGlossaryContent, resultDictionaryLabel, ruleTags, scopeDictionaryCss, type LookupState } from "./lookup-popup";
   import { selectPopupTextFromPoint } from "./popup-selection";
-  import type { AnkiAddNoteResult, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
+  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, AnkiStoreMediaResult, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
   let {
     popupId,
@@ -27,6 +27,7 @@
     ankiTitle = () => "Payload prepared for current book",
     ankiSettings = null,
     buildAnkiPayload,
+    onStoreAnkiMedia,
     onAddAnkiNote,
   }: {
     popupId: string;
@@ -50,6 +51,7 @@
     ankiTitle?: (result: DictResult, resultIndex: number) => string;
     ankiSettings?: AnkiSettings | null;
     buildAnkiPayload?: (result: DictResult, resultIndex: number) => LookupAnkiPayload;
+    onStoreAnkiMedia?: (media: AnkiDictionaryMediaRef[]) => Promise<AnkiStoreMediaResult>;
     onAddAnkiNote?: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
   } = $props();
 
@@ -65,6 +67,7 @@
   let ankiActionKey = $state("");
   let ankiActionState = $state<"idle" | "adding" | "added" | "duplicate" | "error">("idle");
   let ankiActionMessage = $state("");
+  let ankiMediaWarnings = $state<string[]>([]);
   let styleRequestId = 0;
   const styleTag = "style";
   const canPreviewAnki = $derived(isAnkiPreviewConfigured(ankiSettings) && Boolean(buildAnkiPayload));
@@ -111,6 +114,7 @@
       ankiActionKey = "";
       ankiActionState = "idle";
       ankiActionMessage = "";
+      ankiMediaWarnings = [];
       return;
     }
 
@@ -299,15 +303,23 @@
     if (!buildAnkiPayload || !canPreviewAnki || !onAddAnkiNote || ankiActionState === "adding") return;
     const key = `${resultIndex}:${result.expression}:${result.reading}`;
     const payload = buildAnkiPayload(result, resultIndex);
-    const note = buildAnkiNoteRequest(payload, ankiSettings);
-    if (!note) return;
 
     ankiPreviewKey = key;
     ankiPreviewFields = renderAnkiFieldPreview(payload, ankiSettings);
     ankiActionKey = key;
     ankiActionState = "adding";
     ankiActionMessage = "Adding note...";
+    ankiMediaWarnings = [];
     try {
+      const storeResult = await storeAnkiMediaForPayload(payload);
+      if (ankiActionKey !== key) return;
+      const notePayload = storeResult
+        ? payloadWithStoredDictionaryMedia(payload, storeResult.stored)
+        : payload;
+      ankiMediaWarnings = storeResult?.warnings ?? [];
+      ankiPreviewFields = renderAnkiFieldPreview(notePayload, ankiSettings);
+      const note = buildAnkiNoteRequest(notePayload, ankiSettings);
+      if (!note) return;
       const result = await onAddAnkiNote(note);
       if (ankiActionKey !== key) return;
       ankiActionState = result.status === "added" ? "added" : "duplicate";
@@ -317,6 +329,11 @@
       ankiActionState = "error";
       ankiActionMessage = String(error);
     }
+  }
+
+  async function storeAnkiMediaForPayload(payload: LookupAnkiPayload): Promise<AnkiStoreMediaResult | null> {
+    if (!onStoreAnkiMedia || payload.media.length === 0) return null;
+    return onStoreAnkiMedia(ankiDictionaryMediaRefs(payload.media));
   }
 
   function ankiButtonLabel(result: DictResult, resultIndex: number): string {
@@ -449,6 +466,11 @@
                 <p class:ok={ankiActionState === "added"} class:warn={ankiActionState === "duplicate"} class:bad={ankiActionState === "error"} class="anki-action-message">
                   {ankiActionMessage}
                 </p>
+              {/if}
+              {#if ankiActionKey === ankiPreviewKey && ankiMediaWarnings.length > 0}
+                {#each ankiMediaWarnings as warning}
+                  <p class="anki-action-message warn">{warning}</p>
+                {/each}
               {/if}
             </section>
           {/if}

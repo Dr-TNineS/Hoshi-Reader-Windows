@@ -103,6 +103,23 @@ export interface LookupAnkiMediaReference {
   filename: string;
 }
 
+export interface AnkiDictionaryMediaRef {
+  dictionary: string;
+  path: string;
+  filename: string;
+}
+
+export interface AnkiStoredMedia {
+  dictionary: string;
+  path: string;
+  filename: string;
+}
+
+export interface AnkiStoreMediaResult {
+  stored: AnkiStoredMedia[];
+  warnings: string[];
+}
+
 export interface LookupAnkiSourceBook {
   title: string | null;
   bookId?: string;

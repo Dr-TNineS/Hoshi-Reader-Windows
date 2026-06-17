@@ -186,14 +186,14 @@ Validation:
 
 Goal: evaluate richer HSA parity only after text card creation is stable.
 
-Status: first scope decided in `docs/ANKI_MEDIA_EXPORT_PLAN.md`. Slice 4A
-dictionary image media reference extraction and `{dictionary-media}` preview are
-implemented. Slice 4B Rust `storeMediaFile` support is implemented and runtime
-validated. Slice 4C add-note integration is next.
+Status: first scope decided in `docs/ANKI_MEDIA_EXPORT_PLAN.md`. Dictionary
+image media reference extraction, `{dictionary-media}` preview, Rust
+`storeMediaFile` support, and add-note media integration are implemented. Rust
+store-media runtime validation passed; combined add-note-plus-media validation
+with a real media-bearing dictionary is not verified.
 
 Deferred items:
 
-- Dictionary media export through AnkiConnect `storeMediaFile`.
 - Word audio and local audio export.
 - Sasayaki sentence audio.
 - Optional AnkiConnect `sync`.

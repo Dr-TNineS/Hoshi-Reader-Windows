@@ -3,7 +3,7 @@
   import { extractDictionaryMediaReferences } from "./anki-field-renderer";
   import type { LookupState } from "./lookup-popup";
   import { lookupPopupStyle } from "./lookup-popup-position";
-  import type { AnkiAddNoteResult, AnkiNoteRequest, AnkiSettings, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
+  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiNoteRequest, AnkiSettings, AnkiStoreMediaResult, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
   const params = new URLSearchParams(window.location.search);
   const allowedStates: LookupState[] = ["loading", "noDictionaries", "engineUnavailable", "empty", "error", "ready"];
@@ -14,6 +14,7 @@
   const mediaMode = params.get("mediaMode") ?? "success";
   const ankiMode = params.get("ankiMode") ?? "disabled";
   const ankiAddMode = params.get("ankiAddMode") ?? "added";
+  const ankiStoreMode = params.get("ankiStoreMode") ?? "success";
 
   const rootSelection: ReaderSelection = {
     text: "school",
@@ -125,6 +126,7 @@
   let nestedLookupCount = $state(0);
   let nestedLookupText = $state("");
   let ankiAddRequests = $state<AnkiNoteRequest[]>([]);
+  let ankiStoreRequests = $state<AnkiDictionaryMediaRef[][]>([]);
   let popupSizes = $state<Record<string, { width: number; height: number }>>({});
 
   function readerBottomBoundary(): number {
@@ -318,6 +320,25 @@
     return { status: "added", noteId: 4242, message: "Added Anki note 4242." };
   }
 
+  async function storeAnkiMedia(media: AnkiDictionaryMediaRef[]): Promise<AnkiStoreMediaResult> {
+    ankiStoreRequests = [...ankiStoreRequests, media];
+    if (ankiStoreMode === "error") throw new Error("Probe media store failure");
+    if (ankiStoreMode === "missing") {
+      return {
+        stored: [],
+        warnings: media.map((item) => `Missing probe media: ${item.dictionary}/${item.path}`),
+      };
+    }
+    return {
+      stored: media.map((item) => ({
+        dictionary: item.dictionary,
+        path: item.path,
+        filename: `stored_${item.filename}`,
+      })),
+      warnings: [],
+    };
+  }
+
   async function loadDictionaryStyles(dictionary: string) {
     if (dictionary !== "Jitendex.org [probe]") return { source: dictionary, css: "" };
     return {
@@ -380,6 +401,7 @@
         ankiTitle={() => "Payload prepared for Probe Book"}
         {ankiSettings}
         buildAnkiPayload={(result, resultIndex) => buildAnkiPayload(popup.selection, result, resultIndex)}
+        onStoreAnkiMedia={storeAnkiMedia}
         onAddAnkiNote={addAnkiNote}
       />
     </aside>
@@ -395,6 +417,8 @@
     data-root-clear-selection-signal={popups[0]?.clearSelectionSignal ?? 0}
     data-top-popup-id={popups[popups.length - 1]?.id ?? ""}
     data-anki-add-count={ankiAddRequests.length}
+    data-anki-store-count={ankiStoreRequests.length}
+    data-anki-last-media={JSON.stringify(ankiStoreRequests[ankiStoreRequests.length - 1] ?? [])}
     data-anki-last-deck={ankiAddRequests[ankiAddRequests.length - 1]?.deckName ?? ""}
     data-anki-last-model={ankiAddRequests[ankiAddRequests.length - 1]?.modelName ?? ""}
     data-anki-last-fields={JSON.stringify(ankiAddRequests[ankiAddRequests.length - 1]?.fields ?? {})}

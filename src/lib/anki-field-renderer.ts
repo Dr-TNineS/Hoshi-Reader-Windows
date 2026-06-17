@@ -1,5 +1,5 @@
 import { frequencyLabel, pitchLabel } from "./lookup-popup";
-import type { AnkiFieldMapping, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, GlossaryEntry, LookupAnkiMediaReference, LookupAnkiPayload } from "./types";
+import type { AnkiDictionaryMediaRef, AnkiFieldMapping, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, AnkiStoredMedia, GlossaryEntry, LookupAnkiMediaReference, LookupAnkiPayload } from "./types";
 
 const TOKEN_PATTERN = /\{([a-z0-9-]+)\}/gi;
 
@@ -126,6 +126,28 @@ export function extractDictionaryMediaReferences(glossary: GlossaryEntry[]): Loo
   return refs;
 }
 
+export function ankiDictionaryMediaRefs(media: LookupAnkiMediaReference[]): AnkiDictionaryMediaRef[] {
+  return media.map((item) => ({
+    dictionary: item.dictionary,
+    path: item.path,
+    filename: item.filename,
+  }));
+}
+
+export function payloadWithStoredDictionaryMedia(
+  payload: LookupAnkiPayload,
+  stored: AnkiStoredMedia[],
+): LookupAnkiPayload {
+  if (stored.length === 0) return { ...payload, media: [] };
+  const filenames = new Map(stored.map((item) => [mediaKey(item.dictionary, item.path), item.filename]));
+  return {
+    ...payload,
+    media: payload.media
+      .filter((item) => filenames.has(mediaKey(item.dictionary, item.path)))
+      .map((item) => ({ ...item, filename: filenames.get(mediaKey(item.dictionary, item.path)) ?? item.filename })),
+  };
+}
+
 export function stableDictionaryMediaFilename(dictionary: string, path: string): string {
   const extension = mediaExtension(path);
   return `hsw_${fnv1a(`${dictionary}\u0000${path}`)}${extension}`;
@@ -148,6 +170,10 @@ function renderDictionaryMedia(media: LookupAnkiMediaReference[]): string {
   return media.map((item) => (
     `<img src="${escapeHtml(item.filename)}" alt="${escapeHtml(item.alt)}">`
   )).join("\n");
+}
+
+function mediaKey(dictionary: string, path: string): string {
+  return `${dictionary}\u0000${path}`;
 }
 
 function extractMediaRecords(text: string): Array<{ path: string; alt: string; title: string }> {

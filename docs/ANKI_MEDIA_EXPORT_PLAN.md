@@ -7,8 +7,8 @@ was validated against desktop AnkiConnect.
 
 Implementation status as of 2026-06-18: Slice 4A media reference extraction and
 `{dictionary-media}` preview are implemented. Slice 4B Rust `storeMediaFile`
-support is implemented and passed real AnkiConnect runtime validation. Add-note
-integration is not implemented.
+support is implemented and passed real AnkiConnect runtime validation. Slice 4C
+add-note integration is implemented with popup warnings for missing media.
 
 ## Current Baseline
 
@@ -134,7 +134,7 @@ Validation:
 
 Goal: include stored dictionary media in notes created from lookup popup.
 
-Status: next recommended implementation slice.
+Status: implemented on 2026-06-18.
 
 Key changes:
 
@@ -155,10 +155,10 @@ Validation:
 - `npm run check`
 - `npm run build`
 - `npm run check:lookup-popup`
-- `cd src-tauri; cargo test --lib`
-- `cd src-tauri; cargo check`
-- Real AnkiConnect runtime validation with a throwaway deck/model and a small
-  image-bearing fixture.
+- Rust validation remains covered by Slice 4B because this slice did not change
+  Rust code.
+- Real combined add-note-plus-media validation with a media-bearing dictionary is
+  not verified.
 
 ## Open Questions
 

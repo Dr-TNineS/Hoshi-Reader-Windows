@@ -105,14 +105,15 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Rust/Tauri stores Anki settings in app data `anki/settings.json` and restricts AnkiConnect endpoints to localhost/127.0.0.1 HTTP.
   - `npm run check:anki-connect` covers Anki panel empty/error/connected/ready states, action wiring, selections, field template edits, and narrow-window overflow.
   - `npm run check:lookup-popup` covers configured Anki field preview, unknown handlebars rendering empty, added/duplicate/error UI states, rendered note shape, and the unconfigured disabled Anki boundary.
-  - First Anki media-export scope is tracked in `docs/ANKI_MEDIA_EXPORT_PLAN.md`; Slice 4A dictionary image media reference extraction and `{dictionary-media}` preview are implemented.
+  - First Anki media-export scope is tracked in `docs/ANKI_MEDIA_EXPORT_PLAN.md`; dictionary image media references are extracted from lookup glossary content, `{dictionary-media}` previews render deterministic HTML, and add-note flow stores dictionary media before note creation.
   - Rust `anki_store_dictionary_media` stores imported dictionary image media through AnkiConnect `storeMediaFile`; missing media returns warnings, while unsafe paths and unsupported types are blocked.
+  - `npm run check:lookup-popup` covers Anki media store success, missing-media warnings with text-card creation, and hard media-store failure without note creation.
   - Real AnkiConnect store-media runtime validation passed on 2026-06-18 with a throwaway SVG media file.
 
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata and reading state are still JSON.
-- Anki add-note media integration, sync, and audio export remain unimplemented. Follow-up slices are documented in `docs/ANKI_MEDIA_EXPORT_PLAN.md`.
+- Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; sync and audio export remain unimplemented. Follow-up slices are documented in `docs/ANKI_MEDIA_EXPORT_PLAN.md`.
 - No sync implementation.
 - No settings or appearance panel.
 - No verified app-owned cover thumbnail cache.
