@@ -10,7 +10,8 @@ Implementation status as of 2026-06-18: Slice 1 readiness/configuration,
 Slice 2 field mapping/preview, and Slice 3 minimal duplicate-check/add-note
 plumbing are implemented. Real desktop Anki runtime add-note validation passed
 against AnkiConnect v6 on localhost. Settings beyond the minimal Anki panel and
-media export are still not implemented.
+media export are still not implemented. The first media-export scope is planned
+in `docs/ANKI_MEDIA_EXPORT_PLAN.md`.
 
 Do not modify `reference/`, `third_party/hoshidicts`, HSA, Anki, or Yomitan
 from this document.
@@ -183,6 +184,9 @@ Validation:
 ### Slice 4: Media, Audio, And Sync Follow-Up
 
 Goal: evaluate richer HSA parity only after text card creation is stable.
+
+Status: first scope decided in `docs/ANKI_MEDIA_EXPORT_PLAN.md`: implement
+dictionary image media export before audio, Sasayaki, or sync.
 
 Deferred items:
 

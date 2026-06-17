@@ -30,7 +30,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Final linked real dictionary validation with local `MK3Fix0213.zip` passed on 2026-06-12: `dict_id=93e8e532b599ba4a`, `term=140821`, `media=0`, `lookup_results=2`.
    - Anki HSA/Windows alignment is documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`; AnkiConnect readiness/configuration, field preview, minimal duplicate-check/add-note plumbing, and real AnkiConnect runtime add-note validation are complete.
 2. Treat the storage/model migration as complete at the JSON-store level: reading progress, recent books, and session now live in Tauri app data `reading/state.json`, with one-time legacy `localStorage` import and browser fallback.
-3. Next recommended product area: plan Anki media/audio export only after deciding the first media scope.
+3. Next recommended product area: Anki media export Slice 4A from `docs/ANKI_MEDIA_EXPORT_PLAN.md`, which adds dictionary image media reference extraction and `{dictionary-media}` preview without calling `storeMediaFile`.
 4. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 5. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
 
