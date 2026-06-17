@@ -106,11 +106,13 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - `npm run check:anki-connect` covers Anki panel empty/error/connected/ready states, action wiring, selections, field template edits, and narrow-window overflow.
   - `npm run check:lookup-popup` covers configured Anki field preview, unknown handlebars rendering empty, added/duplicate/error UI states, rendered note shape, and the unconfigured disabled Anki boundary.
   - First Anki media-export scope is tracked in `docs/ANKI_MEDIA_EXPORT_PLAN.md`; Slice 4A dictionary image media reference extraction and `{dictionary-media}` preview are implemented.
+  - Rust `anki_store_dictionary_media` stores imported dictionary image media through AnkiConnect `storeMediaFile`; missing media returns warnings, while unsafe paths and unsupported types are blocked.
+  - Real AnkiConnect store-media runtime validation passed on 2026-06-18 with a throwaway SVG media file.
 
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata and reading state are still JSON.
-- Anki `storeMediaFile`, sync, and audio export remain unimplemented. Follow-up slices are documented in `docs/ANKI_MEDIA_EXPORT_PLAN.md`.
+- Anki add-note media integration, sync, and audio export remain unimplemented. Follow-up slices are documented in `docs/ANKI_MEDIA_EXPORT_PLAN.md`.
 - No sync implementation.
 - No settings or appearance panel.
 - No verified app-owned cover thumbnail cache.
@@ -167,6 +169,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Rust command/backend changes: `cd src-tauri; cargo check`
 - Rust tests: `cd src-tauri; cargo test --lib`
 - Real desktop Anki add-note validation: from `src-tauri`, set `HSW_ANKI_RUNTIME_VALIDATE=1`, then run `cargo test --lib validates_real_ankiconnect_add_note_and_duplicate_check -- --ignored --nocapture`
+- Real desktop Anki store-media validation: from `src-tauri`, set `HSW_ANKI_RUNTIME_VALIDATE=1`, then run `cargo test --lib validates_real_ankiconnect_store_dictionary_media -- --ignored --nocapture`
 - Linked real dictionary validation: run from a VS developer shell with `RUSTFLAGS=--cfg hoshi_dicts_linked`, `CARGO_TARGET_DIR=target-linked-check`, `HSW_REAL_YOMITAN_ZIP=<local dictionary zip>`, then `cargo test --lib imports_real_yomitan_zip_and_loads_runtime -- --ignored --nocapture`
 - Tauri runtime check: `cmd /c npx.cmd tauri dev`
 

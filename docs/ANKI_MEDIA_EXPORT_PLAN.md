@@ -6,8 +6,9 @@ This document defines the first Anki media/export scope after text card creation
 was validated against desktop AnkiConnect.
 
 Implementation status as of 2026-06-18: Slice 4A media reference extraction and
-`{dictionary-media}` preview are implemented. Rust `storeMediaFile` export is
-not implemented.
+`{dictionary-media}` preview are implemented. Slice 4B Rust `storeMediaFile`
+support is implemented and passed real AnkiConnect runtime validation. Add-note
+integration is not implemented.
 
 ## Current Baseline
 
@@ -105,7 +106,7 @@ Validation:
 
 Goal: store imported dictionary image media in Anki without creating notes.
 
-Status: next recommended implementation slice.
+Status: implemented on 2026-06-18; real AnkiConnect runtime validation passed.
 
 Key changes:
 
@@ -132,6 +133,8 @@ Validation:
 ### Slice 4C: Add-Note Integration
 
 Goal: include stored dictionary media in notes created from lookup popup.
+
+Status: next recommended implementation slice.
 
 Key changes:
 

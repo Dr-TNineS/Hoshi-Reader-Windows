@@ -30,7 +30,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Final linked real dictionary validation with local `MK3Fix0213.zip` passed on 2026-06-12: `dict_id=93e8e532b599ba4a`, `term=140821`, `media=0`, `lookup_results=2`.
    - Anki HSA/Windows alignment is documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`; AnkiConnect readiness/configuration, field preview, minimal duplicate-check/add-note plumbing, and real AnkiConnect runtime add-note validation are complete.
 2. Treat the storage/model migration as complete at the JSON-store level: reading progress, recent books, and session now live in Tauri app data `reading/state.json`, with one-time legacy `localStorage` import and browser fallback.
-3. Next recommended product area: Anki media export Slice 4B from `docs/ANKI_MEDIA_EXPORT_PLAN.md`, which adds Rust/AnkiConnect `storeMediaFile` support without creating notes.
+3. Next recommended product area: Anki media export Slice 4C from `docs/ANKI_MEDIA_EXPORT_PLAN.md`, which integrates stored dictionary media into add-note flow while preserving duplicate handling.
 4. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 5. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
 
@@ -51,6 +51,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
 - Rust/backend changes: `cd src-tauri; cargo check`
 - Rust library tests when touching storage, EPUB, sanitizer, or dictionary logic: `cd src-tauri; cargo test --lib`
 - Real desktop Anki add-note validation: from `src-tauri`, set `HSW_ANKI_RUNTIME_VALIDATE=1`, then run `cargo test --lib validates_real_ankiconnect_add_note_and_duplicate_check -- --ignored --nocapture`
+- Real desktop Anki store-media validation: from `src-tauri`, set `HSW_ANKI_RUNTIME_VALIDATE=1`, then run `cargo test --lib validates_real_ankiconnect_store_dictionary_media -- --ignored --nocapture`
 - Linked real dictionary validation: VS developer shell with `RUSTFLAGS=--cfg hoshi_dicts_linked`, `CARGO_TARGET_DIR=target-linked-check`, `HSW_REAL_YOMITAN_ZIP=<local dictionary zip>`, then `cargo test --lib imports_real_yomitan_zip_and_loads_runtime -- --ignored --nocapture`
 
 ## Do Not Start Without A Slice

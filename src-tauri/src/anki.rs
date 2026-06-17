@@ -8,6 +8,12 @@ use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
+use crate::dict::commands::{
+    dictionary_manifest_path, load_dictionary_media, read_dictionary_manifest, DictionaryManifest,
+};
+#[cfg(test)]
+use crate::dict::commands::DictionaryManifestEntry;
+
 const DEFAULT_ENDPOINT: &str = "http://127.0.0.1:8765";
 const SETTINGS_VERSION: u32 = 1;
 const TIMEOUT: Duration = Duration::from_secs(5);
@@ -94,6 +100,29 @@ pub struct AnkiAddNoteResult {
     pub status: String,
     pub note_id: Option<i64>,
     pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AnkiDictionaryMediaRef {
+    pub dictionary: String,
+    pub path: String,
+    pub filename: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AnkiStoredMedia {
+    pub dictionary: String,
+    pub path: String,
+    pub filename: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AnkiStoreMediaResult {
+    pub stored: Vec<AnkiStoredMedia>,
+    pub warnings: Vec<String>,
 }
 
 #[tauri::command]
@@ -195,6 +224,16 @@ pub fn anki_add_note(note: AnkiNoteRequest) -> Result<AnkiAddNoteResult, String>
         note_id: Some(note_id),
         message: format!("Added Anki note {note_id}."),
     })
+}
+
+#[tauri::command]
+pub fn anki_store_dictionary_media(
+    endpoint: String,
+    media: Vec<AnkiDictionaryMediaRef>,
+    app: AppHandle,
+) -> Result<AnkiStoreMediaResult, String> {
+    let manifest = read_dictionary_manifest(&dictionary_manifest_path(&app)?)?;
+    store_dictionary_media_from_manifest(&endpoint, &manifest, &media)
 }
 
 fn anki_root(app: &AppHandle) -> Result<PathBuf, String> {
@@ -336,6 +375,65 @@ fn note_json(note: &AnkiNoteRequest) -> Result<Value, String> {
             "allowDuplicate": false,
         },
     }))
+}
+
+fn store_dictionary_media_from_manifest(
+    endpoint: &str,
+    manifest: &DictionaryManifest,
+    media: &[AnkiDictionaryMediaRef],
+) -> Result<AnkiStoreMediaResult, String> {
+    let endpoint = normalize_endpoint(endpoint)?;
+    let mut stored = Vec::new();
+    let mut warnings = Vec::new();
+    for item in media {
+        let filename = validate_anki_media_filename(&item.filename)?;
+        match load_dictionary_media(manifest, &item.dictionary, &item.path) {
+            Ok(resource) => {
+                anki_request(
+                    &endpoint,
+                    "storeMediaFile",
+                    Some(json!({
+                        "filename": filename,
+                        "data": resource.data_base64,
+                    })),
+                )?;
+                stored.push(AnkiStoredMedia {
+                    dictionary: item.dictionary.clone(),
+                    path: item.path.clone(),
+                    filename,
+                });
+            }
+            Err(error) if is_nonfatal_media_missing(&error) => {
+                warnings.push(format!(
+                    "{} / {}: {}",
+                    item.dictionary, item.path, error
+                ));
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(AnkiStoreMediaResult { stored, warnings })
+}
+
+fn validate_anki_media_filename(filename: &str) -> Result<String, String> {
+    let filename = filename.trim();
+    if filename.is_empty() {
+        return Err("Anki media filename is empty.".into());
+    }
+    if filename.contains('/')
+        || filename.contains('\\')
+        || filename.contains(':')
+        || filename == "."
+        || filename == ".."
+        || filename.contains("..")
+    {
+        return Err("Anki media filename must be a plain file name.".into());
+    }
+    Ok(filename.into())
+}
+
+fn is_nonfatal_media_missing(error: &str) -> bool {
+    error.starts_with("Dictionary media not found:") || error.starts_with("Dictionary not found for media request:")
 }
 
 fn fetch_decks(endpoint: &str) -> Result<Vec<AnkiDeck>, String> {
@@ -652,6 +750,70 @@ mod tests {
         assert!(parse_note_check_result(json!({ "bad": true })).is_err());
     }
 
+    fn test_manifest(root: &Path) -> DictionaryManifest {
+        DictionaryManifest {
+            dictionaries: vec![DictionaryManifestEntry {
+                dict_id: "dict".into(),
+                title: "Readable Dict".into(),
+                kind: "term".into(),
+                enabled: true,
+                order: 0,
+                internal_path: root.to_string_lossy().into_owned(),
+                term_count: 1,
+                meta_count: 0,
+                freq_count: 0,
+                pitch_count: 0,
+                media_count: 1,
+                last_imported: 1,
+            }],
+        }
+    }
+
+    #[test]
+    fn validates_anki_media_filename() {
+        assert_eq!(
+            validate_anki_media_filename(" hsw_1234.png ").unwrap(),
+            "hsw_1234.png"
+        );
+        assert!(validate_anki_media_filename("").is_err());
+        assert!(validate_anki_media_filename("../x.png").is_err());
+        assert!(validate_anki_media_filename("nested/x.png").is_err());
+        assert!(validate_anki_media_filename("C:\\x.png").is_err());
+    }
+
+    #[test]
+    fn store_dictionary_media_reports_missing_as_warning() {
+        let root = temp_root("store_media_missing");
+        let manifest = test_manifest(&root);
+        let refs = vec![AnkiDictionaryMediaRef {
+            dictionary: "dict".into(),
+            path: "missing.png".into(),
+            filename: "hsw_missing.png".into(),
+        }];
+        let result = store_dictionary_media_from_manifest(DEFAULT_ENDPOINT, &manifest, &refs).unwrap();
+        assert!(result.stored.is_empty());
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("Dictionary media not found"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn store_dictionary_media_blocks_invalid_paths_before_ankiconnect() {
+        let root = temp_root("store_media_escape");
+        let media_dir = root.join("images");
+        fs::create_dir_all(&media_dir).unwrap();
+        fs::write(media_dir.join("entry.txt"), b"text").unwrap();
+        let manifest = test_manifest(&root);
+        let refs = vec![AnkiDictionaryMediaRef {
+            dictionary: "dict".into(),
+            path: "images/entry.txt".into(),
+            filename: "hsw_entry.txt".into(),
+        }];
+        let error = store_dictionary_media_from_manifest(DEFAULT_ENDPOINT, &manifest, &refs).unwrap_err();
+        assert!(error.starts_with("Unsupported dictionary media type:"));
+        let _ = fs::remove_dir_all(root);
+    }
+
     #[test]
     #[ignore]
     fn validates_real_ankiconnect_add_note_and_duplicate_check() {
@@ -708,5 +870,51 @@ mod tests {
             Some(json!({ "decks": [deck_name], "cardsToo": true })),
         );
         let _ = anki_request(&endpoint, "deleteModel", Some(json!({ "modelName": model_name })));
+    }
+
+    #[test]
+    #[ignore]
+    fn validates_real_ankiconnect_store_dictionary_media() {
+        if std::env::var("HSW_ANKI_RUNTIME_VALIDATE").ok().as_deref() != Some("1") {
+            eprintln!("Set HSW_ANKI_RUNTIME_VALIDATE=1 to run the real AnkiConnect media validation.");
+            return;
+        }
+
+        let endpoint = std::env::var("HSW_ANKI_ENDPOINT").unwrap_or_else(|_| DEFAULT_ENDPOINT.into());
+        let suffix = now_millis().unwrap();
+        let filename = format!("hsw_runtime_{suffix}.svg");
+        let root = temp_root("store_media_runtime");
+        let media_dir = root.join("images");
+        fs::create_dir_all(&media_dir).unwrap();
+        fs::write(
+            media_dir.join("entry.svg"),
+            br#"<svg xmlns="http://www.w3.org/2000/svg" width="16" height="16"></svg>"#,
+        )
+        .unwrap();
+
+        let manifest = test_manifest(&root);
+        let refs = vec![AnkiDictionaryMediaRef {
+            dictionary: "dict".into(),
+            path: "images/entry.svg".into(),
+            filename: filename.clone(),
+        }];
+        let result = store_dictionary_media_from_manifest(&endpoint, &manifest, &refs).unwrap();
+        assert_eq!(result.stored.len(), 1);
+        assert!(result.warnings.is_empty());
+
+        let retrieved = anki_request(
+            &endpoint,
+            "retrieveMediaFile",
+            Some(json!({ "filename": filename })),
+        )
+        .unwrap();
+        assert!(retrieved.as_str().unwrap_or("").contains("PHN2Zy"));
+
+        let _ = anki_request(
+            &endpoint,
+            "deleteMediaFile",
+            Some(json!({ "filename": result.stored[0].filename.clone() })),
+        );
+        let _ = fs::remove_dir_all(root);
     }
 }

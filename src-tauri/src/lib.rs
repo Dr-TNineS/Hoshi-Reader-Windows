@@ -44,6 +44,7 @@ pub fn run() {
             anki::anki_fetch_config,
             anki::anki_check_note,
             anki::anki_add_note,
+            anki::anki_store_dictionary_media,
         ])
         .setup(|app| {
             app.state::<DictState>().initialize(app.handle());

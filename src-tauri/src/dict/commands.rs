@@ -130,8 +130,8 @@ pub struct DictionaryStyleResource {
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
-struct DictionaryManifest {
-    dictionaries: Vec<DictionaryManifestEntry>,
+pub(crate) struct DictionaryManifest {
+    pub(crate) dictionaries: Vec<DictionaryManifestEntry>,
 }
 
 #[derive(Default)]
@@ -537,11 +537,11 @@ fn dictionary_data_root(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(root)
 }
 
-fn dictionary_manifest_path(app: &AppHandle) -> Result<PathBuf, String> {
+pub(crate) fn dictionary_manifest_path(app: &AppHandle) -> Result<PathBuf, String> {
     Ok(dictionary_data_root(app)?.join("manifest.json"))
 }
 
-fn read_dictionary_manifest(path: &Path) -> Result<DictionaryManifest, String> {
+pub(crate) fn read_dictionary_manifest(path: &Path) -> Result<DictionaryManifest, String> {
     if !path.exists() {
         return Ok(DictionaryManifest::default());
     }
@@ -701,7 +701,7 @@ fn find_dictionary_entry<'a>(
         .ok_or_else(|| format!("Dictionary not found for {request_kind} request: {needle}"))
 }
 
-fn load_dictionary_media(
+pub(crate) fn load_dictionary_media(
     manifest: &DictionaryManifest,
     dictionary: &str,
     path: &str,

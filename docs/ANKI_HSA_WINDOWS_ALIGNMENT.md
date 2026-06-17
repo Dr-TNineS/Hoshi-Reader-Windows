@@ -10,8 +10,9 @@ Implementation status as of 2026-06-18: Slice 1 readiness/configuration,
 Slice 2 field mapping/preview, and Slice 3 minimal duplicate-check/add-note
 plumbing are implemented. Real desktop Anki runtime add-note validation passed
 against AnkiConnect v6 on localhost. Settings beyond the minimal Anki panel and
-Rust `storeMediaFile` media export is still not implemented. The first
-media-export scope is tracked in `docs/ANKI_MEDIA_EXPORT_PLAN.md`.
+Rust `storeMediaFile` support is implemented, but add-note media integration is
+still not implemented. The first media-export scope is tracked in
+`docs/ANKI_MEDIA_EXPORT_PLAN.md`.
 
 Do not modify `reference/`, `third_party/hoshidicts`, HSA, Anki, or Yomitan
 from this document.
@@ -187,7 +188,8 @@ Goal: evaluate richer HSA parity only after text card creation is stable.
 
 Status: first scope decided in `docs/ANKI_MEDIA_EXPORT_PLAN.md`. Slice 4A
 dictionary image media reference extraction and `{dictionary-media}` preview are
-implemented; Rust `storeMediaFile` export is next.
+implemented. Slice 4B Rust `storeMediaFile` support is implemented and runtime
+validated. Slice 4C add-note integration is next.
 
 Deferred items:
 
