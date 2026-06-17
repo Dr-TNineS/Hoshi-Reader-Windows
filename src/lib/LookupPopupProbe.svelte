@@ -1,5 +1,6 @@
 <script lang="ts">
   import LookupPopupContent from "./LookupPopupContent.svelte";
+  import { extractDictionaryMediaReferences } from "./anki-field-renderer";
   import type { LookupState } from "./lookup-popup";
   import { lookupPopupStyle } from "./lookup-popup-position";
   import type { AnkiAddNoteResult, AnkiNoteRequest, AnkiSettings, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
@@ -84,10 +85,11 @@
       selectedDeck: "Mining",
       selectedNoteType: "Hoshi Vocabulary",
       decks: [{ name: "Mining" }],
-      noteTypes: [{ name: "Hoshi Vocabulary", fields: ["Expression", "Meaning", "Frequency", "Pitch", "Unknown"] }],
+      noteTypes: [{ name: "Hoshi Vocabulary", fields: ["Expression", "Meaning", "Media", "Frequency", "Pitch", "Unknown"] }],
       fieldMappings: [
         { field: "Expression", template: "{expression} / {reading}" },
         { field: "Meaning", template: "{glossary-first}" },
+        { field: "Media", template: "{dictionary-media}" },
         { field: "Frequency", template: "{frequencies}" },
         { field: "Pitch", template: "{pitch-accent-positions}" },
         { field: "Unknown", template: "before{not-a-token}after" },
@@ -301,6 +303,7 @@
       rules: result.rules,
       frequencies: result.frequencies,
       pitches: result.pitches,
+      media: extractDictionaryMediaReferences(result.glossary),
       sourceBook: { title: "Probe Book" },
       sourceChapter: { chapterIndex: 0, chapterNumber: 1, totalChapters: 1, idref: "probe" },
     };

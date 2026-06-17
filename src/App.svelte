@@ -2,7 +2,7 @@
   import { invoke, isTauri as isTauriRuntime } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-dialog";
   import AnkiConnectPanel from "./lib/AnkiConnectPanel.svelte";
-  import { pruneFieldMappings, upsertFieldTemplate } from "./lib/anki-field-renderer";
+  import { extractDictionaryMediaReferences, pruneFieldMappings, upsertFieldTemplate } from "./lib/anki-field-renderer";
   import DictionaryManagementPanel from "./lib/DictionaryManagementPanel.svelte";
   import { resolveChapterAssets } from "./lib/epub-assets";
   import LookupPopupContent from "./lib/LookupPopupContent.svelte";
@@ -514,6 +514,7 @@
       rules: result.rules,
       frequencies: result.frequencies,
       pitches: result.pitches,
+      media: extractDictionaryMediaReferences(result.glossary),
       sourceBook: {
         title: meta?.title ?? null,
         bookId: currentBookLocator?.bookId,

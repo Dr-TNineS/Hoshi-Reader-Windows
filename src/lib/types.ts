@@ -90,8 +90,17 @@ export interface LookupAnkiPayload {
   rules: string;
   frequencies: FrequencyEntry[];
   pitches: PitchEntry[];
+  media: LookupAnkiMediaReference[];
   sourceBook: LookupAnkiSourceBook;
   sourceChapter: LookupAnkiSourceChapter;
+}
+
+export interface LookupAnkiMediaReference {
+  dictionary: string;
+  path: string;
+  alt: string;
+  title: string;
+  filename: string;
 }
 
 export interface LookupAnkiSourceBook {

@@ -105,12 +105,12 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Rust/Tauri stores Anki settings in app data `anki/settings.json` and restricts AnkiConnect endpoints to localhost/127.0.0.1 HTTP.
   - `npm run check:anki-connect` covers Anki panel empty/error/connected/ready states, action wiring, selections, field template edits, and narrow-window overflow.
   - `npm run check:lookup-popup` covers configured Anki field preview, unknown handlebars rendering empty, added/duplicate/error UI states, rendered note shape, and the unconfigured disabled Anki boundary.
-  - First Anki media-export scope is planned in `docs/ANKI_MEDIA_EXPORT_PLAN.md`: dictionary image media export before audio, Sasayaki, or sync.
+  - First Anki media-export scope is tracked in `docs/ANKI_MEDIA_EXPORT_PLAN.md`; Slice 4A dictionary image media reference extraction and `{dictionary-media}` preview are implemented.
 
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata and reading state are still JSON.
-- Anki sync and media/audio export remain unimplemented. Follow-up slices are documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`.
+- Anki `storeMediaFile`, sync, and audio export remain unimplemented. Follow-up slices are documented in `docs/ANKI_MEDIA_EXPORT_PLAN.md`.
 - No sync implementation.
 - No settings or appearance panel.
 - No verified app-owned cover thumbnail cache.

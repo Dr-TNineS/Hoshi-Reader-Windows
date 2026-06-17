@@ -3,8 +3,11 @@
 Last updated: 2026-06-18
 
 This document defines the first Anki media/export scope after text card creation
-was validated against desktop AnkiConnect. It is a planning handoff only: no
-media export implementation is added by this document.
+was validated against desktop AnkiConnect.
+
+Implementation status as of 2026-06-18: Slice 4A media reference extraction and
+`{dictionary-media}` preview are implemented. Rust `storeMediaFile` export is
+not implemented.
 
 ## Current Baseline
 
@@ -17,8 +20,7 @@ media export implementation is added by this document.
   glossary content and lazily loads them through the read-only
   `dictionary_media(dictionary, path)` command.
 - `LookupAnkiPayload` currently contains glossary text, frequencies, pitch data,
-  and source book/chapter context, but it does not carry structured media
-  references as first-class Anki export inputs.
+  source book/chapter context, and extracted dictionary media references.
 - Compatibility dictionary imports that hit legacy filename encoding issues may
   skip media and import with `mediaCount=0`. That limitation should remain
   visible and non-fatal.
@@ -74,6 +76,8 @@ frontend should not pass arbitrary filesystem paths.
 Goal: make dictionary media references visible to Anki field rendering without
 calling `storeMediaFile`.
 
+Status: implemented on 2026-06-18.
+
 Key changes:
 
 - Add a structured media reference shape to `LookupAnkiPayload`.
@@ -100,6 +104,8 @@ Validation:
 ### Slice 4B: Rust Store-Media Command
 
 Goal: store imported dictionary image media in Anki without creating notes.
+
+Status: next recommended implementation slice.
 
 Key changes:
 
