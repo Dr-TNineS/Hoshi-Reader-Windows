@@ -651,4 +651,62 @@ mod tests {
 
         assert!(parse_note_check_result(json!({ "bad": true })).is_err());
     }
+
+    #[test]
+    #[ignore]
+    fn validates_real_ankiconnect_add_note_and_duplicate_check() {
+        if std::env::var("HSW_ANKI_RUNTIME_VALIDATE").ok().as_deref() != Some("1") {
+            eprintln!("Set HSW_ANKI_RUNTIME_VALIDATE=1 to run the real AnkiConnect add-note validation.");
+            return;
+        }
+
+        let endpoint = std::env::var("HSW_ANKI_ENDPOINT").unwrap_or_else(|_| DEFAULT_ENDPOINT.into());
+        let suffix = now_millis().unwrap();
+        let deck_name = format!("HSW Runtime Validation {suffix}");
+        let model_name = format!("HSW Runtime Model {suffix}");
+        let expression = format!("hoshi-runtime-{suffix}");
+
+        anki_request(&endpoint, "createDeck", Some(json!({ "deck": deck_name }))).unwrap();
+        anki_request(
+            &endpoint,
+            "createModel",
+            Some(json!({
+                "modelName": model_name,
+                "inOrderFields": ["Expression", "Meaning"],
+                "css": ".card { font-family: arial; }",
+                "cardTemplates": [{
+                    "Name": "Card 1",
+                    "Front": "{{Expression}}",
+                    "Back": "{{Meaning}}"
+                }]
+            })),
+        )
+        .unwrap();
+
+        let mut fields = BTreeMap::new();
+        fields.insert("Expression".into(), expression);
+        fields.insert("Meaning".into(), "Created by HSW runtime validation.".into());
+        let note = AnkiNoteRequest {
+            endpoint: endpoint.clone(),
+            deck_name: deck_name.clone(),
+            model_name: model_name.clone(),
+            fields,
+            tags: vec!["hoshi-reader-runtime-validation".into()],
+        };
+
+        let added = anki_add_note(note.clone()).unwrap();
+        assert_eq!(added.status, "added");
+        assert!(added.note_id.is_some());
+
+        let duplicate = anki_add_note(note).unwrap();
+        assert_eq!(duplicate.status, "duplicate");
+        assert!(duplicate.message.to_lowercase().contains("duplicate"));
+
+        let _ = anki_request(
+            &endpoint,
+            "deleteDecks",
+            Some(json!({ "decks": [deck_name], "cardsToo": true })),
+        );
+        let _ = anki_request(&endpoint, "deleteModel", Some(json!({ "modelName": model_name })));
+    }
 }

@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Project Status
 
-Last updated: 2026-06-17
+Last updated: 2026-06-18
 
 This file records current implementation facts for `hoshi-reader-windows`. It is not an agent rule file, product roadmap, or substitute for checking the current code.
 
@@ -101,6 +101,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Bookshelf now has a minimal AnkiConnect readiness/configuration panel for endpoint editing, connection testing, deck/note-type fetch, deck selection, note-type selection, field template editing, and note field preview.
   - Configured lookup popup results can render an Anki field preview from the current `LookupAnkiPayload`.
   - Configured lookup popup results can call Rust `anki_add_note`; Rust performs `canAddNotesWithErrorDetail` before `addNote` and returns added/duplicate/error states.
+  - Real desktop Anki runtime validation passed on 2026-06-18 with AnkiConnect v6 on `127.0.0.1:8765`: the ignored Rust validation test created a throwaway deck/model, added one note through HSW `anki_add_note`, verified duplicate handling on the second add, and attempted cleanup.
   - Rust/Tauri stores Anki settings in app data `anki/settings.json` and restricts AnkiConnect endpoints to localhost/127.0.0.1 HTTP.
   - `npm run check:anki-connect` covers Anki panel empty/error/connected/ready states, action wiring, selections, field template edits, and narrow-window overflow.
   - `npm run check:lookup-popup` covers configured Anki field preview, unknown handlebars rendering empty, added/duplicate/error UI states, rendered note shape, and the unconfigured disabled Anki boundary.
@@ -108,7 +109,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata and reading state are still JSON.
-- Real desktop Anki add-note runtime validation is not verified; automated probes mock added/duplicate/error states. Sync and media/audio export remain unimplemented. Follow-up slices are documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`.
+- Anki sync and media/audio export remain unimplemented. Follow-up slices are documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`.
 - No sync implementation.
 - No settings or appearance panel.
 - No verified app-owned cover thumbnail cache.
@@ -164,6 +165,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Reader visual regression probe: `npm run check:reader-visual`
 - Rust command/backend changes: `cd src-tauri; cargo check`
 - Rust tests: `cd src-tauri; cargo test --lib`
+- Real desktop Anki add-note validation: from `src-tauri`, set `HSW_ANKI_RUNTIME_VALIDATE=1`, then run `cargo test --lib validates_real_ankiconnect_add_note_and_duplicate_check -- --ignored --nocapture`
 - Linked real dictionary validation: run from a VS developer shell with `RUSTFLAGS=--cfg hoshi_dicts_linked`, `CARGO_TARGET_DIR=target-linked-check`, `HSW_REAL_YOMITAN_ZIP=<local dictionary zip>`, then `cargo test --lib imports_real_yomitan_zip_and_loads_runtime -- --ignored --nocapture`
 - Tauri runtime check: `cmd /c npx.cmd tauri dev`
 

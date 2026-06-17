@@ -1,16 +1,16 @@
 # Anki HSA / Windows Alignment
 
-Last updated: 2026-06-17
+Last updated: 2026-06-18
 
 This document evaluates how Hoshi Reader Windows (HSW) should move from the
 current disabled lookup-to-Anki payload boundary toward a Windows-native Anki
 integration.
 
-Implementation status as of 2026-06-17: Slice 1 readiness/configuration,
+Implementation status as of 2026-06-18: Slice 1 readiness/configuration,
 Slice 2 field mapping/preview, and Slice 3 minimal duplicate-check/add-note
-plumbing are implemented. Real desktop Anki runtime add-note validation is not
-verified. Settings beyond the minimal Anki panel and media export are still not
-implemented.
+plumbing are implemented. Real desktop Anki runtime add-note validation passed
+against AnkiConnect v6 on localhost. Settings beyond the minimal Anki panel and
+media export are still not implemented.
 
 Do not modify `reference/`, `third_party/hoshidicts`, HSA, Anki, or Yomitan
 from this document.
@@ -34,7 +34,8 @@ from this document.
     current `LookupAnkiPayload`; this does not call AnkiConnect card creation.
   - Configured lookup popup results can call Rust `anki_add_note`, which checks
     `canAddNotesWithErrorDetail` before calling AnkiConnect `addNote`.
-- Real Anki runtime add-note validation with a throwaway deck is not verified.
+- Real Anki runtime add-note validation with a throwaway deck/model passed on
+  2026-06-18 using `HSW_ANKI_RUNTIME_VALIDATE=1`.
 - There is no sync or Anki media export.
 - Existing lookup popup probes cover that the disabled Anki boundary remains
   visible/click-safe and cannot be styled away by dictionary CSS.
@@ -152,8 +153,8 @@ Validation:
 
 Goal: create a basic vocabulary card through AnkiConnect.
 
-Status: implemented on 2026-06-17; real desktop Anki runtime validation is not
-verified.
+Status: implemented on 2026-06-17; real desktop Anki runtime validation passed
+on 2026-06-18.
 
 Key changes:
 
@@ -176,7 +177,8 @@ Validation:
 - `npm run check`
 - `npm run build`
 - `npm run check:lookup-popup`
-- Manual add-note and duplicate-check flow with a throwaway Anki deck.
+- Real AnkiConnect runtime validation:
+  `HSW_ANKI_RUNTIME_VALIDATE=1 cargo test --lib validates_real_ankiconnect_add_note_and_duplicate_check -- --ignored --nocapture`
 
 ### Slice 4: Media, Audio, And Sync Follow-Up
 

@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Agent TODO
 
-Last updated: 2026-06-17
+Last updated: 2026-06-18
 
 This file is the short operational handoff for future agents. Keep detailed state in `docs/PROJECT_STATUS.md` and lookup-specific slice details in `docs/LOOKUP_ROADMAP.md`.
 
@@ -28,9 +28,9 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Dictionary management UI coverage now has a minimal automated probe for empty/loading/error/ready states, counts, enable/order controls, actions, and narrow-window overflow.
    - Bookshelf/import hardening is complete for staged EPUB imports, duplicate EPUB reuse, missing app-owned EPUB errors, dictionary replacement preservation, import busy guards, and bookshelf Forget cleanup.
    - Final linked real dictionary validation with local `MK3Fix0213.zip` passed on 2026-06-12: `dict_id=93e8e532b599ba4a`, `term=140821`, `media=0`, `lookup_results=2`.
-   - Anki HSA/Windows alignment is documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`; AnkiConnect readiness/configuration, field preview, and minimal duplicate-check/add-note plumbing are implemented.
+   - Anki HSA/Windows alignment is documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`; AnkiConnect readiness/configuration, field preview, minimal duplicate-check/add-note plumbing, and real AnkiConnect runtime add-note validation are complete.
 2. Treat the storage/model migration as complete at the JSON-store level: reading progress, recent books, and session now live in Tauri app data `reading/state.json`, with one-time legacy `localStorage` import and browser fallback.
-3. Next recommended product area: real desktop Anki runtime validation with a throwaway deck before starting Anki media/audio export.
+3. Next recommended product area: plan Anki media/audio export only after deciding the first media scope.
 4. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 5. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
 
@@ -38,7 +38,6 @@ This file is the short operational handoff for future agents. Keep detailed stat
 
 - Compatibility imports that bypass legacy zip/media filename encoding issues intentionally skip media entries, so `MK3Fix0213.zip` imports with `mediaCount=0`.
 - Runtime validation with a normal media-bearing Yomitan dictionary is still blocked pending a suitable local zip; 2026-06-16 checks found only `OALDPE10.zip` with `mediaCount=0` and unsuitable MK3 compatibility media.
-- Real desktop Anki add-note runtime validation is not verified; automated coverage currently uses popup probe mocks for added/duplicate/error states.
 
 ## Required Validation
 
@@ -51,6 +50,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
 - Reader visual probe changes: `npm run check:reader-visual`
 - Rust/backend changes: `cd src-tauri; cargo check`
 - Rust library tests when touching storage, EPUB, sanitizer, or dictionary logic: `cd src-tauri; cargo test --lib`
+- Real desktop Anki add-note validation: from `src-tauri`, set `HSW_ANKI_RUNTIME_VALIDATE=1`, then run `cargo test --lib validates_real_ankiconnect_add_note_and_duplicate_check -- --ignored --nocapture`
 - Linked real dictionary validation: VS developer shell with `RUSTFLAGS=--cfg hoshi_dicts_linked`, `CARGO_TARGET_DIR=target-linked-check`, `HSW_REAL_YOMITAN_ZIP=<local dictionary zip>`, then `cargo test --lib imports_real_yomitan_zip_and_loads_runtime -- --ignored --nocapture`
 
 ## Do Not Start Without A Slice
