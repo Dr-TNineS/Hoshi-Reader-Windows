@@ -500,26 +500,26 @@
 
 <style>
   .lookup-content { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
-  .lookup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: #9aa0a6; font-size: 11px; text-transform: uppercase; }
+  .lookup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--app-muted, #999999); font-size: 11px; text-transform: uppercase; }
   .lookup-head-actions { display: flex; align-items: center; gap: 4px; }
-  .lookup-head button { flex-shrink: 0; min-width: 24px; padding: 3px 7px; background: #33383e; color: #d7d9dc; border: 1px solid #555c64; border-radius: 3px; cursor: pointer; font-size: 11px; text-transform: none; }
-  .lookup-head button:disabled { color: #747b84; cursor: not-allowed; opacity: 0.62; }
-  .lookup-text { color: #fff; font-size: 18px; line-height: 1.35; overflow-wrap: anywhere; max-height: 54px; overflow: hidden; }
+  .lookup-head button { flex-shrink: 0; min-width: 24px; padding: 3px 7px; background: var(--app-control, #1b1b1b); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 3px; cursor: pointer; font-size: 11px; text-transform: none; }
+  .lookup-head button:disabled { color: var(--app-muted, #999999); cursor: not-allowed; opacity: 0.62; }
+  .lookup-text { color: var(--app-text, #fff); font-size: 18px; line-height: 1.35; overflow-wrap: anywhere; max-height: 54px; overflow: hidden; }
   .lookup-state-block { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
-  .lookup-state { color: #b7bcc3; font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
-  .lookup-action { padding: 5px 10px; background: #3b8f78; color: #fff; border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
-  .lookup-action:hover { background: #46a187; }
+  .lookup-state { color: var(--app-muted, #999999); font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
+  .lookup-action { padding: 5px 10px; background: var(--app-primary, #d0bcff); color: var(--app-bg, #000); border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .lookup-action:hover { background: var(--app-primary-hover, #c1a9fb); }
   .lookup-results { display: flex; flex-direction: column; gap: 8px; max-height: min(360px, calc(100vh - 220px)); overflow-y: auto; padding-right: 2px; }
-  .lookup-result { display: flex; flex-direction: column; gap: 5px; padding-top: 8px; border-top: 1px solid #3c4043; min-width: 0; }
-  .lookup-result-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; color: #fff; font-size: 16px; line-height: 1.25; overflow-wrap: anywhere; }
-  .lookup-reading { color: #b7bcc3; font-size: 12px; overflow-wrap: anywhere; }
-  .lookup-meta { color: #81c995; font-size: 11px; line-height: 1.3; overflow-wrap: anywhere; }
+  .lookup-result { display: flex; flex-direction: column; gap: 5px; padding-top: 8px; border-top: 1px solid var(--app-border, #333333); min-width: 0; }
+  .lookup-result-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; color: var(--app-text, #fff); font-size: 16px; line-height: 1.25; overflow-wrap: anywhere; }
+  .lookup-reading { color: var(--app-muted, #999999); font-size: 12px; overflow-wrap: anywhere; }
+  .lookup-meta { color: var(--app-status, #cce8d5); font-size: 11px; line-height: 1.3; overflow-wrap: anywhere; }
   .lookup-tags { display: flex; flex-wrap: wrap; gap: 4px; }
-  .lookup-tag { max-width: 100%; padding: 2px 6px; background: #30343a; color: #8ab4f8; border: 1px solid #454b52; border-radius: 4px; font-size: 11px; line-height: 1.25; overflow-wrap: anywhere; }
-  .lookup-glossary { display: flex; flex-direction: column; gap: 2px; color: #d7d9dc; font-size: 12px; line-height: 1.38; overflow-wrap: anywhere; }
+  .lookup-tag { max-width: 100%; padding: 2px 6px; background: var(--app-control, #1b1b1b); color: var(--app-primary, #d0bcff); border: 1px solid var(--app-border, #333333); border-radius: 4px; font-size: 11px; line-height: 1.25; overflow-wrap: anywhere; }
+  .lookup-glossary { display: flex; flex-direction: column; gap: 2px; color: var(--app-text, #fff); font-size: 12px; line-height: 1.38; overflow-wrap: anywhere; }
   .lookup-glossary-group { display: flex; flex-direction: column; gap: 4px; }
   .lookup-glossary-group[open] { display: flex; }
-  .lookup-glossary-dict { color: #81c995; font-size: 11px; cursor: pointer; }
+  .lookup-glossary-dict { color: var(--app-status, #cce8d5); font-size: 11px; cursor: pointer; }
   .lookup-glossary-list { margin: 0; padding-left: 1.25em; }
   .lookup-glossary-list > li { margin: 4px 0; }
   .lookup-glossary-content { min-width: 0; }
@@ -529,31 +529,31 @@
   .lookup-glossary-content :global(li) { margin: 2px 0; }
   .lookup-glossary-content :global(table) { max-width: 100%; table-layout: auto; border-collapse: collapse; }
   .lookup-glossary-content :global(th),
-  .lookup-glossary-content :global(td) { padding: 3px 5px; border: 1px solid #5a6169; vertical-align: top; }
-  .lookup-glossary-content :global(th) { background: #30343a; font-weight: 600; }
+  .lookup-glossary-content :global(td) { padding: 3px 5px; border: 1px solid var(--app-border, #333333); vertical-align: top; }
+  .lookup-glossary-content :global(th) { background: var(--app-control, #1b1b1b); font-weight: 600; }
   .lookup-glossary-content :global(.gloss-sc-table-container) { display: block; max-width: 100%; overflow-x: auto; }
-  .lookup-glossary-content :global(a) { color: #8ab4f8; }
+  .lookup-glossary-content :global(a) { color: var(--app-primary, #d0bcff); }
   .lookup-glossary-content :global(a[data-lookup-redirect]) { border-bottom: 1px dotted currentColor; cursor: pointer; text-decoration: none; }
-  .lookup-glossary-content :global(rt) { color: #b7bcc3; font-size: 0.72em; }
-  .lookup-glossary-content :global(.gloss-media-placeholder) { display: inline-block; max-width: 100%; padding: 4px 7px; border: 1px dashed #5a6169; border-radius: 4px; color: #b7bcc3; background: #2b2f34; font-size: 11px; }
-  .lookup-glossary-content :global(.gloss-media-placeholder-loading) { color: #d2d6dc; border-color: #6f7782; }
+  .lookup-glossary-content :global(rt) { color: var(--app-muted, #999999); font-size: 0.72em; }
+  .lookup-glossary-content :global(.gloss-media-placeholder) { display: inline-block; max-width: 100%; padding: 4px 7px; border: 1px dashed var(--app-border, #333333); border-radius: 4px; color: var(--app-muted, #999999); background: var(--app-control, #1b1b1b); font-size: 11px; }
+  .lookup-glossary-content :global(.gloss-media-placeholder-loading) { color: var(--app-text, #fff); border-color: var(--app-muted, #999999); }
   .lookup-glossary-content :global(.gloss-media-placeholder-loaded) { display: block; padding: 2px; border-style: solid; }
-  .lookup-glossary-content :global(.gloss-media-placeholder-error) { color: #f28b82; border-color: #7d4f4b; }
+  .lookup-glossary-content :global(.gloss-media-placeholder-error) { color: var(--app-error, #ffb4ab); border-color: var(--app-error, #ffb4ab); }
   .lookup-glossary-content :global(.gloss-media-image) { display: block; max-width: 100%; max-height: 180px; object-fit: contain; }
-  .lookup-detail { color: #c8ccd1; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
-  .lookup-detail span { margin-right: 6px; color: #fdd663; }
-  .lookup-anki { align-self: flex-start; margin-top: 2px; padding: 3px 7px; background: #2b2f34; color: #7f858c; border: 1px solid #444a51; border-radius: 4px; cursor: not-allowed; font-size: 11px; }
+  .lookup-detail { color: var(--app-muted, #999999); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
+  .lookup-detail span { margin-right: 6px; color: var(--app-primary, #d0bcff); }
+  .lookup-anki { align-self: flex-start; margin-top: 2px; padding: 3px 7px; background: var(--app-control, #1b1b1b); color: var(--app-muted, #999999); border: 1px solid var(--app-border, #333333); border-radius: 4px; cursor: not-allowed; font-size: 11px; }
   .lookup-anki.ready { color: #d8eadf; background: #24352f; border-color: #3b6956; cursor: pointer; }
   .lookup-anki.ready:hover { background: #2c4038; }
   .lookup-anki.added { color: #d8eadf; border-color: #4d8f6b; }
   .lookup-anki.duplicate { color: #ffd89b; border-color: #8d6a33; }
   .lookup-anki.error { color: #ffb4ac; border-color: #7d4f4b; }
-  .lookup-anki-preview { align-self: flex-start; margin-top: -2px; padding: 0; color: #9bbdf9; background: transparent; border: none; cursor: pointer; font-size: 11px; text-decoration: underline; }
-  .anki-preview { display: flex; flex-direction: column; gap: 6px; padding: 8px; background: #202326; border: 1px solid #3c4043; border-radius: 4px; }
-  .anki-preview-head { display: flex; flex-wrap: wrap; gap: 6px; color: #9ad5b5; font-size: 11px; line-height: 1.3; }
+  .lookup-anki-preview { align-self: flex-start; margin-top: -2px; padding: 0; color: var(--app-primary, #d0bcff); background: transparent; border: none; cursor: pointer; font-size: 11px; text-decoration: underline; }
+  .anki-preview { display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--app-bg, #000); border: 1px solid var(--app-border, #333333); border-radius: 4px; }
+  .anki-preview-head { display: flex; flex-wrap: wrap; gap: 6px; color: var(--app-status, #cce8d5); font-size: 11px; line-height: 1.3; }
   .anki-preview-row { display: grid; grid-template-columns: minmax(72px, 0.35fr) minmax(0, 1fr); gap: 7px; align-items: start; min-width: 0; }
-  .anki-preview-row > span { min-width: 0; overflow-wrap: anywhere; color: #fdd663; font-size: 11px; line-height: 1.35; }
-  .anki-preview-row pre { min-width: 0; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: #d7d9dc; font-family: inherit; font-size: 11px; line-height: 1.35; }
+  .anki-preview-row > span { min-width: 0; overflow-wrap: anywhere; color: var(--app-primary, #d0bcff); font-size: 11px; line-height: 1.35; }
+  .anki-preview-row pre { min-width: 0; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--app-text, #fff); font-family: inherit; font-size: 11px; line-height: 1.35; }
   .anki-action-message { margin: 0; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
   .anki-action-message.ok { color: #9ad5b5; }
   .anki-action-message.warn { color: #ffd89b; }

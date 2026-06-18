@@ -4,6 +4,15 @@
   import AnkiConnectPanel from "./lib/AnkiConnectPanel.svelte";
   import { extractDictionaryMediaReferences, pruneFieldMappings, upsertFieldTemplate } from "./lib/anki-field-renderer";
   import DictionaryManagementPanel from "./lib/DictionaryManagementPanel.svelte";
+  import {
+    loadReaderAppearance,
+    readerAppearanceCssVars,
+    readerAppearancePalette,
+    readerThemeLabels,
+    saveReaderAppearance,
+    type ReaderAppearance,
+    type ReaderTheme,
+  } from "./lib/appearance";
   import { resolveChapterAssets } from "./lib/epub-assets";
   import LookupPopupContent from "./lib/LookupPopupContent.svelte";
   import { resultDictionaryLabel, type LookupState } from "./lib/lookup-popup";
@@ -58,6 +67,8 @@
   let readerSelection = $state<ReaderSelection | null>(null);
   let lookupPopupSizes = $state<Record<string, { width: number; height: number }>>({});
   let lookupPopups = $state<LookupPopupItem[]>([]);
+  let readerAppearance = $state<ReaderAppearance>(loadReaderAppearance());
+  let showAppearancePanel = $state(false);
   let lookupRequestId = 0;
   let showToc = $state(false);
   let error = $state("");
@@ -82,6 +93,8 @@
 
   let tocEntries = $derived(meta ? flattenToc(meta.toc, meta) : []);
   let chapterBookInfo = $derived(meta?.book_info.chapter_info[chapterIndex] ?? null);
+  let appearancePalette = $derived(readerAppearancePalette(readerAppearance));
+  let appearanceVars = $derived(readerAppearanceCssVars(appearancePalette));
 
   interface LookupPopupHistoryEntry {
     selection: ReaderSelection;
@@ -147,6 +160,14 @@
     if (!isTauriRuntime()) return;
     void loadAnkiSettings();
   });
+
+  $effect(() => {
+    saveReaderAppearance(readerAppearance);
+  });
+
+  function setReaderTheme(theme: ReaderTheme) {
+    readerAppearance = { ...readerAppearance, theme };
+  }
 
   function saveProgress(
     locator: BookLocator,
@@ -617,19 +638,43 @@
   }
 
   async function moveDictionary(dictionary: DictionaryManifestEntry, direction: -1 | 1) {
-    const currentIndex = dictionaryList.findIndex((entry) => entry.dictId === dictionary.dictId);
+    const role = dictionary.role;
+    const roleDictionaries = dictionaryList.filter((entry) => entry.role === role);
+    const currentIndex = roleDictionaries.findIndex((entry) => entry.dictId === dictionary.dictId);
     const nextIndex = currentIndex + direction;
-    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= dictionaryList.length) return;
+    if (currentIndex < 0 || nextIndex < 0 || nextIndex >= roleDictionaries.length) return;
 
-    const reordered = [...dictionaryList];
+    const reordered = [...roleDictionaries];
     [reordered[currentIndex], reordered[nextIndex]] = [reordered[nextIndex], reordered[currentIndex]];
     dictionaryBusy = true;
     dictionaryListError = "";
     try {
       dictionaryList = await invoke<DictionaryManifestEntry[]>("dictionary_set_order", {
+        role,
         dictIds: reordered.map((entry) => entry.dictId),
       });
       dictionaryListStatus = await invoke<DictionaryStatus>("dict_status");
+      reloadLookupPopups();
+    } catch (e) {
+      dictionaryListError = String(e);
+    } finally {
+      dictionaryBusy = false;
+    }
+  }
+
+  async function removeDictionaryImport(dictionary: DictionaryManifestEntry) {
+    const title = dictionary.title || "this dictionary";
+    const message = `Delete "${title}" from imported dictionaries?\n\nThis removes this import from Term, Frequency, and Pitch categories and deletes the app-owned dictionary copy. The original zip file is not touched.`;
+    if (!window.confirm(message)) return;
+
+    dictionaryBusy = true;
+    dictionaryListError = "";
+    try {
+      dictionaryList = await invoke<DictionaryManifestEntry[]>("dictionary_remove_import", {
+        importId: dictionary.importId,
+      });
+      dictionaryListStatus = await invoke<DictionaryStatus>("dict_status");
+      dictionaryStatus = `Deleted ${title}.`;
       reloadLookupPopups();
     } catch (e) {
       dictionaryListError = String(e);
@@ -924,7 +969,7 @@
 
 </script>
 
-<main class="app">
+<main class="app" data-theme={readerAppearance.theme} style={appearanceVars}>
   {#if view === "bookshelf"}
     <section class="bookshelf">
       <div class="shelf-head">
@@ -935,6 +980,9 @@
         <div class="head-actions">
           <button class="secondary-action" onclick={() => showAnkiPanel = !showAnkiPanel}>
             Anki
+          </button>
+          <button class="secondary-action" onclick={() => showAppearancePanel = !showAppearancePanel}>
+            Appearance
           </button>
           <button class="secondary-action" onclick={() => showDictionaryManager = !showDictionaryManager}>
             Dictionaries
@@ -949,6 +997,26 @@
       {#if error}<p class="err">{error}</p>{/if}
       {#if dictionaryStatus}<p class="dict-status">{dictionaryStatus}</p>{/if}
 
+      {#if showAppearancePanel}
+        <section class="appearance-panel" aria-label="Reader appearance">
+          <div>
+            <h2>Appearance</h2>
+            <p class="appearance-summary">HSA reader theme: white/black for Light, black/white for Dark.</p>
+          </div>
+          <div class="theme-segments" role="group" aria-label="Theme">
+            {#each (Object.keys(readerThemeLabels) as ReaderTheme[]) as theme}
+              <button
+                class:active={readerAppearance.theme === theme}
+                aria-pressed={readerAppearance.theme === theme}
+                onclick={() => setReaderTheme(theme)}
+              >
+                {readerThemeLabels[theme]}
+              </button>
+            {/each}
+          </div>
+        </section>
+      {/if}
+
       {#if showDictionaryManager}
         <DictionaryManagementPanel
           dictionaries={dictionaryList}
@@ -959,6 +1027,7 @@
           onImport={importDictionary}
           onSetEnabled={setDictionaryEnabled}
           onMove={moveDictionary}
+          onRemove={removeDictionaryImport}
         />
       {/if}
 
@@ -1015,6 +1084,7 @@
       initialProgress={readerInitialProgress}
       chapterStartChars={chapterBookInfo?.current_total ?? 0}
       totalBookChars={meta?.book_info.character_count ?? 0}
+      {appearancePalette}
       onProgressChange={handleReaderProgress}
       onSelectionChange={handleReaderSelection}
       {startAtEnd}
@@ -1088,54 +1158,62 @@
 
 <style>
   :global(*) { margin: 0; padding: 0; box-sizing: border-box; }
-  :global(body) { background: #202124; color: #e8eaed; font-family: "Segoe UI", sans-serif; overflow: hidden; }
-  .app { width: 100vw; height: 100vh; }
+  :global(body) { background: var(--app-bg, #000); color: var(--app-text, #fff); font-family: "Segoe UI", sans-serif; overflow: hidden; }
+  .app { width: 100vw; height: 100vh; background: var(--app-bg); color: var(--app-text); }
   .bookshelf { width: min(920px, calc(100vw - 48px)); height: 100vh; margin: 0 auto; display: flex; flex-direction: column; justify-content: center; gap: 22px; }
   .shelf-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; }
-  h1 { font-size: 32px; font-weight: 300; letter-spacing: 4px; color: #fff; }
-  h2 { font-size: 13px; font-weight: 600; color: #9aa0a6; text-transform: uppercase; }
-  .subtitle { margin-top: 6px; color: #9aa0a6; font-size: 14px; }
+  h1 { font-size: 32px; font-weight: 300; letter-spacing: 4px; color: var(--app-text); }
+  h2 { font-size: 13px; font-weight: 600; color: var(--app-muted); text-transform: uppercase; }
+  .subtitle { margin-top: 6px; color: var(--app-muted); font-size: 14px; }
   .head-actions { flex-shrink: 0; display: flex; align-items: center; gap: 10px; }
-  .ob { flex-shrink: 0; padding: 10px 22px; font-size: 14px; background: #3b8f78; color: #fff; border: none; border-radius: 4px; cursor: pointer; }
-  .ob:hover { background: #46a187; }
-  .secondary-action { flex-shrink: 0; padding: 10px 16px; font-size: 14px; background: #303134; color: #d7d9dc; border: 1px solid #555c64; border-radius: 4px; cursor: pointer; }
-  .secondary-action:hover { background: #3a3d41; }
+  .ob { flex-shrink: 0; padding: 10px 22px; font-size: 14px; background: var(--app-primary); color: var(--app-bg); border: none; border-radius: 4px; cursor: pointer; }
+  .ob:hover { background: var(--app-primary-hover); }
+  .secondary-action { flex-shrink: 0; padding: 10px 16px; font-size: 14px; background: var(--app-control); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 4px; cursor: pointer; }
+  .secondary-action:hover { background: var(--app-control-hover); }
   .ob:disabled,
   .secondary-action:disabled { color: #858b91; cursor: default; opacity: 0.72; }
-  .ob:disabled:hover { background: #3b8f78; }
-  .secondary-action:disabled:hover { background: #303134; }
-  .err { color: #ff8a80; font-size: 13px; white-space: pre-wrap; }
-  .dict-status { color: #b7bcc3; font-size: 13px; white-space: pre-wrap; }
+  .ob:disabled:hover { background: var(--app-primary); }
+  .secondary-action:disabled:hover { background: var(--app-control); }
+  .err { color: var(--app-error); font-size: 13px; white-space: pre-wrap; }
+  .dict-status { color: var(--app-status); font-size: 13px; white-space: pre-wrap; }
+  .appearance-panel { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px; background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 6px; }
+  .appearance-summary { margin-top: 4px; color: var(--app-muted); font-size: 12px; line-height: 1.35; }
+  .theme-segments { display: flex; align-items: center; gap: 4px; padding: 3px; background: var(--app-control); border: 1px solid var(--app-border); border-radius: 6px; }
+  .theme-segments button { min-width: 72px; padding: 6px 12px; background: transparent; color: var(--app-text); border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  .theme-segments button:hover { background: var(--app-control-hover); }
+  .theme-segments button.active { background: var(--app-primary); color: var(--app-bg); }
   .recent { display: flex; flex-direction: column; gap: 10px; min-height: 240px; }
-  .empty { padding: 28px 0; color: #80868b; font-size: 13px; }
+  .empty { padding: 28px 0; color: var(--app-muted); font-size: 13px; }
   .book-list { display: flex; flex-direction: column; gap: 8px; max-height: 54vh; overflow-y: auto; padding-right: 4px; }
-  .book-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 8px; background: #2b2d31; color: inherit; border: 1px solid #3c4043; border-radius: 6px; }
-  .book-row:hover { background: #32363b; border-color: #5f6368; }
+  .book-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 8px; background: var(--app-surface); color: inherit; border: 1px solid var(--app-border); border-radius: 6px; }
+  .book-row:hover { background: var(--app-surface-hover); border-color: var(--app-muted); }
   .book-open { min-width: 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 12px 14px; text-align: left; background: transparent; color: inherit; border: none; cursor: pointer; }
-  .book-forget { align-self: center; margin-right: 8px; padding: 5px 9px; background: #303134; color: #c5c9ce; border: 1px solid #555c64; border-radius: 4px; cursor: pointer; font-size: 12px; }
-  .book-forget:hover { background: #3a3d41; color: #fff; }
-  .book-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; color: #f1f3f4; }
-  .book-meta { white-space: nowrap; font-size: 12px; color: #9aa0a6; }
-  .book-path { grid-column: 1 / -1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: #80868b; }
-  .keys { margin-top: 2px; font-size: 12px; color: #6f7479; }
-  .toc-panel { position: fixed; top: 28px; right: 18px; bottom: 44px; z-index: 110; width: min(380px, calc(100vw - 36px)); display: flex; flex-direction: column; background: #202124; border: 1px solid #3c4043; border-radius: 6px; box-shadow: 0 16px 44px rgba(0, 0, 0, 0.45); }
-  .toc-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid #3c4043; }
-  .toc-head button { padding: 4px 10px; background: #333; color: #ccc; border: 1px solid #555; border-radius: 3px; cursor: pointer; font-size: 12px; }
+  .book-forget { align-self: center; margin-right: 8px; padding: 5px 9px; background: var(--app-control); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .book-forget:hover { background: var(--app-control-hover); color: var(--app-text); }
+  .book-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; color: var(--app-text); }
+  .book-meta { white-space: nowrap; font-size: 12px; color: var(--app-muted); }
+  .book-path { grid-column: 1 / -1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--app-muted); }
+  .keys { margin-top: 2px; font-size: 12px; color: var(--app-muted); }
+  .toc-panel { position: fixed; top: 28px; right: 18px; bottom: 44px; z-index: 110; width: min(380px, calc(100vw - 36px)); display: flex; flex-direction: column; background: var(--app-bg); border: 1px solid var(--app-border); border-radius: 6px; box-shadow: 0 16px 44px var(--app-shadow); }
+  .toc-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
+  .toc-head button { padding: 4px 10px; background: var(--app-control); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 3px; cursor: pointer; font-size: 12px; }
   .toc-list { display: flex; flex-direction: column; overflow-y: auto; padding: 8px; }
-  .toc-row { width: 100%; padding: 8px 10px 8px calc(10px + var(--level) * 16px); text-align: left; background: transparent; color: #d7d9dc; border: none; border-radius: 4px; cursor: pointer; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .toc-row:hover { background: #303134; }
-  .toc-row.active { background: #315c50; color: #fff; }
-  .toc-row:disabled { color: #686d72; cursor: default; }
+  .toc-row { width: 100%; padding: 8px 10px 8px calc(10px + var(--level) * 16px); text-align: left; background: transparent; color: var(--app-text); border: none; border-radius: 4px; cursor: pointer; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .toc-row:hover { background: var(--app-control); }
+  .toc-row.active { background: var(--app-primary); color: var(--app-bg); }
+  .toc-row:disabled { color: var(--app-muted); cursor: default; }
   .toc-row:disabled:hover { background: transparent; }
-  .lookup-pop { position: fixed; z-index: var(--popup-z); display: flex; flex-direction: column; gap: 8px; max-height: min(520px, calc(100vh - 92px)); padding: 10px 12px; background: #23262a; color: #e8eaed; border: 1px solid #4b5056; border-radius: 6px; box-shadow: 0 14px 38px rgba(0, 0, 0, 0.42); overflow: hidden; }
-  .ctrls { position: fixed; bottom: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 5px; background: #111; border-top: 1px solid #333; z-index: 100; }
-  .ctrls button { padding: 4px 10px; background: #333; color: #ccc; border: 1px solid #555; border-radius: 3px; cursor: pointer; font-size: 12px; }
-  .ctrls button:hover { background: #444; }
-  .ctrls span { font-size: 12px; color: #888; }
+  .lookup-pop { position: fixed; z-index: var(--popup-z); display: flex; flex-direction: column; gap: 8px; max-height: min(520px, calc(100vh - 92px)); padding: 10px 12px; background: var(--app-surface); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 6px; box-shadow: 0 14px 38px var(--app-shadow); overflow: hidden; }
+  .ctrls { position: fixed; bottom: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 5px; background: var(--app-bg); border-top: 1px solid var(--app-border); z-index: 100; }
+  .ctrls button { padding: 4px 10px; background: var(--app-control); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 3px; cursor: pointer; font-size: 12px; }
+  .ctrls button:hover { background: var(--app-control-hover); }
+  .ctrls span { font-size: 12px; color: var(--app-muted); }
   @media (max-width: 640px) {
     .bookshelf { width: min(100vw - 32px, 920px); }
     .shelf-head { align-items: stretch; flex-direction: column; gap: 14px; }
     .head-actions { flex-wrap: wrap; }
     .head-actions button { flex: 1 1 148px; }
+    .appearance-panel { align-items: stretch; flex-direction: column; }
+    .theme-segments button { flex: 1 1 0; }
   }
 </style>

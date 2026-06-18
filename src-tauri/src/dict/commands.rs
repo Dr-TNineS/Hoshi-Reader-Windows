@@ -1,7 +1,7 @@
 use base64::{engine::general_purpose, Engine as _};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
@@ -101,8 +101,12 @@ pub enum DictionaryStatusKind {
 #[serde(rename_all = "camelCase")]
 pub struct DictionaryManifestEntry {
     pub dict_id: String,
+    #[serde(default)]
+    pub import_id: String,
     pub title: String,
     pub kind: String,
+    #[serde(default)]
+    pub role: String,
     pub enabled: bool,
     pub order: usize,
     pub internal_path: String,
@@ -237,12 +241,26 @@ pub fn dictionary_set_enabled(
 
 #[tauri::command]
 pub fn dictionary_set_order(
+    role: String,
     dict_ids: Vec<String>,
     app: AppHandle,
     state: tauri::State<DictState>,
 ) -> Result<Vec<DictionaryManifestEntry>, String> {
     let manifest_path = dictionary_manifest_path(&app)?;
-    let entries = set_dictionary_order(&manifest_path, &dict_ids)?;
+    let entries = set_dictionary_order(&manifest_path, &role, &dict_ids)?;
+    state.initialize(&app);
+    Ok(entries)
+}
+
+#[tauri::command]
+pub fn dictionary_remove_import(
+    import_id: String,
+    app: AppHandle,
+    state: tauri::State<DictState>,
+) -> Result<Vec<DictionaryManifestEntry>, String> {
+    let manifest_path = dictionary_manifest_path(&app)?;
+    let imported_root = imported_dictionary_root(&app)?;
+    let entries = remove_dictionary_import(&manifest_path, &imported_root, &import_id)?;
     state.initialize(&app);
     Ok(entries)
 }
@@ -336,27 +354,23 @@ fn import_yomitan_zip(
         let existing = read_dictionary_manifest(&manifest_path)?
             .dictionaries
             .into_iter()
-            .find(|dictionary| dictionary.dict_id == dict_id)
+            .find(|dictionary| dictionary.import_id == dict_id)
             .map(Ok)
             .unwrap_or_else(|| {
-                upsert_dictionary_manifest_entry(
-                    &manifest_path,
-                    DictionaryManifestEntry {
-                        dict_id: dict_id.clone(),
-                        title: read_imported_dictionary_title(&final_dir)
-                            .unwrap_or_else(|| "Imported Dictionary".into()),
-                        kind: "term".into(),
-                        enabled: true,
-                        order: 0,
-                        internal_path: final_dir.to_string_lossy().into_owned(),
-                        term_count: 0,
-                        meta_count: 0,
-                        freq_count: 0,
-                        pitch_count: 0,
-                        media_count: 0,
-                        last_imported: current_unix_time(),
-                    },
-                )
+                let entries = dictionary_entries_for_import(
+                    &dict_id,
+                    read_imported_dictionary_title(&final_dir)
+                        .unwrap_or_else(|| "Imported Dictionary".into()),
+                    final_dir.to_string_lossy().into_owned(),
+                    (0, 0, 0, 0, 0),
+                    current_unix_time(),
+                );
+                upsert_dictionary_manifest_entries(&manifest_path, entries).and_then(|entries| {
+                    entries
+                        .into_iter()
+                        .next()
+                        .ok_or_else(|| "Dictionary import created no entries.".into())
+                })
             })?;
         state.initialize(app);
         let runtime = state.runtime.lock().unwrap();
@@ -548,8 +562,9 @@ pub(crate) fn read_dictionary_manifest(path: &Path) -> Result<DictionaryManifest
 
     let content =
         fs::read_to_string(path).map_err(|e| format!("Cannot read dictionary manifest: {e}"))?;
-    serde_json::from_str::<DictionaryManifest>(&content)
-        .map_err(|e| format!("Cannot parse dictionary manifest: {e}"))
+    let manifest = serde_json::from_str::<DictionaryManifest>(&content)
+        .map_err(|e| format!("Cannot parse dictionary manifest: {e}"))?;
+    Ok(normalize_dictionary_manifest(manifest))
 }
 
 fn write_dictionary_manifest(path: &Path, manifest: &DictionaryManifest) -> Result<(), String> {
@@ -560,6 +575,150 @@ fn write_dictionary_manifest(path: &Path, manifest: &DictionaryManifest) -> Resu
     let content = serde_json::to_string_pretty(manifest)
         .map_err(|e| format!("Cannot serialize dictionary manifest: {e}"))?;
     fs::write(path, content).map_err(|e| format!("Cannot write dictionary manifest: {e}"))
+}
+
+fn normalize_dictionary_manifest(manifest: DictionaryManifest) -> DictionaryManifest {
+    let mut dictionaries = Vec::new();
+    for entry in manifest.dictionaries {
+        dictionaries.extend(normalize_dictionary_manifest_entry(entry));
+    }
+    sort_dictionary_manifest_entries(&mut dictionaries);
+    DictionaryManifest { dictionaries }
+}
+
+fn normalize_dictionary_manifest_entry(
+    mut entry: DictionaryManifestEntry,
+) -> Vec<DictionaryManifestEntry> {
+    if let Some(role) = normalize_dictionary_role(&entry.role) {
+        entry.role = role.clone();
+        entry.kind = role;
+        if entry.import_id.trim().is_empty() {
+            entry.import_id = import_id_from_role_dict_id(&entry.dict_id);
+        }
+        if !entry.dict_id.ends_with(&format!(":{}", entry.role)) {
+            entry.dict_id = role_dict_id(&entry.import_id, &entry.role);
+        }
+        return vec![entry];
+    }
+
+    let import_id = if entry.import_id.trim().is_empty() {
+        import_id_from_role_dict_id(&entry.dict_id)
+    } else {
+        entry.import_id.clone()
+    };
+    let roles = dictionary_roles_from_counts(&entry);
+    roles
+        .into_iter()
+        .map(|role| {
+            let mut role_entry = entry.clone();
+            role_entry.import_id = import_id.clone();
+            role_entry.role = role.clone();
+            role_entry.kind = role.clone();
+            role_entry.dict_id = role_dict_id(&import_id, &role);
+            role_entry
+        })
+        .collect()
+}
+
+fn dictionary_roles_from_counts(entry: &DictionaryManifestEntry) -> Vec<String> {
+    let mut roles = Vec::new();
+    if entry.term_count > 0 || normalize_dictionary_role(&entry.kind).as_deref() == Some("term") {
+        roles.push("term".into());
+    }
+    if entry.freq_count > 0
+        || normalize_dictionary_role(&entry.kind).as_deref() == Some("frequency")
+    {
+        roles.push("frequency".into());
+    }
+    if entry.pitch_count > 0 || normalize_dictionary_role(&entry.kind).as_deref() == Some("pitch") {
+        roles.push("pitch".into());
+    }
+    if roles.is_empty() {
+        roles.push("term".into());
+    }
+    roles
+}
+
+fn normalize_dictionary_role(role: &str) -> Option<String> {
+    match role.trim().to_ascii_lowercase().as_str() {
+        "term" => Some("term".into()),
+        "freq" | "frequency" => Some("frequency".into()),
+        "pitch" => Some("pitch".into()),
+        _ => None,
+    }
+}
+
+fn import_id_from_role_dict_id(dict_id: &str) -> String {
+    for role in ["term", "frequency", "freq", "pitch"] {
+        if let Some(import_id) = dict_id.strip_suffix(&format!(":{role}")) {
+            return import_id.into();
+        }
+    }
+    dict_id.into()
+}
+
+fn role_dict_id(import_id: &str, role: &str) -> String {
+    format!("{import_id}:{role}")
+}
+
+fn next_dictionary_role_order(manifest: &DictionaryManifest, role: &str) -> usize {
+    manifest
+        .dictionaries
+        .iter()
+        .filter(|dictionary| dictionary.role == role)
+        .map(|dictionary| dictionary.order)
+        .max()
+        .map(|order| order + 1)
+        .unwrap_or(0)
+}
+
+fn sort_dictionary_manifest_entries(entries: &mut [DictionaryManifestEntry]) {
+    entries
+        .sort_by_key(|dictionary| (dictionary_role_sort_key(&dictionary.role), dictionary.order));
+}
+
+fn dictionary_role_sort_key(role: &str) -> usize {
+    match role {
+        "term" => 0,
+        "frequency" => 1,
+        "pitch" => 2,
+        _ => 3,
+    }
+}
+
+fn dictionary_entries_for_import(
+    import_id: &str,
+    title: String,
+    internal_path: String,
+    counts: (usize, usize, usize, usize, usize),
+    last_imported: u64,
+) -> Vec<DictionaryManifestEntry> {
+    let template = DictionaryManifestEntry {
+        dict_id: import_id.into(),
+        import_id: import_id.into(),
+        title,
+        kind: "term".into(),
+        role: String::new(),
+        enabled: true,
+        order: 0,
+        internal_path,
+        term_count: counts.0,
+        meta_count: counts.1,
+        freq_count: counts.2,
+        pitch_count: counts.3,
+        media_count: counts.4,
+        last_imported,
+    };
+    dictionary_roles_from_counts(&template)
+        .into_iter()
+        .map(|role| DictionaryManifestEntry {
+            dict_id: role_dict_id(import_id, &role),
+            import_id: import_id.into(),
+            kind: role.clone(),
+            role,
+            ..template.clone()
+        })
+        .collect()
 }
 
 fn upsert_dictionary_manifest_entry(
@@ -583,20 +742,23 @@ fn upsert_dictionary_manifest_entry(
             *existing = entry.clone();
         }
     } else {
-        entry.order = manifest
-            .dictionaries
-            .iter()
-            .map(|dictionary| dictionary.order)
-            .max()
-            .map(|order| order + 1)
-            .unwrap_or(0);
+        entry.order = next_dictionary_role_order(&manifest, &entry.role);
         manifest.dictionaries.push(entry.clone());
     }
-    manifest
-        .dictionaries
-        .sort_by_key(|dictionary| dictionary.order);
+    sort_dictionary_manifest_entries(&mut manifest.dictionaries);
     write_dictionary_manifest(path, &manifest)?;
     Ok(entry)
+}
+
+fn upsert_dictionary_manifest_entries(
+    path: &Path,
+    entries: Vec<DictionaryManifestEntry>,
+) -> Result<Vec<DictionaryManifestEntry>, String> {
+    let mut saved = Vec::new();
+    for entry in entries {
+        saved.push(upsert_dictionary_manifest_entry(path, entry)?);
+    }
+    Ok(saved)
 }
 
 fn set_dictionary_enabled(path: &Path, dict_id: &str, enabled: bool) -> Result<(), String> {
@@ -615,10 +777,13 @@ fn set_dictionary_enabled(path: &Path, dict_id: &str, enabled: bool) -> Result<(
 
 fn set_dictionary_order(
     path: &Path,
+    role: &str,
     dict_ids: &[String],
 ) -> Result<Vec<DictionaryManifestEntry>, String> {
     let mut manifest = read_dictionary_manifest(path)?;
-    validate_dictionary_order_ids(&manifest, dict_ids)?;
+    let role = normalize_dictionary_role(role)
+        .ok_or_else(|| format!("Unknown dictionary role: {role}"))?;
+    validate_dictionary_order_ids(&manifest, &role, dict_ids)?;
 
     for (order, dict_id) in dict_ids.iter().enumerate() {
         if let Some(entry) = manifest
@@ -629,19 +794,27 @@ fn set_dictionary_order(
             entry.order = order;
         }
     }
-    manifest
-        .dictionaries
-        .sort_by_key(|dictionary| dictionary.order);
+    sort_dictionary_manifest_entries(&mut manifest.dictionaries);
     write_dictionary_manifest(path, &manifest)?;
     Ok(manifest.dictionaries)
 }
 
 fn validate_dictionary_order_ids(
     manifest: &DictionaryManifest,
+    role: &str,
     dict_ids: &[String],
 ) -> Result<(), String> {
-    if dict_ids.len() != manifest.dictionaries.len() {
-        return Err("Dictionary order must include every dictionary exactly once.".into());
+    let role_entries = manifest
+        .dictionaries
+        .iter()
+        .filter(|dictionary| dictionary.role == role)
+        .collect::<Vec<_>>();
+
+    if dict_ids.len() != role_entries.len() {
+        return Err(
+            "Dictionary order must include every dictionary in the selected category exactly once."
+                .into(),
+        );
     }
 
     let mut sorted_requested = dict_ids.to_vec();
@@ -654,8 +827,7 @@ fn validate_dictionary_order_ids(
         return Err(format!("Dictionary order contains duplicate id: {dict_id}"));
     }
 
-    let mut existing = manifest
-        .dictionaries
+    let mut existing = role_entries
         .iter()
         .map(|dictionary| dictionary.dict_id.clone())
         .collect::<Vec<_>>();
@@ -669,10 +841,92 @@ fn validate_dictionary_order_ids(
         if let Some(dict_id) = unknown {
             return Err(format!("Dictionary not found: {dict_id}"));
         }
-        return Err("Dictionary order must include every dictionary exactly once.".into());
+        return Err(
+            "Dictionary order must include every dictionary in the selected category exactly once."
+                .into(),
+        );
     }
 
     Ok(())
+}
+
+fn remove_dictionary_import(
+    manifest_path: &Path,
+    imported_root: &Path,
+    import_id: &str,
+) -> Result<Vec<DictionaryManifestEntry>, String> {
+    let import_id = import_id.trim();
+    if import_id.is_empty() {
+        return Err("Dictionary import id is empty.".into());
+    }
+
+    let mut manifest = read_dictionary_manifest(manifest_path)?;
+    let removed = manifest
+        .dictionaries
+        .iter()
+        .filter(|entry| entry.import_id == import_id)
+        .cloned()
+        .collect::<Vec<_>>();
+    if removed.is_empty() {
+        return Err(format!("Dictionary import not found: {import_id}"));
+    }
+
+    let mut paths = removed
+        .iter()
+        .map(|entry| entry.internal_path.clone())
+        .collect::<Vec<_>>();
+    paths.sort();
+    paths.dedup();
+    if paths.len() != 1 {
+        return Err(format!(
+            "Dictionary import has inconsistent paths and cannot be removed safely: {import_id}"
+        ));
+    }
+
+    let remove_path = safe_imported_dictionary_remove_path(imported_root, &paths[0])?;
+    manifest
+        .dictionaries
+        .retain(|entry| entry.import_id != import_id);
+    write_dictionary_manifest(manifest_path, &manifest)?;
+
+    if remove_path.exists() {
+        fs::remove_dir_all(&remove_path)
+            .map_err(|e| format!("Cannot remove imported dictionary: {e}"))?;
+    }
+
+    Ok(manifest.dictionaries)
+}
+
+fn safe_imported_dictionary_remove_path(
+    imported_root: &Path,
+    internal_path: &str,
+) -> Result<PathBuf, String> {
+    let root = imported_root
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve imported dictionary root: {e}"))?;
+    let path = PathBuf::from(internal_path);
+    if path.components().any(|component| {
+        matches!(
+            component,
+            Component::ParentDir | Component::Prefix(_) | Component::RootDir
+        )
+    }) && !path.is_absolute()
+    {
+        return Err("Imported dictionary path escaped the app dictionary directory.".into());
+    }
+    let resolved = if path.exists() {
+        path.canonicalize()
+            .map_err(|e| format!("Cannot resolve imported dictionary path: {e}"))?
+    } else if path.is_absolute() {
+        path
+    } else {
+        root.join(path)
+    };
+
+    if !resolved.starts_with(&root) {
+        return Err("Imported dictionary path escaped the app dictionary directory.".into());
+    }
+    Ok(resolved)
 }
 
 fn find_dictionary_entry<'a>(
@@ -691,6 +945,12 @@ fn find_dictionary_entry<'a>(
         .dictionaries
         .iter()
         .find(|entry| entry.dict_id == needle)
+        .or_else(|| {
+            manifest
+                .dictionaries
+                .iter()
+                .find(|entry| entry.import_id == needle)
+        })
         .or_else(|| {
             manifest
                 .dictionaries
@@ -817,7 +1077,8 @@ fn enabled_dictionary_load_plan(manifest: &DictionaryManifest) -> Vec<Dictionary
         .iter()
         .filter(|entry| entry.enabled)
         .collect::<Vec<_>>();
-    entries.sort_by_key(|entry| entry.order);
+    entries.sort_by_key(|entry| (dictionary_role_sort_key(&entry.role), entry.order));
+    let mut seen = HashSet::<(PathBuf, String)>::new();
     entries
         .into_iter()
         .filter_map(|entry| {
@@ -825,9 +1086,14 @@ fn enabled_dictionary_load_plan(manifest: &DictionaryManifest) -> Vec<Dictionary
             if !is_hoshidicts_term_dir(&path) {
                 return None;
             }
-            let use_term = entry.term_count > 0 || entry.kind == "term";
-            let use_freq = entry.freq_count > 0;
-            let use_pitch = entry.pitch_count > 0;
+            let role = normalize_dictionary_role(&entry.role)
+                .or_else(|| normalize_dictionary_role(&entry.kind))?;
+            if !seen.insert((path.clone(), role.clone())) {
+                return None;
+            }
+            let use_term = role == "term" && (entry.term_count > 0 || entry.kind == "term");
+            let use_freq = role == "frequency" && entry.freq_count > 0;
+            let use_pitch = role == "pitch" && entry.pitch_count > 0;
             (use_term || use_freq || use_pitch).then_some(DictionaryLoadEntry {
                 path,
                 use_term,
@@ -916,7 +1182,7 @@ fn dictionary_kind_from_counts(term_count: usize, freq_count: usize, pitch_count
     if term_count > 0 {
         "term".into()
     } else if freq_count > 0 {
-        "freq".into()
+        "frequency".into()
     } else if pitch_count > 0 {
         "pitch".into()
     } else {
@@ -992,34 +1258,28 @@ fn import_yomitan_zip_linked(
         let imported_dir = find_single_imported_dictionary_dir(&staging_root)?;
         replace_imported_dictionary_dir(&imported_dir, final_dir)?;
 
-        let entry = upsert_dictionary_manifest_entry(
+        let title = if let Some(title) = restored_title {
+            title
+        } else if attempt.title.trim().is_empty() {
+            read_imported_dictionary_title(final_dir)
+                .unwrap_or_else(|| "Imported Dictionary".into())
+        } else {
+            attempt.title
+        };
+        let entries = upsert_dictionary_manifest_entries(
             manifest_path,
-            DictionaryManifestEntry {
-                dict_id: dict_id.to_string(),
-                title: if let Some(title) = restored_title {
-                    title
-                } else if attempt.title.trim().is_empty() {
-                    read_imported_dictionary_title(final_dir)
-                        .unwrap_or_else(|| "Imported Dictionary".into())
-                } else {
-                    attempt.title
-                },
-                kind: dictionary_kind_from_counts(
-                    attempt.counts.0,
-                    attempt.counts.2,
-                    attempt.counts.3,
-                ),
-                enabled: true,
-                order: 0,
-                internal_path: final_dir.to_string_lossy().into_owned(),
-                term_count: attempt.counts.0,
-                meta_count: attempt.counts.1,
-                freq_count: attempt.counts.2,
-                pitch_count: attempt.counts.3,
-                media_count: attempt.counts.4,
-                last_imported: current_unix_time(),
-            },
+            dictionary_entries_for_import(
+                dict_id,
+                title,
+                final_dir.to_string_lossy().into_owned(),
+                attempt.counts,
+                current_unix_time(),
+            ),
         )?;
+        let entry = entries
+            .first()
+            .cloned()
+            .ok_or_else(|| "Dictionary import created no entries.".to_string())?;
 
         state.initialize(app);
         let runtime = state.runtime.lock().unwrap();
@@ -1459,9 +1719,11 @@ mod tests {
 
     fn manifest_entry(dict_id: &str, order: usize) -> DictionaryManifestEntry {
         DictionaryManifestEntry {
-            dict_id: dict_id.into(),
+            dict_id: role_dict_id(dict_id, "term"),
+            import_id: dict_id.into(),
             title: format!("Dictionary {dict_id}"),
             kind: "term".into(),
+            role: "term".into(),
             enabled: true,
             order,
             internal_path: format!("dictionaries/imported/{dict_id}"),
@@ -1580,6 +1842,77 @@ mod tests {
     }
 
     #[test]
+    fn legacy_manifest_entries_expand_to_role_entries() {
+        let root = temp_path("legacy_manifest_roles");
+        let path = root.join("manifest.json");
+        fs::create_dir_all(&root).unwrap();
+        let legacy = serde_json::json!({
+            "dictionaries": [{
+                "dictId": "legacy",
+                "title": "Legacy Dictionary",
+                "kind": "term",
+                "enabled": true,
+                "order": 7,
+                "internalPath": "dictionaries/imported/legacy",
+                "termCount": 10,
+                "metaCount": 1,
+                "freqCount": 2,
+                "pitchCount": 3,
+                "mediaCount": 4,
+                "lastImported": 123
+            }]
+        });
+        fs::write(&path, serde_json::to_string_pretty(&legacy).unwrap()).unwrap();
+
+        let manifest = read_dictionary_manifest(&path).unwrap();
+        assert_eq!(
+            manifest
+                .dictionaries
+                .iter()
+                .map(|entry| (
+                    entry.dict_id.as_str(),
+                    entry.import_id.as_str(),
+                    entry.role.as_str()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("legacy:term", "legacy", "term"),
+                ("legacy:frequency", "legacy", "frequency"),
+                ("legacy:pitch", "legacy", "pitch"),
+            ]
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn import_entries_are_split_by_detected_roles() {
+        let entries = dictionary_entries_for_import(
+            "abc",
+            "Split Dictionary".into(),
+            "dictionaries/imported/abc".into(),
+            (10, 1, 2, 3, 4),
+            123,
+        );
+
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| (
+                    entry.dict_id.as_str(),
+                    entry.kind.as_str(),
+                    entry.role.as_str()
+                ))
+                .collect::<Vec<_>>(),
+            vec![
+                ("abc:term", "term", "term"),
+                ("abc:frequency", "frequency", "frequency"),
+                ("abc:pitch", "pitch", "pitch"),
+            ]
+        );
+    }
+
+    #[test]
     fn dictionary_media_loads_by_id_or_title() {
         let root = temp_path("media_lookup");
         let dict_dir = root.join("dict");
@@ -1672,7 +2005,7 @@ mod tests {
         };
 
         let by_id = load_dictionary_styles(&manifest, "abc").unwrap();
-        assert_eq!(by_id.source, "abc");
+        assert_eq!(by_id.source, "abc:term");
         assert!(by_id.css.contains("rgb(1, 2, 3)"));
 
         let by_title = load_dictionary_styles(&manifest, "Readable Dictionary").unwrap();
@@ -1694,7 +2027,7 @@ mod tests {
         };
 
         let styles = load_dictionary_styles(&manifest, "abc").unwrap();
-        assert_eq!(styles.source, "abc");
+        assert_eq!(styles.source, "abc:term");
         assert_eq!(styles.css, "");
 
         let _ = fs::remove_dir_all(root);
@@ -1726,7 +2059,7 @@ mod tests {
         let path = root.join("manifest.json");
 
         let entry = upsert_dictionary_manifest_entry(&path, manifest_entry("abc", 0)).unwrap();
-        assert_eq!(entry.dict_id, "abc");
+        assert_eq!(entry.dict_id, "abc:term");
         assert_eq!(entry.order, 0);
 
         let manifest = read_dictionary_manifest(&path).unwrap();
@@ -1752,7 +2085,7 @@ mod tests {
         assert_eq!(manifest.dictionaries.len(), 2);
         assert_eq!(manifest.dictionaries[0].title, "Updated");
         assert_eq!(manifest.dictionaries[0].term_count, 42);
-        assert_eq!(manifest.dictionaries[1].dict_id, "def");
+        assert_eq!(manifest.dictionaries[1].dict_id, "def:term");
 
         let _ = fs::remove_dir_all(root);
     }
@@ -1880,7 +2213,9 @@ mod tests {
                     term_count: 0,
                     freq_count: 2,
                     pitch_count: 0,
-                    kind: "freq".into(),
+                    kind: "frequency".into(),
+                    role: "frequency".into(),
+                    dict_id: "freq:frequency".into(),
                     order: 1,
                     ..manifest_entry("freq", 1)
                 },
@@ -1890,6 +2225,8 @@ mod tests {
                     freq_count: 0,
                     pitch_count: 3,
                     kind: "pitch".into(),
+                    role: "pitch".into(),
+                    dict_id: "pitch:pitch".into(),
                     order: 2,
                     ..manifest_entry("pitch", 2)
                 },
@@ -1909,19 +2246,19 @@ mod tests {
         assert_eq!(plan.len(), 4);
         assert_eq!(
             (plan[0].use_term, plan[0].use_freq, plan[0].use_pitch),
-            (true, true, true)
+            (true, false, false)
         );
         assert_eq!(
             (plan[1].use_term, plan[1].use_freq, plan[1].use_pitch),
-            (false, true, false)
+            (true, false, false)
         );
         assert_eq!(
             (plan[2].use_term, plan[2].use_freq, plan[2].use_pitch),
-            (false, false, true)
+            (false, true, false)
         );
         assert_eq!(
             (plan[3].use_term, plan[3].use_freq, plan[3].use_pitch),
-            (true, false, false)
+            (false, false, true)
         );
 
         let _ = fs::remove_dir_all(root);
@@ -1933,7 +2270,7 @@ mod tests {
         let path = root.join("manifest.json");
         upsert_dictionary_manifest_entry(&path, manifest_entry("abc", 0)).unwrap();
 
-        set_dictionary_enabled(&path, "abc", false).unwrap();
+        set_dictionary_enabled(&path, "abc:term", false).unwrap();
         let manifest = read_dictionary_manifest(&path).unwrap();
         assert!(!manifest.dictionaries[0].enabled);
 
@@ -1951,29 +2288,165 @@ mod tests {
         upsert_dictionary_manifest_entry(&path, manifest_entry("def", 0)).unwrap();
         upsert_dictionary_manifest_entry(&path, manifest_entry("ghi", 0)).unwrap();
 
-        let ordered =
-            set_dictionary_order(&path, &["ghi".into(), "abc".into(), "def".into()]).unwrap();
+        let ordered = set_dictionary_order(
+            &path,
+            "term",
+            &["ghi:term".into(), "abc:term".into(), "def:term".into()],
+        )
+        .unwrap();
         assert_eq!(
             ordered
                 .iter()
                 .map(|entry| entry.dict_id.as_str())
                 .collect::<Vec<_>>(),
-            vec!["ghi", "abc", "def"]
+            vec!["ghi:term", "abc:term", "def:term"]
         );
 
-        let duplicate =
-            set_dictionary_order(&path, &["ghi".into(), "abc".into(), "abc".into()]).unwrap_err();
-        assert_eq!(duplicate, "Dictionary order contains duplicate id: abc");
+        let duplicate = set_dictionary_order(
+            &path,
+            "term",
+            &["ghi:term".into(), "abc:term".into(), "abc:term".into()],
+        )
+        .unwrap_err();
+        assert_eq!(
+            duplicate,
+            "Dictionary order contains duplicate id: abc:term"
+        );
 
-        let unknown = set_dictionary_order(&path, &["ghi".into(), "abc".into(), "missing".into()])
+        let unknown = set_dictionary_order(
+            &path,
+            "term",
+            &["ghi:term".into(), "abc:term".into(), "missing:term".into()],
+        )
+        .unwrap_err();
+        assert_eq!(unknown, "Dictionary not found: missing:term");
+
+        let missing = set_dictionary_order(&path, "term", &["ghi:term".into(), "abc:term".into()])
             .unwrap_err();
-        assert_eq!(unknown, "Dictionary not found: missing");
-
-        let missing = set_dictionary_order(&path, &["ghi".into(), "abc".into()]).unwrap_err();
         assert_eq!(
             missing,
-            "Dictionary order must include every dictionary exactly once."
+            "Dictionary order must include every dictionary in the selected category exactly once."
         );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn set_dictionary_order_is_scoped_to_role() {
+        let root = temp_path("set_order_role_scope");
+        let path = root.join("manifest.json");
+        upsert_dictionary_manifest_entries(
+            &path,
+            vec![
+                manifest_entry("a", 0),
+                manifest_entry("b", 1),
+                DictionaryManifestEntry {
+                    dict_id: "a:frequency".into(),
+                    import_id: "a".into(),
+                    kind: "frequency".into(),
+                    role: "frequency".into(),
+                    order: 0,
+                    freq_count: 10,
+                    ..manifest_entry("a", 0)
+                },
+                DictionaryManifestEntry {
+                    dict_id: "b:frequency".into(),
+                    import_id: "b".into(),
+                    kind: "frequency".into(),
+                    role: "frequency".into(),
+                    order: 1,
+                    freq_count: 10,
+                    ..manifest_entry("b", 1)
+                },
+            ],
+        )
+        .unwrap();
+
+        let ordered = set_dictionary_order(
+            &path,
+            "frequency",
+            &["b:frequency".into(), "a:frequency".into()],
+        )
+        .unwrap();
+        let terms = ordered
+            .iter()
+            .filter(|entry| entry.role == "term")
+            .map(|entry| (entry.dict_id.as_str(), entry.order))
+            .collect::<Vec<_>>();
+        let frequencies = ordered
+            .iter()
+            .filter(|entry| entry.role == "frequency")
+            .map(|entry| (entry.dict_id.as_str(), entry.order))
+            .collect::<Vec<_>>();
+
+        assert_eq!(terms, vec![("a:term", 0), ("b:term", 1)]);
+        assert_eq!(frequencies, vec![("b:frequency", 0), ("a:frequency", 1)]);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn remove_dictionary_import_removes_roles_and_directory() {
+        let root = temp_path("remove_import");
+        let imported_root = root.join("imported");
+        let dict_dir = create_valid_dictionary_dir(&imported_root, "abc");
+        let other_dir = create_valid_dictionary_dir(&imported_root, "other");
+        let path = root.join("manifest.json");
+        upsert_dictionary_manifest_entries(
+            &path,
+            vec![
+                DictionaryManifestEntry {
+                    internal_path: dict_dir.to_string_lossy().into_owned(),
+                    ..manifest_entry("abc", 0)
+                },
+                DictionaryManifestEntry {
+                    dict_id: "abc:frequency".into(),
+                    import_id: "abc".into(),
+                    kind: "frequency".into(),
+                    role: "frequency".into(),
+                    internal_path: dict_dir.to_string_lossy().into_owned(),
+                    freq_count: 5,
+                    ..manifest_entry("abc", 0)
+                },
+                DictionaryManifestEntry {
+                    internal_path: other_dir.to_string_lossy().into_owned(),
+                    ..manifest_entry("other", 1)
+                },
+            ],
+        )
+        .unwrap();
+
+        let entries = remove_dictionary_import(&path, &imported_root, "abc").unwrap();
+        assert!(!dict_dir.exists());
+        assert!(other_dir.exists());
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].import_id, "other");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn remove_dictionary_import_rejects_paths_outside_import_root() {
+        let root = temp_path("remove_import_guard");
+        let imported_root = root.join("imported");
+        let outside = create_valid_dictionary_dir(&root, "outside");
+        fs::create_dir_all(&imported_root).unwrap();
+        let path = root.join("manifest.json");
+        upsert_dictionary_manifest_entry(
+            &path,
+            DictionaryManifestEntry {
+                internal_path: outside.to_string_lossy().into_owned(),
+                ..manifest_entry("abc", 0)
+            },
+        )
+        .unwrap();
+
+        let error = remove_dictionary_import(&path, &imported_root, "abc").unwrap_err();
+        assert_eq!(
+            error,
+            "Imported dictionary path escaped the app dictionary directory."
+        );
+        assert!(outside.exists());
 
         let _ = fs::remove_dir_all(root);
     }
@@ -1981,7 +2454,7 @@ mod tests {
     #[test]
     fn kind_from_counts_prefers_term_then_freq_then_pitch() {
         assert_eq!(dictionary_kind_from_counts(1, 1, 1), "term");
-        assert_eq!(dictionary_kind_from_counts(0, 1, 1), "freq");
+        assert_eq!(dictionary_kind_from_counts(0, 1, 1), "frequency");
         assert_eq!(dictionary_kind_from_counts(0, 0, 1), "pitch");
         assert_eq!(dictionary_kind_from_counts(0, 0, 0), "unknown");
     }
@@ -2192,31 +2665,26 @@ mod tests {
             assert!(final_dir.join(file).is_file(), "{file} should exist");
         }
 
-        let first = upsert_dictionary_manifest_entry(
+        let title = if let Some(title) = restored_title {
+            title
+        } else if attempt.title.trim().is_empty() {
+            read_imported_dictionary_title(&final_dir)
+                .unwrap_or_else(|| "Imported Dictionary".into())
+        } else {
+            attempt.title
+        };
+        let first_entries = upsert_dictionary_manifest_entries(
             &manifest_path,
-            DictionaryManifestEntry {
-                dict_id: dict_id.clone(),
-                title: if let Some(title) = restored_title {
-                    title
-                } else if attempt.title.trim().is_empty() {
-                    read_imported_dictionary_title(&final_dir)
-                        .unwrap_or_else(|| "Imported Dictionary".into())
-                } else {
-                    attempt.title
-                },
-                kind: dictionary_kind_from_counts(counts.0, counts.2, counts.3),
-                enabled: true,
-                order: 0,
-                internal_path: final_dir.to_string_lossy().into_owned(),
-                term_count: counts.0,
-                meta_count: counts.1,
-                freq_count: counts.2,
-                pitch_count: counts.3,
-                media_count: counts.4,
-                last_imported: current_unix_time(),
-            },
+            dictionary_entries_for_import(
+                &dict_id,
+                title,
+                final_dir.to_string_lossy().into_owned(),
+                counts,
+                current_unix_time(),
+            ),
         )
         .unwrap();
+        let first = first_entries.first().unwrap().clone();
         let second = upsert_dictionary_manifest_entry(&manifest_path, first.clone()).unwrap();
         assert_eq!(first.dict_id, second.dict_id);
         assert_eq!(second.order, 0);

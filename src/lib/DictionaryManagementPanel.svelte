@@ -1,6 +1,13 @@
 <script lang="ts">
-  import { dictionaryCountsLabel, dictionaryStatusLabel, importedLabel } from "./dictionary-management";
-  import type { DictionaryManifestEntry, DictionaryStatus } from "./types";
+  import {
+    dictionaryCountsLabel,
+    dictionaryRole,
+    dictionaryRoleLabels,
+    dictionaryRoles,
+    dictionaryStatusLabel,
+    importedLabel,
+  } from "./dictionary-management";
+  import type { DictionaryManifestEntry, DictionaryRole, DictionaryStatus } from "./types";
 
   let {
     dictionaries = [],
@@ -11,6 +18,7 @@
     onImport = () => {},
     onSetEnabled = (_dictionary: DictionaryManifestEntry, _enabled: boolean) => {},
     onMove = (_dictionary: DictionaryManifestEntry, _direction: -1 | 1) => {},
+    onRemove = (_dictionary: DictionaryManifestEntry) => {},
   }: {
     dictionaries?: DictionaryManifestEntry[];
     status?: DictionaryStatus | null;
@@ -20,7 +28,11 @@
     onImport?: () => void;
     onSetEnabled?: (dictionary: DictionaryManifestEntry, enabled: boolean) => void;
     onMove?: (dictionary: DictionaryManifestEntry, direction: -1 | 1) => void;
+    onRemove?: (dictionary: DictionaryManifestEntry) => void;
   } = $props();
+
+  let selectedRole = $state<DictionaryRole>("term");
+  let visibleDictionaries = $derived(dictionaries.filter((dictionary) => dictionaryRole(dictionary) === selectedRole));
 </script>
 
 <section class="dictionary-panel">
@@ -43,8 +55,24 @@
   {:else if dictionaries.length === 0}
     <p class="empty">No dictionaries imported.</p>
   {:else}
+    <div class="dictionary-tabs" role="tablist" aria-label="Dictionary type">
+      {#each dictionaryRoles as role}
+        <button
+          role="tab"
+          aria-selected={selectedRole === role}
+          class:active={selectedRole === role}
+          disabled={busy}
+          onclick={() => selectedRole = role}
+        >
+          {dictionaryRoleLabels[role]}
+        </button>
+      {/each}
+    </div>
     <div class="dictionary-list" aria-busy={busy}>
-      {#each dictionaries as dictionary, index (dictionary.dictId)}
+      {#if visibleDictionaries.length === 0}
+        <p class="empty">No {dictionaryRoleLabels[selectedRole]} dictionaries.</p>
+      {/if}
+      {#each visibleDictionaries as dictionary, index (dictionary.dictId)}
         <div class="dictionary-row">
           <label class="dictionary-toggle">
             <input
@@ -58,11 +86,11 @@
           <div class="dictionary-main">
             <p class="dictionary-title">{dictionary.title}</p>
             <p class="dictionary-meta">
-              {dictionary.kind} | {dictionaryCountsLabel(dictionary)} | {importedLabel(dictionary.lastImported)}
+              {dictionaryRoleLabels[dictionaryRole(dictionary)]} | {dictionaryCountsLabel(dictionary)} | {importedLabel(dictionary.lastImported)}
             </p>
             <p class="dictionary-path">{dictionary.internalPath}</p>
           </div>
-          <div class="dictionary-order">
+          <div class="dictionary-row-actions">
             <button
               class="icon-action"
               aria-label={`Move ${dictionary.title} up`}
@@ -76,10 +104,19 @@
               class="icon-action"
               aria-label={`Move ${dictionary.title} down`}
               title="Move down"
-              disabled={busy || index === dictionaries.length - 1}
+              disabled={busy || index === visibleDictionaries.length - 1}
               onclick={() => onMove(dictionary, 1)}
             >
               v
+            </button>
+            <button
+              class="delete-action"
+              aria-label={`Delete ${dictionary.title}`}
+              title="Delete dictionary"
+              disabled={busy}
+              onclick={() => onRemove(dictionary)}
+            >
+              Delete
             </button>
           </div>
         </div>
@@ -89,32 +126,40 @@
 </section>
 
 <style>
-  .dictionary-panel { display: flex; flex-direction: column; gap: 10px; padding: 12px; background: #26282c; border: 1px solid #3c4043; border-radius: 6px; }
+  .dictionary-panel { display: flex; flex-direction: column; gap: 10px; padding: 12px; background: var(--app-surface, #121212); border: 1px solid var(--app-border, #333333); border-radius: 6px; }
   .dictionary-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-  .dictionary-summary { margin-top: 4px; color: #b7bcc3; font-size: 12px; line-height: 1.35; }
+  .dictionary-summary { margin-top: 4px; color: var(--app-muted, #999999); font-size: 12px; line-height: 1.35; }
   .dictionary-actions { flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
-  .compact-action { padding: 5px 10px; background: #303134; color: #d7d9dc; border: 1px solid #555c64; border-radius: 4px; cursor: pointer; font-size: 12px; }
-  .compact-action:hover:not(:disabled) { background: #3a3d41; }
-  .compact-action:disabled { color: #747a80; cursor: default; }
+  .compact-action { padding: 5px 10px; background: var(--app-control, #1b1b1b); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .compact-action:hover:not(:disabled) { background: var(--app-control-hover, #262626); }
+  .compact-action:disabled { color: var(--app-muted, #999999); cursor: default; }
+  .dictionary-tabs { display: flex; align-items: center; gap: 4px; padding: 3px; background: var(--app-control, #1b1b1b); border: 1px solid var(--app-border, #333333); border-radius: 6px; }
+  .dictionary-tabs button { flex: 1 1 0; min-width: 0; padding: 6px 10px; background: transparent; color: var(--app-text, #fff); border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  .dictionary-tabs button:hover:not(:disabled) { background: var(--app-control-hover, #262626); }
+  .dictionary-tabs button.active { background: var(--app-primary, #d0bcff); color: var(--app-bg, #000); }
+  .dictionary-tabs button:disabled { color: var(--app-muted, #999999); cursor: default; }
   .dictionary-list { display: flex; flex-direction: column; gap: 8px; max-height: 28vh; overflow-y: auto; padding-right: 2px; }
   .dictionary-list[aria-busy="true"] { opacity: 0.72; }
-  .dictionary-row { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; background: #2b2d31; border: 1px solid #3c4043; border-radius: 6px; }
-  .dictionary-toggle { display: flex; align-items: center; gap: 7px; color: #d7d9dc; font-size: 12px; user-select: none; }
-  .dictionary-toggle input { width: 14px; height: 14px; accent-color: #3b8f78; }
+  .dictionary-row { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; background: var(--app-bg, #000); border: 1px solid var(--app-border, #333333); border-radius: 6px; }
+  .dictionary-toggle { display: flex; align-items: center; gap: 7px; color: var(--app-text, #fff); font-size: 12px; user-select: none; }
+  .dictionary-toggle input { width: 14px; height: 14px; accent-color: var(--app-primary, #d0bcff); }
   .dictionary-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-  .dictionary-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #f1f3f4; font-size: 14px; }
-  .dictionary-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #9aa0a6; font-size: 11px; }
-  .dictionary-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #6f7479; font-size: 11px; }
-  .dictionary-order { display: flex; align-items: center; gap: 5px; }
-  .icon-action { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; background: #303134; color: #d7d9dc; border: 1px solid #555c64; border-radius: 4px; cursor: pointer; font-size: 13px; line-height: 1; }
-  .icon-action:hover:not(:disabled) { background: #3a3d41; }
-  .icon-action:disabled { color: #666c72; cursor: default; }
-  .err { color: #ff8a80; font-size: 13px; white-space: pre-wrap; }
-  .empty { padding: 28px 0; color: #80868b; font-size: 13px; }
+  .dictionary-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-text, #fff); font-size: 14px; }
+  .dictionary-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-muted, #999999); font-size: 11px; }
+  .dictionary-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-muted, #999999); font-size: 11px; }
+  .dictionary-row-actions { display: flex; align-items: center; gap: 5px; }
+  .icon-action { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; background: var(--app-control, #1b1b1b); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 4px; cursor: pointer; font-size: 13px; line-height: 1; }
+  .icon-action:hover:not(:disabled) { background: var(--app-control-hover, #262626); }
+  .icon-action:disabled { color: var(--app-muted, #999999); cursor: default; }
+  .delete-action { min-width: 58px; padding: 5px 8px; background: transparent; color: var(--app-error, #ffb4ab); border: 1px solid var(--app-border, #333333); border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .delete-action:hover:not(:disabled) { background: var(--app-control-hover, #262626); }
+  .delete-action:disabled { color: var(--app-muted, #999999); cursor: default; }
+  .err { color: var(--app-error, #ffb4ab); font-size: 13px; white-space: pre-wrap; }
+  .empty { padding: 28px 0; color: var(--app-muted, #999999); font-size: 13px; }
   @media (max-width: 640px) {
-    .dictionary-row { grid-template-columns: 1fr auto; align-items: start; }
+    .dictionary-row { grid-template-columns: 1fr; align-items: start; }
     .dictionary-toggle { grid-column: 1 / -1; }
     .dictionary-main { grid-column: 1; }
-    .dictionary-order { grid-column: 2; grid-row: 2; }
+    .dictionary-row-actions { grid-column: 1; }
   }
 </style>

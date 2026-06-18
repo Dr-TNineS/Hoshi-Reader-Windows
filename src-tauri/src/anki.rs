@@ -829,9 +829,11 @@ mod tests {
     fn test_manifest(root: &Path) -> DictionaryManifest {
         DictionaryManifest {
             dictionaries: vec![DictionaryManifestEntry {
-                dict_id: "dict".into(),
+                dict_id: "dict:term".into(),
+                import_id: "dict".into(),
                 title: "Readable Dict".into(),
                 kind: "term".into(),
+                role: "term".into(),
                 enabled: true,
                 order: 0,
                 internal_path: root.to_string_lossy().into_owned(),

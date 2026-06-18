@@ -41,6 +41,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Bookshelf:
   - Minimal recent-books list.
   - EPUB import entry.
+  - Minimal Appearance panel with HSA-aligned Light and Dark reader themes.
   - Resume from saved progress.
   - Tauri startup attempts to restore the last reader session.
   - Tauri reading state stores recent books, progress, and session in `reading/state.json`.
@@ -75,16 +76,16 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - `dict_lookup` command exists.
   - `dictionary_list` returns imported dictionaries from the manifest.
   - `dictionary_media` and `dictionary_styles` expose imported dictionary media and `styles.css` to the popup through read-only commands.
-  - On startup, dictionary state reads enabled term dictionaries from the manifest.
-  - Dictionary enabled/order changes are persisted and rebuild dictionary runtime state.
-  - Enabled manifest entries load term, frequency, and pitch roles based on imported counts.
+  - On startup, dictionary state reads enabled term, frequency, and pitch role entries from the manifest.
+  - Dictionary enabled/order/delete changes are persisted and rebuild dictionary runtime state.
+  - Imported dictionary manifest entries are role-based: a single imported dictionary can appear as separate Term, Frequency, and Pitch entries that share one import id and app-owned directory.
   - Dictionary manifest lives at app data `dictionaries/manifest.json`.
   - Valid imported hoshidicts term directories contain `.hoshidicts_1`, `index.json`, `hash.table`, and `blobs.bin`.
   - `build.rs` attempts to compile/link `third_party/hoshidicts` and the current C API bridge when CMake/C++ tools exist.
   - `HSW_HOSHIDICTS_DIR` can override the default local hoshidicts path.
   - Bookshelf has a minimal `Import Dictionary` entry for Yomitan `.zip` files.
-  - Bookshelf has a minimal dictionary management panel for listing imported dictionaries, refreshing status, enabling/disabling dictionaries, and changing lookup order.
-  - Dictionary management probe and `npm run check:dictionary-management` cover empty/loading/error/ready states, visible counts, enable toggles, order controls, import/refresh actions, and narrow-window overflow.
+  - Bookshelf has a minimal dictionary management panel for Term/Frequency/Pitch categories, refreshing status, enabling/disabling role entries, changing per-category order, and deleting an imported dictionary from all categories.
+  - Dictionary management probe and `npm run check:dictionary-management` cover empty/loading/error/ready states, category tabs, visible counts, enable toggles, order controls, delete/import/refresh actions, and narrow-window overflow.
   - Dictionary import uses zip content hash as stable `dict_id` and records successful imports in the manifest.
   - Dictionary import uses staging directories and preserves an existing dictionary dir if replacement fails.
   - `DictResult` includes rules, source dictionary, frequency entries, and pitch entries.
@@ -117,7 +118,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - No durable database; app-owned library metadata and reading state are still JSON.
 - Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; sync and audio export remain unimplemented. Follow-up slices are documented in `docs/ANKI_MEDIA_EXPORT_PLAN.md`.
 - No sync implementation.
-- No settings or appearance panel.
+- No full settings surface; only the minimal bookshelf Appearance panel for HSA-aligned Light/Dark reader themes is implemented.
 - No verified app-owned cover thumbnail cache.
 - Runtime validation with a normal media-bearing Yomitan dictionary is not verified; on 2026-06-16, `HSW_MEDIA_YOMITAN_ZIP` was unset, `OALDPE10.zip` had `mediaCount=0`, and `MK3Fix0213.zip` remained unsuitable because compatibility import intentionally skips media.
 - No verified release packaging flow.

@@ -36,6 +36,7 @@ pub fn run() {
             dict::commands::dictionary_styles,
             dict::commands::dictionary_set_enabled,
             dict::commands::dictionary_set_order,
+            dict::commands::dictionary_remove_import,
             dict::commands::dict_lookup,
             dict::commands::dict_status,
             anki::anki_load_settings,

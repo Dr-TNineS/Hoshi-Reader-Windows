@@ -211,34 +211,34 @@
 </section>
 
 <style>
-  .anki-panel { display: flex; flex-direction: column; gap: 10px; padding: 12px; background: #26282c; border: 1px solid #3c4043; border-radius: 6px; }
+  .anki-panel { display: flex; flex-direction: column; gap: 10px; padding: 12px; background: var(--app-surface, #121212); border: 1px solid var(--app-border, #333333); border-radius: 6px; }
   .anki-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
-  .anki-summary { margin-top: 4px; color: #b7bcc3; font-size: 12px; line-height: 1.35; }
+  .anki-summary { margin-top: 4px; color: var(--app-muted, #999999); font-size: 12px; line-height: 1.35; }
   .anki-actions { flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
-  .compact-action { padding: 5px 10px; background: #303134; color: #d7d9dc; border: 1px solid #555c64; border-radius: 4px; cursor: pointer; font-size: 12px; }
-  .compact-action:hover:not(:disabled) { background: #3a3d41; }
-  .compact-action:disabled { color: #747a80; cursor: default; }
-  .endpoint-row, .select-row { min-width: 0; display: flex; flex-direction: column; gap: 5px; color: #9aa0a6; font-size: 11px; text-transform: uppercase; }
-  .endpoint-row input, .select-row input, .select-row select { width: 100%; min-width: 0; padding: 7px 8px; background: #202124; color: #f1f3f4; border: 1px solid #555c64; border-radius: 4px; font-size: 13px; text-transform: none; }
-  .endpoint-row input:disabled, .select-row input:disabled, .select-row select:disabled { color: #747a80; }
+  .compact-action { padding: 5px 10px; background: var(--app-control, #1b1b1b); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .compact-action:hover:not(:disabled) { background: var(--app-control-hover, #262626); }
+  .compact-action:disabled { color: var(--app-muted, #999999); cursor: default; }
+  .endpoint-row, .select-row { min-width: 0; display: flex; flex-direction: column; gap: 5px; color: var(--app-muted, #999999); font-size: 11px; text-transform: uppercase; }
+  .endpoint-row input, .select-row input, .select-row select { width: 100%; min-width: 0; padding: 7px 8px; background: var(--app-bg, #000); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 4px; font-size: 13px; text-transform: none; }
+  .endpoint-row input:disabled, .select-row input:disabled, .select-row select:disabled { color: var(--app-muted, #999999); }
   .config-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
   .config-grid[aria-busy="true"] { opacity: 0.72; }
   .fields-row { display: flex; flex-direction: column; gap: 7px; }
-  .fields-title { color: #9aa0a6; font-size: 11px; font-weight: 600; text-transform: uppercase; }
+  .fields-title { color: var(--app-muted, #999999); font-size: 11px; font-weight: 600; text-transform: uppercase; }
   .audio-row { display: flex; flex-direction: column; gap: 8px; padding-top: 2px; }
   .audio-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
-  .audio-summary { margin-top: 3px; color: #80868b; font-size: 12px; line-height: 1.35; }
-  .audio-toggle { display: inline-flex; align-items: center; gap: 6px; color: #d7d9dc; font-size: 12px; }
-  .audio-toggle input { width: 14px; height: 14px; accent-color: #3b8f78; }
+  .audio-summary { margin-top: 3px; color: var(--app-muted, #999999); font-size: 12px; line-height: 1.35; }
+  .audio-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--app-text, #fff); font-size: 12px; }
+  .audio-toggle input { width: 14px; height: 14px; accent-color: var(--app-primary, #d0bcff); }
   .audio-grid { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 10px; }
   .field-template-list { display: flex; flex-direction: column; gap: 7px; }
   .field-template-row { min-width: 0; display: grid; grid-template-columns: minmax(90px, 0.32fr) minmax(0, 1fr); align-items: center; gap: 8px; }
-  .field-template-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #d8eadf; font-size: 12px; }
-  .field-template-row input { width: 100%; min-width: 0; padding: 6px 7px; background: #202124; color: #f1f3f4; border: 1px solid #555c64; border-radius: 4px; font-size: 12px; }
-  .field-template-row input:disabled { color: #747a80; }
-  .anki-status { color: #9ad5b5; font-size: 13px; line-height: 1.4; }
-  .err { color: #ff8a80; font-size: 13px; white-space: pre-wrap; }
-  .empty, .fetched-at { color: #80868b; font-size: 12px; }
+  .field-template-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-status, #cce8d5); font-size: 12px; }
+  .field-template-row input { width: 100%; min-width: 0; padding: 6px 7px; background: var(--app-bg, #000); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 4px; font-size: 12px; }
+  .field-template-row input:disabled { color: var(--app-muted, #999999); }
+  .anki-status { color: var(--app-status, #cce8d5); font-size: 13px; line-height: 1.4; }
+  .err { color: var(--app-error, #ffb4ab); font-size: 13px; white-space: pre-wrap; }
+  .empty, .fetched-at { color: var(--app-muted, #999999); font-size: 12px; }
   @media (max-width: 640px) {
     .anki-head { flex-direction: column; gap: 10px; }
     .anki-actions { width: 100%; }

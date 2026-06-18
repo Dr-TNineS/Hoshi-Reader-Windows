@@ -63,6 +63,7 @@ async function panelMetrics(page) {
       importClicks: Number(state?.getAttribute("data-import-clicks") ?? 0),
       enableEvents: state?.getAttribute("data-enable-events") ?? "",
       moveEvents: state?.getAttribute("data-move-events") ?? "",
+      removeEvents: state?.getAttribute("data-remove-events") ?? "",
       order: state?.getAttribute("data-order") ?? "",
       horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
       panel: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom },
@@ -101,12 +102,25 @@ async function main() {
 
     await openProbe(page, "ready");
     metrics = await panelMetrics(page);
-    assert(metrics.rows === 2, "Ready panel should list imported dictionaries.", metrics);
-    assert(metrics.text.includes("1/2 enabled dictionaries loaded."), "Ready panel should summarize status.", metrics);
+    assert(metrics.rows === 2, "Ready panel should list term dictionaries by default.", metrics);
+    assert(metrics.text.includes("3/4 enabled dictionaries loaded."), "Ready panel should summarize status.", metrics);
+    assert(metrics.text.includes("Term") && metrics.text.includes("Frequency") && metrics.text.includes("Pitch"), "Ready panel should expose dictionary type tabs.", metrics);
     assert(metrics.text.includes("Jitendex.org [probe]"), "Ready panel should show dictionary titles.", metrics);
-    assert(metrics.text.includes("432643 terms") && metrics.text.includes("1200 freq") && metrics.text.includes("80 pitch"), "Ready panel should show dictionary counts.", metrics);
+    assert(metrics.text.includes("432643 terms"), "Term panel should show term counts.", metrics);
     assert(metrics.text.includes("dictionaries/imported/jitendex"), "Ready panel should show internal path.", metrics);
     assert(metrics.enabledLabels.join("|") === "Enabled|Disabled", "Ready panel should show enabled labels.", metrics);
+
+    await page.getByRole("tab", { name: "Frequency" }).click();
+    metrics = await panelMetrics(page);
+    assert(metrics.rows === 1, "Frequency tab should show frequency dictionaries.", metrics);
+    assert(metrics.text.includes("1200 freq"), "Frequency tab should show frequency counts.", metrics);
+
+    await page.getByRole("tab", { name: "Pitch" }).click();
+    metrics = await panelMetrics(page);
+    assert(metrics.rows === 1, "Pitch tab should show pitch dictionaries.", metrics);
+    assert(metrics.text.includes("80 pitch"), "Pitch tab should show pitch counts.", metrics);
+
+    await page.getByRole("tab", { name: "Term" }).click();
 
     await page.getByRole("button", { name: "Refresh" }).click();
     await page.getByRole("button", { name: "Import" }).click();
@@ -115,13 +129,18 @@ async function main() {
 
     await page.getByRole("checkbox").nth(1).check();
     metrics = await panelMetrics(page);
-    assert(metrics.enableEvents.includes("mk3:true"), "Enable toggle should emit the dictionary id and state.", metrics);
+    assert(metrics.enableEvents.includes("mk3:term:true"), "Enable toggle should emit the dictionary id and state.", metrics);
     assert(metrics.enabledLabels.join("|") === "Enabled|Enabled", "Enable toggle should update visible state.", metrics);
 
     await page.getByRole("button", { name: "Move MK3 Compatibility Probe Dictionary With A Very Long Visible Title up" }).click();
     metrics = await panelMetrics(page);
-    assert(metrics.moveEvents.includes("mk3:-1"), "Move up should emit the dictionary id and direction.", metrics);
-    assert(metrics.order === "mk3,jitendex", "Move up should reorder the visible dictionary list.", metrics);
+    assert(metrics.moveEvents.includes("mk3:term:-1"), "Move up should emit the dictionary id and direction.", metrics);
+    assert(metrics.order === "mk3:term,jitendex:term", "Move up should reorder the visible dictionary list.", metrics);
+
+    await page.getByRole("button", { name: "Delete MK3 Compatibility Probe Dictionary With A Very Long Visible Title" }).click();
+    metrics = await panelMetrics(page);
+    assert(metrics.removeEvents.includes("mk3"), "Delete should emit the import id.", metrics);
+    assert(metrics.rows === 1 && !metrics.text.includes("MK3 Compatibility"), "Delete should remove all rows for that import.", metrics);
 
     await page.setViewportSize({ width: 420, height: 720 });
     await openProbe(page, "ready");

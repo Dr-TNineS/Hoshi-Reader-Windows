@@ -1,5 +1,6 @@
 ﻿<script lang="ts">
   import { countChars, createWalker, getTotalChars, rawOffsetForReaderChars, textEndOffsets } from "../reader";
+  import type { ReaderAppearancePalette } from "../appearance";
   import type { ReaderProgress, ReaderSelection, ReaderSelectionRect } from "../types";
 
   let {
@@ -15,6 +16,7 @@
     initialProgress = 0,
     chapterStartChars = 0,
     totalBookChars = 0,
+    appearancePalette = undefined as ReaderAppearancePalette | undefined,
     onProgressChange = (_progress: ReaderProgress) => {},
     onSelectionChange = (_selection: ReaderSelection | null) => {},
   } = $props();
@@ -51,6 +53,9 @@
   let contentMaxScroll = 0;
 
   let styleVars = $derived(`--page-width:${pageWidth}px;--page-height:${pageHeight}px`);
+  let themeVars = $derived(appearancePalette
+    ? `--reader-bg:${appearancePalette.readerBackground};--reader-text:${appearancePalette.readerText};--reader-info:${appearancePalette.readerInfo};--app-border:${appearancePalette.appBorder}`
+    : "");
 
   function readerDebugEnabled(): boolean {
     return typeof localStorage !== "undefined" && localStorage.getItem("hoshi_reader_debug") === "1";
@@ -897,7 +902,7 @@
 
 <svelte:window onkeydown={handleKey} onkeyup={handleKeyUp} onblur={handleWindowBlur} />
 
-<div class="rc">
+<div class="rc" style={themeVars}>
   <div class="rh">
     <span>
       Ch.{chapterIndex + 1}/{totalChapters} | P.{currentPage + 1}/{totalPages} |
@@ -920,8 +925,8 @@
     display: flex;
     flex-direction: column;
     height: 100vh;
-    background: #1a1a1a;
-    color: #ccc;
+    background: var(--reader-bg, #000);
+    color: var(--reader-text, #fff);
   }
 
   .rh {
@@ -929,9 +934,9 @@
     align-items: center;
     padding: 3px 10px;
     font-size: 10px;
-    color: #888;
-    background: #111;
-    border-bottom: 1px solid #333;
+    color: var(--reader-info, #999999);
+    background: var(--reader-bg, #000);
+    border-bottom: 1px solid var(--app-border, #333333);
     flex-shrink: 0;
     user-select: none;
   }
@@ -990,6 +995,8 @@
     font-size: var(--font-size);
     line-height: var(--line-height);
     text-indent: 0;
+    background: var(--reader-bg, #000);
+    color: var(--reader-text, #fff);
   }
 
   .rct :global(*) {

@@ -175,8 +175,10 @@ export interface DictionaryStatus {
 
 export interface DictionaryManifestEntry {
   dictId: string;
+  importId: string;
   title: string;
   kind: string;
+  role: DictionaryRole;
   enabled: boolean;
   order: number;
   internalPath: string;
@@ -187,6 +189,8 @@ export interface DictionaryManifestEntry {
   mediaCount: number;
   lastImported: number;
 }
+
+export type DictionaryRole = "term" | "frequency" | "pitch";
 
 export interface AnkiDeck {
   name: string;
