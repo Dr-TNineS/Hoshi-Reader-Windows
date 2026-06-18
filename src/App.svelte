@@ -65,6 +65,7 @@
   let readerInitialProgress = $state(0);
   let currentReaderProgress = $state<ReaderProgress | null>(null);
   let readerSelection = $state<ReaderSelection | null>(null);
+  let readerLookupHighlightText = $state("");
   let lookupPopupSizes = $state<Record<string, { width: number; height: number }>>({});
   let lookupPopups = $state<LookupPopupItem[]>([]);
   let readerAppearance = $state<ReaderAppearance>(loadReaderAppearance());
@@ -528,6 +529,7 @@
   function closeReaderSelection() {
     window.getSelection()?.removeAllRanges();
     readerSelection = null;
+    readerLookupHighlightText = "";
     lookupPopups = [];
     lookupRequestId += 1;
   }
@@ -545,6 +547,30 @@
     if (status.status === "engineUnavailable") return "engineUnavailable";
     if (status.status === "error") return "error";
     return "ready";
+  }
+
+  function normalizeLookupPrefix(value: string): string {
+    return value.replace(/\s+/g, "").trim();
+  }
+
+  function longestLookupSurfacePrefix(selection: ReaderSelection, results: DictResult[]): string {
+    const selectionText = normalizeLookupPrefix(selection.text);
+    if (!selectionText) return "";
+
+    for (const field of ["matched", "deinflected", "expression"] as const) {
+      const candidates: string[] = [];
+      for (const result of results) {
+        const value = result[field];
+        const candidate = normalizeLookupPrefix(value);
+        if (candidate && selectionText.startsWith(candidate) && !candidates.includes(candidate)) {
+          candidates.push(candidate);
+        }
+      }
+      const longest = candidates.sort((a, b) => b.length - a.length)[0];
+      if (longest) return longest;
+    }
+
+    return "";
   }
 
   function buildAnkiPayload(selection: ReaderSelection, result: DictResult, resultIndex: number): LookupAnkiPayload {
@@ -745,6 +771,7 @@
   }
 
   function reloadLookupPopups() {
+    if (lookupPopups.some((popup) => popup.id === "root")) readerLookupHighlightText = "";
     const reloaded: LookupPopupItem[] = lookupPopups.map((popup) => {
       const requestId = nextLookupRequestId();
       return { ...popup, state: "loading", error: "", results: [], requestId };
@@ -758,6 +785,7 @@
   function openRootLookup(selection: ReaderSelection) {
     const requestId = nextLookupRequestId();
     readerSelection = selection;
+    readerLookupHighlightText = "";
     lookupPopups = [createLookupPopup("root", selection, requestId)];
     void lookupSelection("root", selection, requestId);
   }
@@ -907,6 +935,10 @@
 
       const results = await invoke<DictResult[]>("dict_lookup", { text: selection.text });
       if (!isCurrent()) return;
+      if (popupId === "root" && results.length > 0) {
+        const highlightText = longestLookupSurfacePrefix(selection, results);
+        if (highlightText) readerLookupHighlightText = highlightText;
+      }
       updateLookupPopup(popupId, {
         state: results.length > 0 ? "ready" : "empty",
         error: "",
@@ -1090,6 +1122,7 @@
       chapterStartChars={chapterBookInfo?.current_total ?? 0}
       totalBookChars={meta?.book_info.character_count ?? 0}
       {appearancePalette}
+      lookupHighlightText={readerLookupHighlightText}
       onProgressChange={handleReaderProgress}
       onSelectionChange={handleReaderSelection}
       {startAtEnd}

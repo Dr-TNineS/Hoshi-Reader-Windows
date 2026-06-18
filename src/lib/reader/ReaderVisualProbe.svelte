@@ -2,6 +2,9 @@
   import Reader from "./Reader.svelte";
   import type { ReaderProgress, ReaderSelection } from "../types";
 
+  const params = new URLSearchParams(window.location.search);
+  const lookupHighlightMode = params.get("lookupHighlightMode") ?? "";
+
   const imageSvg = encodeURIComponent(`
     <svg xmlns="http://www.w3.org/2000/svg" width="360" height="520" viewBox="0 0 360 520">
       <rect width="360" height="520" fill="#202124"/>
@@ -43,6 +46,8 @@
   let startAtEnd = $state(false);
   let lastProgress = $state<ReaderProgress | null>(null);
   let lastSelection = $state<ReaderSelection | null>(null);
+  let lookupHighlightText = $state("");
+  let visibleSelectionText = $state("");
   let selectionCount = $state(0);
 
   function recordProgress(progress: ReaderProgress) {
@@ -52,6 +57,9 @@
   function recordSelection(selection: ReaderSelection | null) {
     lastSelection = selection;
     if (selection) selectionCount += 1;
+    lookupHighlightText = selection && lookupHighlightMode === "prefix2"
+      ? Array.from(selection.text.replace(/\s+/g, "")).slice(0, 2).join("")
+      : "";
   }
 
   function nextChapter() {
@@ -71,6 +79,25 @@
     startAtEnd = false;
     chapterIndex -= 1;
   }
+
+  $effect(() => {
+    const waitForHighlight = lookupHighlightText.length > 0;
+    let secondFrame = 0;
+    const syncSelection = () => {
+      visibleSelectionText = window.getSelection()?.toString().replace(/\s+/g, " ").trim() ?? "";
+    };
+    const firstFrame = requestAnimationFrame(() => {
+      if (waitForHighlight) {
+        secondFrame = requestAnimationFrame(syncSelection);
+      } else {
+        syncSelection();
+      }
+    });
+    return () => {
+      cancelAnimationFrame(firstFrame);
+      if (secondFrame) cancelAnimationFrame(secondFrame);
+    };
+  });
 </script>
 
 <Reader
@@ -84,6 +111,7 @@
   onPrevChapterDirect={previousChapterDirect}
   onProgressChange={recordProgress}
   onSelectionChange={recordSelection}
+  {lookupHighlightText}
 />
 
 <div
@@ -92,6 +120,8 @@
   data-chapter-index={chapterIndex}
   data-progress={lastProgress?.chapterProgress ?? 0}
   data-selection={lastSelection?.text ?? ""}
+  data-dom-selection={visibleSelectionText}
+  data-highlight-text={lookupHighlightText}
   data-sentence={lastSelection?.sentence ?? ""}
   data-selection-count={selectionCount}
 >

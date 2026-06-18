@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invoke, isTauri } from "@tauri-apps/api/core";
   import { ankiDictionaryMediaRefs, buildAnkiNoteRequest, isAnkiPreviewConfigured, payloadWithStoredDictionaryMedia, renderAnkiFieldPreview } from "./anki-field-renderer";
-  import { formatLookupMatch, frequencyGroups, glossaryGroups, pitchGroups, renderGlossaryContent, resultDictionaryLabel, ruleTags, scopeDictionaryCss, type LookupPitchGroup, type LookupState } from "./lookup-popup";
+  import { formatLookupMatch, frequencyGroups, glossaryGroups, pitchGroups, renderGlossaryContent, ruleTags, scopeDictionaryCss, type LookupPitchGroup, type LookupState } from "./lookup-popup";
   import { selectPopupTextFromPoint } from "./popup-selection";
   import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, AnkiStoreMediaResult, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
@@ -397,7 +397,6 @@
       <button aria-label="Close lookup" onclick={() => onClose(popupId)}>Close</button>
     </div>
   </div>
-  <p class="lookup-text">{selection.text}</p>
   {#if lookupState === "loading"}
     <p class="lookup-state">Looking up...</p>
   {:else if lookupState === "noDictionaries"}
@@ -441,9 +440,6 @@
               </button>
             </div>
           </div>
-          {#if resultDictionaryLabel(result)}
-            <p class="lookup-meta">{resultDictionaryLabel(result)}</p>
-          {/if}
           {#if formatLookupMatch(result) || result.rules || frequencyGroups(result).length > 0 || pitchGroups(result).length > 0}
             <div class="entry-tags">
               {#if formatLookupMatch(result) || result.rules}
@@ -568,12 +564,12 @@
   .lookup-head-actions { display: flex; align-items: center; gap: 4px; }
   .lookup-head button { flex-shrink: 0; min-width: 24px; padding: 3px 7px; background: var(--app-control, #1b1b1b); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 3px; cursor: pointer; font-size: 11px; text-transform: none; }
   .lookup-head button:disabled { color: var(--app-muted, #999999); cursor: not-allowed; opacity: 0.62; }
-  .lookup-text { color: var(--app-text, #fff); font-size: 18px; line-height: 1.35; overflow-wrap: anywhere; max-height: 54px; overflow: hidden; }
   .lookup-state-block { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }
   .lookup-state { color: var(--app-muted, #999999); font-size: 12px; line-height: 1.35; overflow-wrap: anywhere; }
   .lookup-action { padding: 5px 10px; background: var(--app-primary, #d0bcff); color: var(--app-bg, #000); border: none; border-radius: 4px; cursor: pointer; font-size: 12px; }
   .lookup-action:hover { background: var(--app-primary-hover, #c1a9fb); }
-  .lookup-results { display: flex; flex-direction: column; gap: 8px; max-height: min(360px, calc(100vh - 220px)); overflow-y: auto; padding-right: 2px; }
+  .lookup-results { display: flex; flex-direction: column; gap: 8px; max-height: min(360px, calc(100vh - 220px)); overflow-y: auto; padding-right: 2px; scrollbar-width: none; -ms-overflow-style: none; }
+  .lookup-results::-webkit-scrollbar { display: none; }
   .lookup-result { display: flex; flex-direction: column; gap: 5px; padding-top: 8px; border-top: 1px solid var(--app-border, #333333); min-width: 0; }
   .lookup-result-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-width: 0; padding-top: 2px; }
   .lookup-expression-wrap { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; min-width: 0; color: var(--app-text, #fff); line-height: 1.25; overflow-wrap: anywhere; }
@@ -588,7 +584,6 @@
   .lookup-action-slot.duplicate { color: #ffd89b; background: #3a3021; }
   .lookup-action-slot.error { color: #ffb4ac; background: #3b2626; }
   .lookup-action-slot span { transform: translateY(-1px); }
-  .lookup-meta { color: var(--app-status, #cce8d5); font-size: 11px; line-height: 1.3; overflow-wrap: anywhere; }
   .entry-tags { display: flex; flex-direction: column; gap: 3px; margin-top: -2px; user-select: none; }
   .lookup-tags { display: flex; flex-wrap: wrap; gap: 4px; }
   .lookup-tag { max-width: 100%; padding: 2px 6px; background: var(--app-control, #1b1b1b); color: var(--app-primary, #d0bcff); border: 1px solid var(--app-border, #333333); border-radius: 4px; font-size: 11px; line-height: 1.25; overflow-wrap: anywhere; }

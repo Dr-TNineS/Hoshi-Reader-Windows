@@ -91,6 +91,9 @@ async function popupMetrics(page) {
       controlsTop: controlsRect?.top ?? window.innerHeight,
       horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
       hasResultsScroller: results instanceof HTMLElement && results.scrollHeight > results.clientHeight,
+      resultsScrollbarWidth: results instanceof HTMLElement ? results.offsetWidth - results.clientWidth : 0,
+      lookupTextRows: document.querySelectorAll(".lookup-text").length,
+      lookupMetaRows: document.querySelectorAll(".lookup-meta").length,
       ankiDisabled: document.querySelector(".lookup-anki")?.hasAttribute("disabled") ?? false,
       ankiAriaLabel: document.querySelector(".lookup-anki")?.getAttribute("aria-label") ?? "",
       ankiTitle: document.querySelector(".lookup-anki")?.getAttribute("title") ?? "",
@@ -225,6 +228,8 @@ async function main() {
     const ready = await popupMetrics(page);
     assert(ready.text.includes("school"), "Ready popup should render expression.", ready);
     assert(ready.text.includes("Jitendex.org [probe]"), "Ready popup should render dictionary source.", ready);
+    assert(ready.lookupTextRows === 0, "Ready popup should not render the original selected text row.", ready);
+    assert(ready.lookupMetaRows === 0, "Ready popup should not render the dictionary source meta row.", ready);
     assert(ready.text.includes("classroom school room"), "Ready popup should render structured glossary as readable text.", ready);
     assert(!ready.text.includes("structured-content") && !ready.text.includes("\"tag\""), "Ready popup should not expose raw structured glossary JSON.", ready);
     assert(ready.structuredListItems >= 2 && ready.structuredBreaks >= 1, "Ready popup should preserve structured glossary list and line breaks.", ready);
@@ -255,6 +260,7 @@ async function main() {
     assert(ready.ankiTitle.includes("Probe Book"), "Anki payload title should be exposed as disabled affordance text.", ready);
     assert(ready.ankiPreviewButtons === 0 && ready.ankiPreviewRows === 0, "Manual Anki field preview controls should be removed.", ready);
     assert(ready.hasResultsScroller, "Long ready results should scroll inside the popup.", ready);
+    assert(ready.resultsScrollbarWidth === 0, "Long ready results should hide the visual scrollbar while remaining scrollable.", ready);
 
     await openProbe(page, "ready", { ankiMode: "configured" });
     const configuredAnki = await popupMetrics(page);

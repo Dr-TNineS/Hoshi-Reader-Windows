@@ -17,6 +17,7 @@
     chapterStartChars = 0,
     totalBookChars = 0,
     appearancePalette = undefined as ReaderAppearancePalette | undefined,
+    lookupHighlightText = "",
     onProgressChange = (_progress: ReaderProgress) => {},
     onSelectionChange = (_selection: ReaderSelection | null) => {},
   } = $props();
@@ -48,6 +49,8 @@
   let lastPointer: { x: number; y: number } | null = null;
   let lastShiftHoverPoint: { x: number; y: number } | null = null;
   let lastLookupSelectionKey = "";
+  let lastAppliedLookupHighlightText = "";
+  let activeLookupRange: Range | null = null;
   let shiftHoverTimer: number | null = null;
   let layoutRun = 0;
   let resizeRun = 0;
@@ -277,6 +280,10 @@
     return raw.replace(/\s+/g, " ").trim().slice(0, MAX_SELECTION_TEXT);
   }
 
+  function normalizedLookupText(raw: string): string {
+    return raw.replace(/\s+/g, "").trim();
+  }
+
   function nodeInsideContent(node: Node | null): boolean {
     if (!node || !contentEl) return false;
     return contentEl.contains(node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement);
@@ -446,6 +453,83 @@
     return (root.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_SENTENCE_CONTEXT_TEXT);
   }
 
+  function detachActiveLookupRange() {
+    activeLookupRange?.detach();
+    activeLookupRange = null;
+    lastAppliedLookupHighlightText = "";
+  }
+
+  function rangeTextPrefixEnd(range: Range, targetText: string): { node: Text; offset: number } | null {
+    const target = normalizedLookupText(targetText);
+    if (!target || !range.startContainer.parentElement?.isConnected) return null;
+
+    const commonRoot = range.commonAncestorContainer;
+    const walkerRoot = commonRoot.nodeType === Node.TEXT_NODE
+      ? commonRoot.parentElement
+      : commonRoot;
+    if (!walkerRoot) return null;
+
+    const walker = createWalker(walkerRoot);
+    if (range.startContainer.nodeType === Node.TEXT_NODE) walker.currentNode = range.startContainer;
+
+    let node: Text | null = range.startContainer.nodeType === Node.TEXT_NODE
+      ? range.startContainer as Text
+      : walker.nextNode() as Text | null;
+    let matched = "";
+
+    while (node) {
+      if (!range.intersectsNode(node)) {
+        const next = walker.nextNode();
+        node = next?.nodeType === Node.TEXT_NODE ? next as Text : null;
+        continue;
+      }
+
+      const content = node.textContent ?? "";
+      const startOffset = node === range.startContainer ? range.startOffset : 0;
+      const endOffset = node === range.endContainer ? range.endOffset : content.length;
+      let offset = startOffset;
+      while (offset < endOffset) {
+        const char = String.fromCodePoint(content.codePointAt(offset) ?? 0);
+        const nextOffset = Math.min(endOffset, offset + char.length);
+        if (!/\s/u.test(char)) {
+          matched += char;
+          if (!target.startsWith(matched)) return null;
+          if (matched === target) return { node, offset: nextOffset };
+        }
+        offset = nextOffset;
+      }
+
+      if (node === range.endContainer) break;
+      const next = walker.nextNode();
+      node = next?.nodeType === Node.TEXT_NODE ? next as Text : null;
+    }
+
+    return null;
+  }
+
+  function applyLookupHighlightText(text: string) {
+    if (!activeLookupRange || text === lastAppliedLookupHighlightText) return;
+    if (!text) {
+      const visibleSelection = window.getSelection();
+      visibleSelection?.removeAllRanges();
+      visibleSelection?.addRange(activeLookupRange.cloneRange());
+      lastAppliedLookupHighlightText = "";
+      return;
+    }
+
+    const end = rangeTextPrefixEnd(activeLookupRange, text);
+    if (!end) return;
+
+    const visibleRange = document.createRange();
+    visibleRange.setStart(activeLookupRange.startContainer, activeLookupRange.startOffset);
+    visibleRange.setEnd(end.node, end.offset);
+    const visibleSelection = window.getSelection();
+    visibleSelection?.removeAllRanges();
+    visibleSelection?.addRange(visibleRange);
+    visibleRange.detach();
+    lastAppliedLookupHighlightText = text;
+  }
+
   function selectTextFromPoint(x: number, y: number): ReaderSelection | null {
     if (!contentEl) return null;
     const target = document.elementFromPoint(x, y);
@@ -505,6 +589,9 @@
     const lastRange = ranges[ranges.length - 1];
     visibleRange.setEnd(lastRange.endContainer, lastRange.endOffset);
     visibleSelection?.addRange(visibleRange);
+    detachActiveLookupRange();
+    activeLookupRange = visibleRange.cloneRange();
+    applyLookupHighlightText(lookupHighlightText);
 
     const rect = unionRects(ranges.flatMap((range) => Array.from(range.getClientRects())));
     ranges.forEach((range) => range.detach());
@@ -530,6 +617,7 @@
       shiftHoverTimer = null;
     }
     window.getSelection()?.removeAllRanges();
+    detachActiveLookupRange();
     hasActiveSelection = false;
     lastLookupSelectionKey = "";
     onSelectionChange(null);
@@ -833,6 +921,9 @@
     }
   });
 
+  $effect(() => {
+    applyLookupHighlightText(lookupHighlightText);
+  });
 
   $effect(() => {
     const el = containerEl;

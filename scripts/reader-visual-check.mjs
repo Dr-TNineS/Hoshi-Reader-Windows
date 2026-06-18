@@ -207,6 +207,14 @@ async function probeSelectionText(page) {
   return await page.locator(".probe-state").getAttribute("data-selection") ?? "";
 }
 
+async function probeDomSelectionText(page) {
+  return await page.locator(".probe-state").getAttribute("data-dom-selection") ?? "";
+}
+
+async function probeHighlightText(page) {
+  return await page.locator(".probe-state").getAttribute("data-highlight-text") ?? "";
+}
+
 async function probeSentenceText(page) {
   return await page.locator(".probe-state").getAttribute("data-sentence") ?? "";
 }
@@ -325,6 +333,27 @@ async function main() {
     await page.waitForTimeout(120);
     const dragSelection = await probeSelectionText(page);
     assert(dragSelection === "", "Plain mouse text selection should not open lookup.", { lookupPoint, dragSelection });
+
+    await page.goto(`${url}&lookupHighlightMode=prefix2`);
+    const highlightPoint = await visibleParagraphPoint(page);
+    await page.keyboard.down("Shift");
+    await page.mouse.move(highlightPoint.x, highlightPoint.y);
+    await page.waitForFunction(() => {
+      const state = document.querySelector(".probe-state");
+      return (state?.getAttribute("data-highlight-text") ?? "").length > 0 &&
+        (state?.getAttribute("data-dom-selection") ?? "") === state?.getAttribute("data-highlight-text");
+    }, { timeout: 10000 });
+    await page.keyboard.up("Shift");
+    const fullLookupSelection = await probeSelectionText(page);
+    const narrowedDomSelection = await probeDomSelectionText(page);
+    const highlightText = await probeHighlightText(page);
+    assert(
+      fullLookupSelection.length > narrowedDomSelection.length &&
+        narrowedDomSelection === highlightText &&
+        fullLookupSelection.replace(/\s+/g, "").startsWith(highlightText),
+      "Lookup highlight text should narrow the visible browser selection without changing the lookup input.",
+      { highlightPoint, fullLookupSelection, narrowedDomSelection, highlightText },
+    );
 
     await page.locator(".rv").click();
     await page.keyboard.press("Control+ArrowLeft");
