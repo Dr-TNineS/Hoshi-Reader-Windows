@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
 #[cfg(hoshi_dicts_linked)]
@@ -22,6 +22,8 @@ use std::io::Write;
 const MAX_LOOKUP_RESULTS: i32 = 16;
 #[cfg(hoshi_dicts_linked)]
 const SCAN_LENGTH: i32 = 16;
+#[cfg(hoshi_dicts_linked)]
+const DICTIONARY_IMPORT_WORKER_STACK: usize = 64 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DictResult {
@@ -340,54 +342,66 @@ fn runtime_status(runtime: &DictRuntime) -> DictionaryStatus {
 }
 
 #[tauri::command]
-pub fn dictionary_import_yomitan_zip(
+pub async fn dictionary_import_yomitan_zip(
     zip_path: String,
     app: AppHandle,
-    state: tauri::State<DictState>,
 ) -> Result<DictImportSummary, String> {
-    import_yomitan_zip(
-        &zip_path,
-        &app,
-        &state,
-        ReloadDictionaryRuntime::AfterImport,
-    )
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<DictState>();
+        import_yomitan_zip(
+            &zip_path,
+            &app,
+            state.inner(),
+            ReloadDictionaryRuntime::AfterImport,
+        )
+    })
+    .await
+    .map_err(|e| format!("Dictionary import worker failed: {e}"))?
 }
 
 #[tauri::command]
-pub fn dictionary_import_yomitan_zips(
+pub async fn dictionary_import_yomitan_zips(
     zip_paths: Vec<String>,
     app: AppHandle,
-    state: tauri::State<DictState>,
 ) -> Result<DictImportBatchSummary, String> {
-    import_yomitan_zip_batch(zip_paths, 0, &app, &state)
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<DictState>();
+        import_yomitan_zip_batch(zip_paths, 0, &app, state.inner())
+    })
+    .await
+    .map_err(|e| format!("Dictionary import worker failed: {e}"))?
 }
 
 #[tauri::command]
-pub fn dictionary_import_yomitan_folder(
+pub async fn dictionary_import_yomitan_folder(
     folder_path: String,
     app: AppHandle,
-    state: tauri::State<DictState>,
 ) -> Result<DictImportBatchSummary, String> {
-    let root = PathBuf::from(&folder_path);
-    if !root.is_dir() {
-        return Err(format!(
-            "Dictionary folder does not exist: {}",
-            root.display()
-        ));
-    }
+    tauri::async_runtime::spawn_blocking(move || {
+        let root = PathBuf::from(&folder_path);
+        if !root.is_dir() {
+            return Err(format!(
+                "Dictionary folder does not exist: {}",
+                root.display()
+            ));
+        }
 
-    let mut zip_paths = Vec::new();
-    let skipped_count = collect_dictionary_zip_paths(&root, &mut zip_paths)?;
-    zip_paths.sort();
-    import_yomitan_zip_batch(
-        zip_paths
-            .into_iter()
-            .map(|path| path.to_string_lossy().into_owned())
-            .collect(),
-        skipped_count,
-        &app,
-        &state,
-    )
+        let mut zip_paths = Vec::new();
+        let skipped_count = collect_dictionary_zip_paths(&root, &mut zip_paths)?;
+        zip_paths.sort();
+        let state = app.state::<DictState>();
+        import_yomitan_zip_batch(
+            zip_paths
+                .into_iter()
+                .map(|path| path.to_string_lossy().into_owned())
+                .collect(),
+            skipped_count,
+            &app,
+            state.inner(),
+        )
+    })
+    .await
+    .map_err(|e| format!("Dictionary import worker failed: {e}"))?
 }
 
 fn import_yomitan_zip_batch(
@@ -437,6 +451,7 @@ fn import_yomitan_zip(
     state: &DictState,
     reload_runtime: ReloadDictionaryRuntime,
 ) -> Result<DictImportSummary, String> {
+    let started = Instant::now();
     let source = PathBuf::from(zip_path);
     if !source.is_file() {
         return Err(format!(
@@ -445,7 +460,13 @@ fn import_yomitan_zip(
         ));
     }
 
+    let hash_started = Instant::now();
     let dict_id = dictionary_zip_id(&source)?;
+    log::info!(
+        "dictionary import hash completed in {}ms for {}",
+        hash_started.elapsed().as_millis(),
+        source.display()
+    );
     let manifest_path = dictionary_manifest_path(app)?;
     let imported_root = imported_dictionary_root(app)?;
     let final_dir = imported_root.join(&dict_id);
@@ -473,12 +494,23 @@ fn import_yomitan_zip(
                 })
             })?;
         let ready = if reload_runtime == ReloadDictionaryRuntime::AfterImport {
+            let reload_started = Instant::now();
             state.initialize(app);
+            log::info!(
+                "dictionary runtime reload completed in {}ms after reused import {}",
+                reload_started.elapsed().as_millis(),
+                dict_id
+            );
             let runtime = state.runtime.lock().unwrap();
             dict_runtime_ready(&runtime)
         } else {
             false
         };
+        log::info!(
+            "dictionary import reused {} in {}ms",
+            dict_id,
+            started.elapsed().as_millis()
+        );
         return Ok(DictImportSummary {
             dict_id,
             title: existing.title,
@@ -1373,6 +1405,7 @@ fn import_yomitan_zip_linked(
     state: &DictState,
     reload_runtime: ReloadDictionaryRuntime,
 ) -> Result<DictImportSummary, String> {
+    let total_started = Instant::now();
     let staging_root = imported_root.join(format!(".importing-{dict_id}"));
     let mut temp_paths = Vec::<PathBuf>::new();
     let result = (|| -> Result<DictImportSummary, String> {
@@ -1383,21 +1416,54 @@ fn import_yomitan_zip_linked(
         fs::create_dir_all(&staging_root)
             .map_err(|e| format!("Cannot create dictionary import staging dir: {e}"))?;
 
+        let copy_started = Instant::now();
         let ascii_source_zip =
             prepare_ascii_dictionary_import_source(source, imported_root, dict_id)?;
+        log::info!(
+            "dictionary import source copy completed in {}ms for {}",
+            copy_started.elapsed().as_millis(),
+            dict_id
+        );
         temp_paths.push(ascii_source_zip.clone());
 
         let mut restored_title = None;
+        let preflight_started = Instant::now();
         let prefer_lookup_safe = prefers_lookup_safe_import_first(&ascii_source_zip)?;
+        log::info!(
+            "dictionary import preflight completed in {}ms for {} (lookup_safe_first={})",
+            preflight_started.elapsed().as_millis(),
+            dict_id,
+            prefer_lookup_safe
+        );
         let mut attempt = if prefer_lookup_safe {
             let safe_zip_path = imported_root.join(format!(".importing-{dict_id}.lookup-safe.zip"));
+            let safe_zip_started = Instant::now();
             let safe_zip =
                 create_lookup_safe_import_zip(&ascii_source_zip, &safe_zip_path, dict_id)?;
+            log::info!(
+                "dictionary import lookup-safe zip completed in {}ms for {}",
+                safe_zip_started.elapsed().as_millis(),
+                dict_id
+            );
             restored_title = safe_zip.original_title;
             temp_paths.push(safe_zip.path.clone());
-            run_linked_import_attempt(&safe_zip.path, &staging_root)?
+            let import_started = Instant::now();
+            let attempt = run_linked_import_attempt(&safe_zip.path, &staging_root)?;
+            log::info!(
+                "dictionary linked import completed in {}ms for {}",
+                import_started.elapsed().as_millis(),
+                dict_id
+            );
+            attempt
         } else {
-            run_linked_import_attempt(&ascii_source_zip, &staging_root)?
+            let import_started = Instant::now();
+            let attempt = run_linked_import_attempt(&ascii_source_zip, &staging_root)?;
+            log::info!(
+                "dictionary linked import completed in {}ms for {}",
+                import_started.elapsed().as_millis(),
+                dict_id
+            );
+            attempt
         };
 
         if !prefer_lookup_safe
@@ -1409,9 +1475,21 @@ fn import_yomitan_zip_linked(
                 .map_err(|e| format!("Cannot recreate dictionary import staging dir: {e}"))?;
 
             let safe_zip_path = imported_root.join(format!(".importing-{dict_id}.lookup-safe.zip"));
+            let safe_zip_started = Instant::now();
             let safe_zip =
                 create_lookup_safe_import_zip(&ascii_source_zip, &safe_zip_path, dict_id)?;
+            log::info!(
+                "dictionary import lookup-safe retry zip completed in {}ms for {}",
+                safe_zip_started.elapsed().as_millis(),
+                dict_id
+            );
+            let import_started = Instant::now();
             attempt = run_linked_import_attempt(&safe_zip.path, &staging_root)?;
+            log::info!(
+                "dictionary linked import retry completed in {}ms for {}",
+                import_started.elapsed().as_millis(),
+                dict_id
+            );
             restored_title = safe_zip.original_title;
             temp_paths.push(safe_zip.path);
         }
@@ -1447,12 +1525,23 @@ fn import_yomitan_zip_linked(
             .ok_or_else(|| "Dictionary import created no entries.".to_string())?;
 
         let ready = if reload_runtime == ReloadDictionaryRuntime::AfterImport {
+            let reload_started = Instant::now();
             state.initialize(app);
+            log::info!(
+                "dictionary runtime reload completed in {}ms after import {}",
+                reload_started.elapsed().as_millis(),
+                dict_id
+            );
             let runtime = state.runtime.lock().unwrap();
             dict_runtime_ready(&runtime)
         } else {
             false
         };
+        log::info!(
+            "dictionary import completed in {}ms for {}",
+            total_started.elapsed().as_millis(),
+            dict_id
+        );
         Ok(DictImportSummary {
             dict_id: entry.dict_id,
             title: entry.title,
@@ -1495,6 +1584,22 @@ struct LookupSafeImportZip {
 
 #[cfg(hoshi_dicts_linked)]
 fn run_linked_import_attempt(
+    source: &Path,
+    staging_root: &Path,
+) -> Result<LinkedImportAttempt, String> {
+    let source = source.to_path_buf();
+    let staging_root = staging_root.to_path_buf();
+    std::thread::Builder::new()
+        .name("hsw-dictionary-import".into())
+        .stack_size(DICTIONARY_IMPORT_WORKER_STACK)
+        .spawn(move || run_linked_import_attempt_inner(&source, &staging_root))
+        .map_err(|e| format!("Dictionary import worker failed: {e}"))?
+        .join()
+        .map_err(|_| "Dictionary import worker failed: worker thread panicked.".to_string())?
+}
+
+#[cfg(hoshi_dicts_linked)]
+fn run_linked_import_attempt_inner(
     source: &Path,
     staging_root: &Path,
 ) -> Result<LinkedImportAttempt, String> {

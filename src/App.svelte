@@ -1,9 +1,8 @@
 <script lang="ts">
   import { invoke, isTauri as isTauriRuntime } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-dialog";
-  import AnkiConnectPanel from "./lib/AnkiConnectPanel.svelte";
   import { ankiHandlebarOptions, applyKnownNoteTypeDefaultsIfUnmapped, extractDictionaryMediaReferences, upsertFieldTemplate } from "./lib/anki-field-renderer";
-  import DictionaryManagementPanel from "./lib/DictionaryManagementPanel.svelte";
+  import BookshelfView from "./lib/BookshelfView.svelte";
   import {
     loadReaderAppearance,
     readerAppearanceCssVars,
@@ -13,16 +12,16 @@
     type ReaderAppearance,
     type ReaderTheme,
   } from "./lib/appearance";
+  import { clearDictionaryStyleCache } from "./lib/dictionary-style-cache";
+  import { dictionaryBatchStatusLabel } from "./lib/dictionary-import-status";
   import { resolveChapterAssets } from "./lib/epub-assets";
-  import LookupPopupContent from "./lib/LookupPopupContent.svelte";
+  import LookupPopupLayer, { type LookupPopupItem } from "./lib/LookupPopupLayer.svelte";
   import { resultDictionaryLabel, type LookupState } from "./lib/lookup-popup";
   import { clearLookupHighlight, READER_LOOKUP_HIGHLIGHT } from "./lib/lookup-highlight";
-  import { lookupPopupStyle } from "./lib/lookup-popup-position";
   import Reader from "./lib/reader/Reader.svelte";
+  import ReaderControls from "./lib/ReaderControls.svelte";
   import {
     buildReadingProgressUpdate,
-    bookRecordKey,
-    bookRecordPath,
     clampUnit,
     clearReadingSession,
     forgetReadingBook,
@@ -33,6 +32,7 @@
     upsertReadingProgressBook,
   } from "./lib/storage";
   import { findChapterIndex, flattenToc } from "./lib/toc";
+  import TocPanel from "./lib/TocPanel.svelte";
   import type {
     AnkiConnectionStatus,
     AnkiAddNoteResult,
@@ -42,7 +42,6 @@
     AnkiSettings,
     AnkiStoreMediaResult,
     DictImportBatchSummary,
-    DictImportSummary,
     DictResult,
     DictionaryManifestEntry,
     DictionaryStatus,
@@ -68,7 +67,6 @@
   let currentReaderProgress = $state<ReaderProgress | null>(null);
   let readerSelection = $state<ReaderSelection | null>(null);
   let readerLookupHighlightText = $state("");
-  let lookupPopupSizes = $state<Record<string, { width: number; height: number }>>({});
   let lookupPopups = $state<LookupPopupItem[]>([]);
   let readerAppearance = $state<ReaderAppearance>(loadReaderAppearance());
   let showAppearancePanel = $state(false);
@@ -93,31 +91,13 @@
   let triedDictionaryList = false;
   let triedAnkiSettings = false;
   let progressSaveVersion = 0;
+  let cachedReadyDictionaryStatus: DictionaryStatus | null = null;
 
   let tocEntries = $derived(meta ? flattenToc(meta.toc, meta) : []);
   let chapterBookInfo = $derived(meta?.book_info.chapter_info[chapterIndex] ?? null);
   let appearancePalette = $derived(readerAppearancePalette(readerAppearance));
   let appearanceVars = $derived(readerAppearanceCssVars(appearancePalette));
   let ankiTemplateOptions = $derived(ankiHandlebarOptions(dictionaryList.map((dictionary) => dictionary.title)));
-
-  interface LookupPopupHistoryEntry {
-    selection: ReaderSelection;
-    scrollTop: number;
-  }
-
-  interface LookupPopupItem {
-    id: string;
-    selection: ReaderSelection;
-    state: LookupState;
-    error: string;
-    results: DictResult[];
-    requestId: number;
-    clearSelectionSignal: number;
-    historyBack: LookupPopupHistoryEntry[];
-    historyForward: LookupPopupHistoryEntry[];
-    restoreScrollTop: number;
-    restoreScrollSignal: number;
-  }
 
   // Initialize persisted reading state once. Returning to the shelf should stay
   // on the shelf, so session restore remains intentionally one-shot.
@@ -361,24 +341,13 @@
     saveProgress(currentBookLocator, meta, chapterIndex, progress);
   }
 
-  function progressLabel(book: BookRecord): string {
-    if (book.totalChapters <= 0) return "No chapters";
-    if ((book.totalCharacters ?? 0) > 0) {
-      return `Ch.${book.chapter + 1}/${book.totalChapters} | ${book.bookReadChars ?? 0}/${book.totalCharacters}c | ${(book.percent ?? 0).toFixed(2)}%`;
-    }
-    return `Ch.${book.chapter + 1}/${book.totalChapters}`;
-  }
-
-  function openedLabel(timestamp: number): string {
-    return new Date(timestamp).toLocaleString();
-  }
-
   async function refreshDictionaries() {
     if (!isTauriRuntime()) {
       dictionaryListError = "Dictionary management requires Tauri runtime.";
       return;
     }
 
+    invalidateDictionaryLookupCaches();
     dictionaryBusy = true;
     dictionaryListError = "";
     try {
@@ -388,6 +357,7 @@
       ]);
       dictionaryList = entries;
       dictionaryListStatus = status;
+      cacheReadyDictionaryStatus(status);
     } catch (e) {
       dictionaryListError = String(e);
     } finally {
@@ -552,6 +522,22 @@
     return "ready";
   }
 
+  function invalidateDictionaryLookupCaches() {
+    cachedReadyDictionaryStatus = null;
+    clearDictionaryStyleCache();
+  }
+
+  function cacheReadyDictionaryStatus(status: DictionaryStatus) {
+    cachedReadyDictionaryStatus = status.status === "ready" ? status : null;
+  }
+
+  async function lookupDictionaryStatus(): Promise<DictionaryStatus> {
+    if (cachedReadyDictionaryStatus) return cachedReadyDictionaryStatus;
+    const status = await invoke<DictionaryStatus>("dict_status");
+    cacheReadyDictionaryStatus(status);
+    return status;
+  }
+
   function normalizeLookupPrefix(value: string): string {
     return value.replace(/\s+/g, "").trim();
   }
@@ -607,35 +593,6 @@
     };
   }
 
-  function dictionaryImportSummaryLabel(imported: DictImportSummary): string {
-    const reused = imported.reused ? "Reused" : "Imported";
-    const ready = imported.ready ? "ready" : "not ready";
-    return `${reused} ${imported.title} (${imported.termCount} terms, ${ready}).`;
-  }
-
-  function dictionaryBatchStatusLabel(summary: DictImportBatchSummary): string {
-    const importedCount = summary.imported.length;
-    const failedCount = summary.failures.length;
-    const skipped = summary.skippedCount > 0 ? ` Skipped ${summary.skippedCount} non-zip file${summary.skippedCount === 1 ? "" : "s"}.` : "";
-    const failures = summary.failures
-      .slice(0, 3)
-      .map((failure) => `${failure.path}: ${failure.error}`)
-      .join("\n");
-    const moreFailures = failedCount > 3 ? `\n...and ${failedCount - 3} more failure${failedCount - 3 === 1 ? "" : "s"}.` : "";
-
-    if (importedCount === 1 && failedCount === 0 && summary.skippedCount === 0) {
-      return dictionaryImportSummaryLabel(summary.imported[0]);
-    }
-
-    const importedTitles = summary.imported
-      .slice(0, 3)
-      .map((imported) => imported.title)
-      .join(", ");
-    const importedDetail = importedTitles ? ` ${importedTitles}${importedCount > 3 ? `, and ${importedCount - 3} more` : ""}.` : "";
-    const failureDetail = failures ? `\n${failures}${moreFailures}` : "";
-    return `Imported ${importedCount} dictionar${importedCount === 1 ? "y" : "ies"}.${importedDetail} ${failedCount} failed.${skipped}${failureDetail}`;
-  }
-
   async function importDictionary() {
     if (dictionaryBusy) return;
     try {
@@ -644,6 +601,7 @@
         return;
       }
 
+      invalidateDictionaryLookupCaches();
       dictionaryBusy = true;
       dictionaryStatus = "Importing dictionaries...";
       const selected = await open({
@@ -680,6 +638,7 @@
         return;
       }
 
+      invalidateDictionaryLookupCaches();
       dictionaryBusy = true;
       dictionaryStatus = "Importing dictionaries from folder...";
       const selected = await open({
@@ -719,11 +678,13 @@
   }
 
   async function setDictionaryEnabled(dictionary: DictionaryManifestEntry, enabled: boolean) {
+    invalidateDictionaryLookupCaches();
     dictionaryBusy = true;
     dictionaryListError = "";
     try {
       const status = await invoke<DictionaryStatus>("dictionary_set_enabled", { dictId: dictionary.dictId, enabled });
       dictionaryListStatus = status;
+      cacheReadyDictionaryStatus(status);
       await refreshDictionaries();
       reloadLookupPopups();
     } catch (e) {
@@ -742,6 +703,7 @@
 
     const reordered = [...roleDictionaries];
     [reordered[currentIndex], reordered[nextIndex]] = [reordered[nextIndex], reordered[currentIndex]];
+    invalidateDictionaryLookupCaches();
     dictionaryBusy = true;
     dictionaryListError = "";
     try {
@@ -750,6 +712,7 @@
         dictIds: reordered.map((entry) => entry.dictId),
       });
       dictionaryListStatus = await invoke<DictionaryStatus>("dict_status");
+      cacheReadyDictionaryStatus(dictionaryListStatus);
       reloadLookupPopups();
     } catch (e) {
       dictionaryListError = String(e);
@@ -763,6 +726,7 @@
     const message = `Delete "${title}" from imported dictionaries?\n\nThis removes this import from Term, Frequency, and Pitch categories and deletes the app-owned dictionary copy. The original zip file is not touched.`;
     if (!window.confirm(message)) return;
 
+    invalidateDictionaryLookupCaches();
     dictionaryBusy = true;
     dictionaryListError = "";
     try {
@@ -770,6 +734,7 @@
         importId: dictionary.importId,
       });
       dictionaryListStatus = await invoke<DictionaryStatus>("dict_status");
+      cacheReadyDictionaryStatus(dictionaryListStatus);
       dictionaryStatus = `Deleted ${title}.`;
       reloadLookupPopups();
     } catch (e) {
@@ -986,7 +951,7 @@
     }
 
     try {
-      const status = await invoke<DictionaryStatus>("dict_status");
+      const status = await lookupDictionaryStatus();
       if (!isCurrent()) return;
       if (status.status !== "ready") {
         updateLookupPopup(popupId, {
@@ -1010,6 +975,22 @@
       });
     } catch (e) {
       if (!isCurrent()) return;
+      cachedReadyDictionaryStatus = null;
+      try {
+        const status = await invoke<DictionaryStatus>("dict_status");
+        if (!isCurrent()) return;
+        cacheReadyDictionaryStatus(status);
+        if (status.status !== "ready") {
+          updateLookupPopup(popupId, {
+            state: lookupStateForStatus(status),
+            error: lookupStatusMessage(status),
+            results: [],
+          });
+          return;
+        }
+      } catch {
+        cachedReadyDictionaryStatus = null;
+      }
       updateLookupPopup(popupId, {
         state: "error",
         error: String(e),
@@ -1018,160 +999,52 @@
     }
   }
 
-  function readerBottomBoundary(): number {
-    const controls = document.querySelector<HTMLElement>(".ctrls");
-    const readerViewport = document.querySelector<HTMLElement>(".rv");
-    const controlsTop = controls?.getBoundingClientRect().top ?? window.innerHeight;
-    const readerBottom = readerViewport?.getBoundingClientRect().bottom ?? window.innerHeight;
-    return Math.min(window.innerHeight, controlsTop, readerBottom);
-  }
-
-  function measureLookupPopup(node: HTMLElement, popupId: string) {
-    let id = popupId;
-
-    const sync = () => {
-      const rect = node.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
-      const nextSize = { width: Math.ceil(rect.width), height: Math.ceil(rect.height) };
-      const previous = lookupPopupSizes[id];
-      if (previous?.width === nextSize.width && previous?.height === nextSize.height) return;
-      lookupPopupSizes = { ...lookupPopupSizes, [id]: nextSize };
-    };
-
-    const observer = new ResizeObserver(sync);
-    observer.observe(node);
-    const frame = requestAnimationFrame(sync);
-
-    return {
-      update(nextId: string) {
-        if (nextId === id) return;
-        const { [id]: _removed, ...rest } = lookupPopupSizes;
-        lookupPopupSizes = rest;
-        id = nextId;
-        sync();
-      },
-      destroy() {
-        cancelAnimationFrame(frame);
-        observer.disconnect();
-        const { [id]: _removed, ...rest } = lookupPopupSizes;
-        lookupPopupSizes = rest;
-      },
-    };
-  }
-
-  function popupStyle(popupId: string, selection: ReaderSelection): string {
-    const measuredSize = lookupPopupSizes[popupId];
-    return lookupPopupStyle(selection, measuredSize ?? { width: 306, height: 154 }, {
-      width: window.innerWidth,
-      bottom: readerBottomBoundary(),
-    });
-  }
-
 </script>
 
 <main class="app" data-theme={readerAppearance.theme} style={appearanceVars}>
   {#if view === "bookshelf"}
-    <section class="bookshelf">
-      <div class="shelf-head">
-        <div>
-          <h1>Hoshi Reader</h1>
-          <p class="subtitle">Lightweight Japanese EPUB Reader</p>
-        </div>
-        <div class="head-actions">
-          <button class="secondary-action" onclick={() => showAnkiPanel = !showAnkiPanel}>
-            Anki
-          </button>
-          <button class="secondary-action" onclick={() => showAppearancePanel = !showAppearancePanel}>
-            Appearance
-          </button>
-          <button class="secondary-action" onclick={() => showDictionaryManager = !showDictionaryManager}>
-            Dictionaries
-          </button>
-          <button class="ob" disabled={bookImportBusy} onclick={openBook}>
-            {bookImportBusy ? "Importing..." : "Open EPUB"}
-          </button>
-        </div>
-      </div>
-
-      {#if error}<p class="err">{error}</p>{/if}
-      {#if dictionaryStatus}<p class="dict-status">{dictionaryStatus}</p>{/if}
-
-      {#if showAppearancePanel}
-        <section class="appearance-panel" aria-label="Reader appearance">
-          <div>
-            <h2>Appearance</h2>
-            <p class="appearance-summary">HSA reader theme: white/black for Light, black/white for Dark.</p>
-          </div>
-          <div class="theme-segments" role="group" aria-label="Theme">
-            {#each (Object.keys(readerThemeLabels) as ReaderTheme[]) as theme}
-              <button
-                class:active={readerAppearance.theme === theme}
-                aria-pressed={readerAppearance.theme === theme}
-                onclick={() => setReaderTheme(theme)}
-              >
-                {readerThemeLabels[theme]}
-              </button>
-            {/each}
-          </div>
-        </section>
-      {/if}
-
-      {#if showDictionaryManager}
-        <DictionaryManagementPanel
-          dictionaries={dictionaryList}
-          status={dictionaryListStatus}
-          error={dictionaryListError}
-          busy={dictionaryBusy}
-          onRefresh={refreshDictionaries}
-          onImport={importDictionary}
-          onImportFolder={importDictionaryFolder}
-          onSetEnabled={setDictionaryEnabled}
-          onMove={moveDictionary}
-          onRemove={removeDictionaryImport}
-        />
-      {/if}
-
-      {#if showAnkiPanel}
-        <AnkiConnectPanel
-          settings={ankiSettings}
-          endpoint={ankiEndpointDraft}
-          status={ankiStatus}
-          error={ankiError}
-          busy={ankiBusy}
-          handlebarOptions={ankiTemplateOptions}
-          onEndpointChange={(endpoint) => ankiEndpointDraft = endpoint}
-          onPing={pingAnkiConnect}
-          onFetch={fetchAnkiConfig}
-          onSave={saveAnkiSettings}
-          onSelectDeck={selectAnkiDeck}
-          onSelectNoteType={selectAnkiNoteType}
-          onSetFieldTemplate={setAnkiFieldTemplate}
-          onSetAudioConfig={setAnkiAudioConfig}
-        />
-      {/if}
-
-      <div class="recent">
-        <h2>Recent Books</h2>
-        {#if books.length === 0}
-          <p class="empty">No recent books yet.</p>
-        {:else}
-          <div class="book-list">
-            {#each books as book (bookRecordKey(book))}
-              <div class="book-row">
-                <button class="book-open" onclick={() => continueBook(book)}>
-                  <span class="book-title">{book.title}</span>
-                  <span class="book-meta">{progressLabel(book)} | {openedLabel(book.lastOpened)}</span>
-                  <span class="book-path">{bookRecordPath(book)}</span>
-                </button>
-                <button class="book-forget" title="Forget book" onclick={() => forgetBook(book)}>Forget</button>
-              </div>
-            {/each}
-          </div>
-        {/if}
-      </div>
-
-      <p class="keys">arrow:page | Ctrl+arrow:chapter | Esc:shelf</p>
-    </section>
+    <BookshelfView
+      {books}
+      {error}
+      {dictionaryStatus}
+      {dictionaryBusy}
+      {bookImportBusy}
+      {showAppearancePanel}
+      {readerAppearance}
+      {readerThemeLabels}
+      {showDictionaryManager}
+      {dictionaryList}
+      {dictionaryListStatus}
+      {dictionaryListError}
+      {showAnkiPanel}
+      {ankiSettings}
+      {ankiEndpointDraft}
+      {ankiStatus}
+      {ankiError}
+      {ankiBusy}
+      {ankiTemplateOptions}
+      onToggleAnkiPanel={() => showAnkiPanel = !showAnkiPanel}
+      onToggleAppearancePanel={() => showAppearancePanel = !showAppearancePanel}
+      onToggleDictionaryManager={() => showDictionaryManager = !showDictionaryManager}
+      onOpenBook={openBook}
+      onContinueBook={continueBook}
+      onForgetBook={forgetBook}
+      onSetReaderTheme={setReaderTheme}
+      onRefreshDictionaries={refreshDictionaries}
+      onImportDictionary={importDictionary}
+      onImportDictionaryFolder={importDictionaryFolder}
+      onSetDictionaryEnabled={setDictionaryEnabled}
+      onMoveDictionary={moveDictionary}
+      onRemoveDictionaryImport={removeDictionaryImport}
+      onAnkiEndpointChange={(endpoint) => ankiEndpointDraft = endpoint}
+      onPingAnkiConnect={pingAnkiConnect}
+      onFetchAnkiConfig={fetchAnkiConfig}
+      onSaveAnkiSettings={saveAnkiSettings}
+      onSelectAnkiDeck={selectAnkiDeck}
+      onSelectAnkiNoteType={selectAnkiNoteType}
+      onSetAnkiFieldTemplate={setAnkiFieldTemplate}
+      onSetAnkiAudioConfig={setAnkiAudioConfig}
+    />
   {:else}
     <Reader
       content={chapterHtml}
@@ -1191,71 +1064,37 @@
       onSelectionChange={handleReaderSelection}
       {startAtEnd}
     />
-    {#each lookupPopups as popup, popupIndex (popup.id)}
-      <aside
-        class="lookup-pop"
-        data-popup-id={popup.id}
-        use:measureLookupPopup={popup.id}
-        onpointerdown={() => clearPopupChildren(popup.id)}
-        style={`${popupStyle(popup.id, popup.selection)};--popup-z:${125 + popupIndex}`}
-      >
-        <LookupPopupContent
-          popupId={popup.id}
-          selection={popup.selection}
-          state={popup.state}
-          error={popup.error}
-          results={popup.results}
-          clearSelectionSignal={popup.clearSelectionSignal}
-          onClose={closePopup}
-          onImportDictionary={importDictionary}
-          onNestedLookup={handleNestedPopupLookup}
-          onRedirectLookup={handleRedirectPopupLookup}
-          onScrolled={handlePopupScrolled}
-          onNavigateHistory={handlePopupHistoryNavigation}
-          canNavigateBack={popup.historyBack.length > 0}
-          canNavigateForward={popup.historyForward.length > 0}
-          restoreScrollTop={popup.restoreScrollTop}
-          restoreScrollSignal={popup.restoreScrollSignal}
-          ankiTitle={(result, resultIndex) => lookupAnkiTitle(popup.selection, result, resultIndex)}
-          ankiSettings={ankiSettings}
-          buildAnkiPayload={(result, resultIndex) => buildAnkiPayload(popup.selection, result, resultIndex)}
-          onStoreAnkiMedia={storeAnkiMedia}
-          onAddAnkiNote={addAnkiNote}
-        />
-      </aside>
-    {/each}
+    <LookupPopupLayer
+      popups={lookupPopups}
+      {ankiSettings}
+      onClose={closePopup}
+      onImportDictionary={importDictionary}
+      onNestedLookup={handleNestedPopupLookup}
+      onRedirectLookup={handleRedirectPopupLookup}
+      onScrolled={handlePopupScrolled}
+      onNavigateHistory={handlePopupHistoryNavigation}
+      onPopupPointerDown={clearPopupChildren}
+      ankiTitle={lookupAnkiTitle}
+      {buildAnkiPayload}
+      onStoreAnkiMedia={storeAnkiMedia}
+      onAddAnkiNote={addAnkiNote}
+    />
     {#if showToc}
-      <aside class="toc-panel">
-        <div class="toc-head">
-          <h2>Contents</h2>
-          <button onclick={() => showToc = false}>Close</button>
-        </div>
-        {#if tocEntries.length === 0}
-          <p class="empty">No table of contents.</p>
-        {:else}
-          <div class="toc-list">
-            {#each tocEntries as entry}
-              <button
-                class="toc-row"
-                class:active={entry.chapterIndex === chapterIndex}
-                disabled={entry.chapterIndex === null}
-                style={`--level:${entry.level}`}
-                onclick={() => entry.chapterIndex !== null && jumpToChapter(entry.chapterIndex)}
-              >
-                {entry.label}
-              </button>
-            {/each}
-          </div>
-        {/if}
-      </aside>
+      <TocPanel
+        entries={tocEntries}
+        {chapterIndex}
+        onClose={() => showToc = false}
+        onJumpToChapter={jumpToChapter}
+      />
     {/if}
-    <div class="ctrls">
-      <button onclick={prevChapterDirect}>Prev Ch</button>
-      <span>Ch.{chapterIndex + 1}/{meta?.spine.length ?? 0}</span>
-      <button onclick={nextChapter}>Next Ch</button>
-      <button onclick={toggleToc}>TOC</button>
-      <button onclick={backToShelf}>Esc</button>
-    </div>
+    <ReaderControls
+      {chapterIndex}
+      totalChapters={meta?.spine.length ?? 0}
+      onPrevChapter={prevChapterDirect}
+      onNextChapter={nextChapter}
+      onToggleToc={toggleToc}
+      onBackToShelf={backToShelf}
+    />
   {/if}
 </main>
 
@@ -1263,60 +1102,4 @@
   :global(*) { margin: 0; padding: 0; box-sizing: border-box; }
   :global(body) { background: var(--app-bg, #000); color: var(--app-text, #fff); font-family: "Segoe UI", sans-serif; overflow: hidden; }
   .app { width: 100vw; height: 100vh; background: var(--app-bg); color: var(--app-text); }
-  .bookshelf { width: min(920px, calc(100vw - 48px)); height: 100vh; margin: 0 auto; display: flex; flex-direction: column; justify-content: center; gap: 22px; }
-  .shelf-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; }
-  h1 { font-size: 32px; font-weight: 300; letter-spacing: 4px; color: var(--app-text); }
-  h2 { font-size: 13px; font-weight: 600; color: var(--app-muted); text-transform: uppercase; }
-  .subtitle { margin-top: 6px; color: var(--app-muted); font-size: 14px; }
-  .head-actions { flex-shrink: 0; display: flex; align-items: center; gap: 10px; }
-  .ob { flex-shrink: 0; padding: 10px 22px; font-size: 14px; background: var(--app-primary); color: var(--app-bg); border: none; border-radius: 4px; cursor: pointer; }
-  .ob:hover { background: var(--app-primary-hover); }
-  .secondary-action { flex-shrink: 0; padding: 10px 16px; font-size: 14px; background: var(--app-control); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 4px; cursor: pointer; }
-  .secondary-action:hover { background: var(--app-control-hover); }
-  .ob:disabled,
-  .secondary-action:disabled { color: #858b91; cursor: default; opacity: 0.72; }
-  .ob:disabled:hover { background: var(--app-primary); }
-  .secondary-action:disabled:hover { background: var(--app-control); }
-  .err { color: var(--app-error); font-size: 13px; white-space: pre-wrap; }
-  .dict-status { color: var(--app-status); font-size: 13px; white-space: pre-wrap; }
-  .appearance-panel { display: flex; align-items: center; justify-content: space-between; gap: 16px; padding: 12px; background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 6px; }
-  .appearance-summary { margin-top: 4px; color: var(--app-muted); font-size: 12px; line-height: 1.35; }
-  .theme-segments { display: flex; align-items: center; gap: 4px; padding: 3px; background: var(--app-control); border: 1px solid var(--app-border); border-radius: 6px; }
-  .theme-segments button { min-width: 72px; padding: 6px 12px; background: transparent; color: var(--app-text); border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
-  .theme-segments button:hover { background: var(--app-control-hover); }
-  .theme-segments button.active { background: var(--app-primary); color: var(--app-bg); }
-  .recent { display: flex; flex-direction: column; gap: 10px; min-height: 240px; }
-  .empty { padding: 28px 0; color: var(--app-muted); font-size: 13px; }
-  .book-list { display: flex; flex-direction: column; gap: 8px; max-height: 54vh; overflow-y: auto; padding-right: 4px; }
-  .book-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 8px; background: var(--app-surface); color: inherit; border: 1px solid var(--app-border); border-radius: 6px; }
-  .book-row:hover { background: var(--app-surface-hover); border-color: var(--app-muted); }
-  .book-open { min-width: 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 12px 14px; text-align: left; background: transparent; color: inherit; border: none; cursor: pointer; }
-  .book-forget { align-self: center; margin-right: 8px; padding: 5px 9px; background: var(--app-control); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 4px; cursor: pointer; font-size: 12px; }
-  .book-forget:hover { background: var(--app-control-hover); color: var(--app-text); }
-  .book-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; color: var(--app-text); }
-  .book-meta { white-space: nowrap; font-size: 12px; color: var(--app-muted); }
-  .book-path { grid-column: 1 / -1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--app-muted); }
-  .keys { margin-top: 2px; font-size: 12px; color: var(--app-muted); }
-  .toc-panel { position: fixed; top: 28px; right: 18px; bottom: 44px; z-index: 110; width: min(380px, calc(100vw - 36px)); display: flex; flex-direction: column; background: var(--app-bg); border: 1px solid var(--app-border); border-radius: 6px; box-shadow: 0 16px 44px var(--app-shadow); }
-  .toc-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--app-border); }
-  .toc-head button { padding: 4px 10px; background: var(--app-control); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 3px; cursor: pointer; font-size: 12px; }
-  .toc-list { display: flex; flex-direction: column; overflow-y: auto; padding: 8px; }
-  .toc-row { width: 100%; padding: 8px 10px 8px calc(10px + var(--level) * 16px); text-align: left; background: transparent; color: var(--app-text); border: none; border-radius: 4px; cursor: pointer; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .toc-row:hover { background: var(--app-control); }
-  .toc-row.active { background: var(--app-primary); color: var(--app-bg); }
-  .toc-row:disabled { color: var(--app-muted); cursor: default; }
-  .toc-row:disabled:hover { background: transparent; }
-  .lookup-pop { position: fixed; z-index: var(--popup-z); display: flex; flex-direction: column; gap: 8px; max-height: min(520px, calc(100vh - 92px)); padding: 10px 12px; background: var(--app-surface); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 6px; box-shadow: 0 14px 38px var(--app-shadow); overflow: hidden; }
-  .ctrls { position: fixed; bottom: 0; left: 0; right: 0; display: flex; align-items: center; justify-content: center; gap: 6px; padding: 5px; background: var(--app-bg); border-top: 1px solid var(--app-border); z-index: 100; }
-  .ctrls button { padding: 4px 10px; background: var(--app-control); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 3px; cursor: pointer; font-size: 12px; }
-  .ctrls button:hover { background: var(--app-control-hover); }
-  .ctrls span { font-size: 12px; color: var(--app-muted); }
-  @media (max-width: 640px) {
-    .bookshelf { width: min(100vw - 32px, 920px); }
-    .shelf-head { align-items: stretch; flex-direction: column; gap: 14px; }
-    .head-actions { flex-wrap: wrap; }
-    .head-actions button { flex: 1 1 148px; }
-    .appearance-panel { align-items: stretch; flex-direction: column; }
-    .theme-segments button { flex: 1 1 0; }
-  }
 </style>

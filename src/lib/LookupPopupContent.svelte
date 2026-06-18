@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke, isTauri } from "@tauri-apps/api/core";
   import { ankiDictionaryMediaRefs, buildAnkiNoteRequest, isAnkiPreviewConfigured, payloadWithStoredDictionaryMedia, renderAnkiFieldPreview } from "./anki-field-renderer";
+  import { loadCachedDictionaryStyles, type DictionaryStyleResource } from "./dictionary-style-cache";
   import { formatLookupMatch, frequencyGroups, glossaryGroups, pitchGroups, renderGlossaryContent, ruleTags, scopeDictionaryCss, type LookupPitchGroup, type LookupState } from "./lookup-popup";
   import { clearLookupHighlight, POPUP_LOOKUP_HIGHLIGHT } from "./lookup-highlight";
   import { selectPopupTextFromPoint } from "./popup-selection";
@@ -59,6 +60,7 @@
   let shiftHoverLastX = -1;
   let shiftHoverLastY = -1;
   let lastNestedLookupKey = "";
+  let suppressNextScrollAfterNestedLookup = false;
   let previousClearSelectionSignal: number | null = null;
   let previousRestoreScrollSignal: number | null = null;
   let contentRoot: HTMLDivElement | null = null;
@@ -78,18 +80,24 @@
     dataBase64: string;
   }
 
-  interface DictionaryStyleResource {
-    css: string;
-    source: string;
-  }
-
   function resetShiftHover() {
     shiftHoverLastX = -1;
     shiftHoverLastY = -1;
   }
 
+  function suppressImmediateNestedLookupScroll() {
+    suppressNextScrollAfterNestedLookup = true;
+    requestAnimationFrame(() => {
+      suppressNextScrollAfterNestedLookup = false;
+    });
+  }
+
   $effect(() => {
-    return () => clearLookupHighlight(POPUP_LOOKUP_HIGHLIGHT);
+    return () => {
+      requestAnimationFrame(() => {
+        if (!document.querySelector(".lookup-pop")) clearLookupHighlight(POPUP_LOOKUP_HIGHLIGHT);
+      });
+    };
   });
 
   $effect(() => {
@@ -170,10 +178,15 @@
     const nestedKey = `${nestedSelection.text}:${Math.round(nestedSelection.rect.x)}:${Math.round(nestedSelection.rect.y)}`;
     if (nestedKey === lastNestedLookupKey) return;
     lastNestedLookupKey = nestedKey;
+    suppressImmediateNestedLookupScroll();
     onNestedLookup(popupId, nestedSelection);
   }
 
   function handleResultsScroll() {
+    if (suppressNextScrollAfterNestedLookup) {
+      suppressNextScrollAfterNestedLookup = false;
+      return;
+    }
     onScrolled(popupId);
   }
 
@@ -186,9 +199,7 @@
       const nestedSelection = selectPopupTextFromPoint(event.clientX, event.clientY, selection.chapterIndex);
       if (!nestedSelection) return;
 
-      const nestedKey = `${nestedSelection.text}:${Math.round(nestedSelection.rect.x)}:${Math.round(nestedSelection.rect.y)}`;
-      if (nestedKey === lastNestedLookupKey) return;
-      lastNestedLookupKey = nestedKey;
+      suppressImmediateNestedLookupScroll();
       onNestedLookup(popupId, nestedSelection);
       return;
     }
@@ -285,11 +296,10 @@
       return;
     }
 
-    const loader = loadDictionaryStyles ?? invokeDictionaryStyles;
     const chunks: string[] = [];
     for (const dictionary of dictionaries) {
       try {
-        const resource = await loader(dictionary);
+        const resource = await loadDictionaryStyles?.(dictionary) ?? await loadCachedDictionaryStyles(dictionary);
         if (requestId !== styleRequestId) return;
         if (resource.css.trim()) chunks.push(scopeDictionaryCss(resource.css, popupId));
       } catch {
@@ -297,11 +307,6 @@
       }
     }
     if (requestId === styleRequestId) dictionaryStyleCss = chunks.filter(Boolean).join("\n");
-  }
-
-  async function invokeDictionaryStyles(dictionary: string): Promise<DictionaryStyleResource> {
-    if (!isTauri()) return { css: "", source: dictionary };
-    return invoke<DictionaryStyleResource>("dictionary_styles", { dictionary });
   }
 
   async function addAnki(result: DictResult, resultIndex: number) {
