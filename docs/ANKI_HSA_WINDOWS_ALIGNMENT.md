@@ -21,8 +21,8 @@ document.
 - Lookup popup results can build a typed `LookupAnkiPayload` with selected text,
   expression, reading, glossary entries, dictionary label, match/deinflection
   data, source book locator, and source chapter.
-- The popup exposes only a disabled `Anki not configured` affordance. It does
-  not call any backend and does not pretend card creation is available.
+- The popup exposes a HSA-style compact Anki affordance. It stays disabled until
+  configuration is complete, then calls the Windows AnkiConnect add-note path.
 - HSW has a minimal Windows AnkiConnect readiness/configuration path:
   - Rust/Tauri commands load/save `anki/settings.json` under app data.
   - `anki_ping` checks a localhost AnkiConnect endpoint without throwing UI
@@ -31,14 +31,15 @@ document.
     AnkiConnect v6 and persists selected deck/note type.
   - The bookshelf Anki panel can edit endpoint, test connection, fetch config,
     select deck/note type, and edit field templates.
-  - Configured lookup popup results can preview rendered Anki fields from the
-    current `LookupAnkiPayload`; this does not call AnkiConnect card creation.
+  - The bookshelf Anki panel can preview rendered note fields while editing
+    templates.
   - Configured lookup popup results can call Rust `anki_add_note`, which checks
     `canAddNotesWithErrorDetail` before calling AnkiConnect `addNote`.
 - Real Anki runtime add-note validation with a throwaway deck/model passed on
   2026-06-18 using `HSW_ANKI_RUNTIME_VALIDATE=1`.
-- There is no sync or Anki media export.
-- Existing lookup popup probes cover that the disabled Anki boundary remains
+- Dictionary image media export is implemented for add-note; sync and word audio
+  export remain unimplemented.
+- Existing lookup popup probes cover that disabled Anki/audio boundaries remain
   visible/click-safe and cannot be styled away by dictionary CSS.
 
 ## HSA Reference Findings
@@ -134,12 +135,11 @@ Key changes:
   `{popup-selection-text}`, `{glossary-first}`, `{glossary}`, `{sentence}`,
   `{document-title}`, `{frequencies}`, and `{pitch-accent-positions}`.
 - Provide default mappings for Lapis/Kiku/Senren where fields match HSA names.
-- Add a preview action from lookup popup or Anki panel using the current
-  `LookupAnkiPayload`.
+- Add a preview action in the Anki panel using the current field-rendering logic.
 
 Acceptance:
 
-- Users can see exactly what fields would be sent for a selected lookup result.
+- Users can see how note fields render while configuring field templates.
 - Unknown handlebars render empty rather than crashing.
 - No card is created.
 

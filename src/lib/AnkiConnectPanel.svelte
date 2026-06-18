@@ -8,6 +8,7 @@
     status = "",
     error = "",
     busy = false,
+    handlebarOptions = [],
     onEndpointChange = (_endpoint: string) => {},
     onPing = () => {},
     onFetch = () => {},
@@ -22,6 +23,7 @@
     status?: string;
     error?: string;
     busy?: boolean;
+    handlebarOptions?: string[];
     onEndpointChange?: (endpoint: string) => void;
     onPing?: () => void;
     onFetch?: () => void;
@@ -35,6 +37,7 @@
   const selectedNote = $derived(
     settings?.noteTypes.find((noteType) => noteType.name === settings?.selectedNoteType) ?? null,
   );
+  let openHandlebarField = $state<string | null>(null);
 
   function fetchedLabel(timestamp: number | null | undefined): string {
     if (!timestamp) return "Not fetched yet";
@@ -63,6 +66,11 @@
       [audioSource()],
       Number.isFinite(timeout) ? Math.max(1000, Math.min(30000, Math.round(timeout))) : 5000,
     );
+  }
+
+  function selectHandlebar(field: string, option: string) {
+    openHandlebarField = null;
+    onSetFieldTemplate(field, option === "-" ? "" : option);
   }
 </script>
 
@@ -138,15 +146,37 @@
     {#if selectedNote?.fields.length}
       <div class="field-template-list">
         {#each selectedNote.fields as field}
-          <label class="field-template-row">
+          <div class="field-template-row">
             <span>{field}</span>
-            <input
-              value={effectiveTemplateForField(field, settings)}
-              disabled={busy}
-              spellcheck="false"
-              onchange={(event) => onSetFieldTemplate(field, event.currentTarget.value)}
-            />
-          </label>
+            <div class="field-template-control">
+              <input
+                aria-label={`${field} template`}
+                value={effectiveTemplateForField(field, settings)}
+                disabled={busy}
+                spellcheck="false"
+                onchange={(event) => onSetFieldTemplate(field, event.currentTarget.value)}
+              />
+              <button
+                type="button"
+                class="handlebar-trigger"
+                disabled={busy || handlebarOptions.length === 0}
+                aria-label={`Choose template token for ${field}`}
+                aria-expanded={openHandlebarField === field}
+                onclick={() => openHandlebarField = openHandlebarField === field ? null : field}
+              >
+                {"{}"}
+              </button>
+              {#if openHandlebarField === field}
+                <div class="handlebar-menu" role="menu">
+                  {#each handlebarOptions as option}
+                    <button type="button" role="menuitem" onclick={() => selectHandlebar(field, option)}>
+                      {option}
+                    </button>
+                  {/each}
+                </div>
+              {/if}
+            </div>
+          </div>
         {/each}
       </div>
     {:else}
@@ -211,7 +241,7 @@
 </section>
 
 <style>
-  .anki-panel { display: flex; flex-direction: column; gap: 10px; padding: 12px; background: #26282c; border: 1px solid #3c4043; border-radius: 6px; }
+  .anki-panel { display: flex; flex-direction: column; gap: 10px; max-height: calc(100vh - 48px); padding: 12px; background: #26282c; border: 1px solid #3c4043; border-radius: 6px; overflow-y: auto; }
   .anki-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
   .anki-summary { margin-top: 4px; color: #b7bcc3; font-size: 12px; line-height: 1.35; }
   .anki-actions { flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
@@ -232,10 +262,17 @@
   .audio-toggle input { width: 14px; height: 14px; accent-color: #3b8f78; }
   .audio-grid { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 10px; }
   .field-template-list { display: flex; flex-direction: column; gap: 7px; }
-  .field-template-row { min-width: 0; display: grid; grid-template-columns: minmax(90px, 0.32fr) minmax(0, 1fr); align-items: center; gap: 8px; }
+  .field-template-row { min-width: 0; display: grid; grid-template-columns: minmax(90px, 0.32fr) minmax(0, 1fr); align-items: start; gap: 8px; }
   .field-template-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #d8eadf; font-size: 12px; }
+  .field-template-control { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 34px; gap: 6px; }
   .field-template-row input { width: 100%; min-width: 0; padding: 6px 7px; background: #202124; color: #f1f3f4; border: 1px solid #555c64; border-radius: 4px; font-size: 12px; }
   .field-template-row input:disabled { color: #747a80; }
+  .handlebar-trigger { width: 34px; min-height: 30px; background: #303134; color: #d7d9dc; border: 1px solid #555c64; border-radius: 4px; cursor: pointer; font-size: 12px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
+  .handlebar-trigger:hover:not(:disabled) { background: #3a3d41; }
+  .handlebar-trigger:disabled { color: #747a80; cursor: default; }
+  .handlebar-menu { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 4px; max-height: 180px; overflow-y: auto; padding: 6px; background: #202124; border: 1px solid #444a51; border-radius: 4px; }
+  .handlebar-menu button { min-width: 0; padding: 5px 7px; text-align: left; overflow-wrap: anywhere; background: transparent; color: #d7d9dc; border: none; border-radius: 3px; cursor: pointer; font-size: 12px; }
+  .handlebar-menu button:hover { background: #303134; color: #fff; }
   .anki-status { color: #9ad5b5; font-size: 13px; line-height: 1.4; }
   .err { color: #ff8a80; font-size: 13px; white-space: pre-wrap; }
   .empty, .fetched-at { color: #80868b; font-size: 12px; }
@@ -246,5 +283,6 @@
     .config-grid { grid-template-columns: 1fr; }
     .audio-grid { grid-template-columns: 1fr; }
     .field-template-row { grid-template-columns: 1fr; gap: 4px; }
+    .field-template-control { grid-template-columns: minmax(0, 1fr) 34px; }
   }
 </style>

@@ -63,6 +63,7 @@ async function popupMetrics(page) {
     const styledGlossary = document.querySelector(".lookup-glossary-content .gloss-sc-div");
     const head = document.querySelector(".lookup-head");
     const anki = document.querySelector(".lookup-anki");
+    const audio = document.querySelector(".lookup-audio");
     const controls = document.querySelector(".probe-ctrls");
     const rect = popup instanceof HTMLElement
       ? popup.getBoundingClientRect()
@@ -91,8 +92,19 @@ async function popupMetrics(page) {
       horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
       hasResultsScroller: results instanceof HTMLElement && results.scrollHeight > results.clientHeight,
       ankiDisabled: document.querySelector(".lookup-anki")?.hasAttribute("disabled") ?? false,
+      ankiAriaLabel: document.querySelector(".lookup-anki")?.getAttribute("aria-label") ?? "",
       ankiTitle: document.querySelector(".lookup-anki")?.getAttribute("title") ?? "",
+      audioDisabled: document.querySelector(".lookup-audio")?.hasAttribute("disabled") ?? false,
+      audioTitle: document.querySelector(".lookup-audio")?.getAttribute("title") ?? "",
       ankiPreviewRows: document.querySelectorAll(".anki-preview-row").length,
+      ankiPreviewButtons: document.querySelectorAll(".lookup-anki-preview").length,
+      headerActions: document.querySelectorAll(".lookup-header-actions").length,
+      audioButtons: document.querySelectorAll(".lookup-audio").length,
+      frequencyGroups: document.querySelectorAll(".frequency-group").length,
+      frequencyDictLabels: Array.from(document.querySelectorAll(".frequency-dict-label")).map((node) => node.textContent ?? ""),
+      pitchGroups: document.querySelectorAll(".pitch-group").length,
+      pitchVisuals: document.querySelectorAll(".pitch-visual").length,
+      lookupDetailRows: document.querySelectorAll(".lookup-detail").length,
       structuredListItems: document.querySelectorAll(".lookup-glossary-content ul li").length,
       structuredBreaks: document.querySelectorAll(".lookup-glossary-content br").length,
       structuredTables: document.querySelectorAll(".lookup-glossary-content table").length,
@@ -118,6 +130,7 @@ async function popupMetrics(page) {
       dictionaryStyledBackgroundImage: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).backgroundImage : "",
       headColor: head instanceof HTMLElement ? getComputedStyle(head).color : "",
       ankiDisplay: anki instanceof HTMLElement ? getComputedStyle(anki).display : "",
+      audioDisplay: audio instanceof HTMLElement ? getComputedStyle(audio).display : "",
       bodyBackground: getComputedStyle(document.body).backgroundColor,
     };
   });
@@ -154,6 +167,12 @@ async function dispatchShiftHover(page, text) {
       shiftKey: true,
     }));
   }, text);
+}
+
+async function scrollFirstMediaPlaceholderIntoView(page) {
+  await page.locator(".lookup-glossary-content .gloss-media-placeholder").first().evaluate((placeholder) => {
+    placeholder.scrollIntoView({ block: "center", inline: "nearest" });
+  });
 }
 
 async function main() {
@@ -199,6 +218,7 @@ async function main() {
       const target = document.querySelector(".lookup-glossary-content .gloss-sc-div");
       return target instanceof HTMLElement && getComputedStyle(target).color === "rgb(123, 210, 145)";
     });
+    await scrollFirstMediaPlaceholderIntoView(page);
     await page.waitForFunction(() => (
       document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='loaded']").length >= 1
     ));
@@ -225,40 +245,40 @@ async function main() {
     assert(ready.ankiDisplay !== "none", "Dictionary CSS should not style popup action buttons.", ready);
     assert(ready.bodyBackground !== "rgb(255, 0, 0)", "Dictionary CSS should not style the page body.", ready);
     assert(ready.text.includes("education") && ready.text.includes("place"), "Ready popup should render glossary definition tags.", ready);
-    assert(ready.text.includes("Freq") && ready.text.includes("120"), "Ready popup should render frequency.", ready);
-    assert(ready.text.includes("Pitch") && ready.text.includes("school"), "Ready popup should render pitch.", ready);
-    assert(ready.text.includes("Anki not configured") && ready.ankiDisabled, "Anki boundary should remain disabled.", ready);
+    assert(ready.headerActions >= 1, "Ready popup should render HSA-style header actions.", ready);
+    assert(ready.audioButtons >= 1 && ready.audioDisabled, "Word audio button should render as a disabled boundary.", ready);
+    assert(ready.audioTitle.includes("not implemented"), "Disabled audio affordance should describe the boundary.", ready);
+    assert(ready.frequencyGroups >= 1 && ready.frequencyDictLabels.includes("Freq Probe") && ready.text.includes("120"), "Ready popup should render frequency as dictionary pills.", ready);
+    assert(ready.pitchGroups >= 1 && ready.pitchVisuals >= 1 && ready.text.includes("school"), "Ready popup should render pitch as grouped pitch rows.", ready);
+    assert(ready.lookupDetailRows === 0 && !ready.text.includes("FreqPitch"), "Ready popup should not render old Freq/Pitch detail rows.", ready);
+    assert(ready.ankiAriaLabel === "Anki not configured" && ready.ankiDisabled, "Anki boundary should remain disabled.", ready);
     assert(ready.ankiTitle.includes("Probe Book"), "Anki payload title should be exposed as disabled affordance text.", ready);
+    assert(ready.ankiPreviewButtons === 0 && ready.ankiPreviewRows === 0, "Manual Anki field preview controls should be removed.", ready);
     assert(ready.hasResultsScroller, "Long ready results should scroll inside the popup.", ready);
 
     await openProbe(page, "ready", { ankiMode: "configured" });
-    await page.getByRole("button", { name: "Preview fields" }).click();
-    const ankiPreview = await popupMetrics(page);
-    assert(!ankiPreview.ankiDisabled, "Configured Anki preview action should be enabled.", ankiPreview);
-    assert(ankiPreview.ankiPreviewRows === 7, "Anki preview should render configured note fields.", ankiPreview);
-    assert(ankiPreview.text.includes("Mining") && ankiPreview.text.includes("Hoshi Vocabulary"), "Anki preview should show selected deck and note type.", ankiPreview);
-    assert(ankiPreview.text.includes("school / school"), "Anki preview should render expression and reading tokens.", ankiPreview);
-    assert(ankiPreview.text.includes("school; a place of study") || ankiPreview.text.includes("structured-content"), "Anki preview should render glossary tokens.", ankiPreview);
-    assert(ankiPreview.text.includes("<img src=\"hsw_") && ankiPreview.text.includes("school icon"), "Anki preview should render dictionary media placeholders.", ankiPreview);
-    assert(ankiPreview.text.includes("Freq Probe: 120"), "Anki preview should render frequency tokens.", ankiPreview);
-    assert(ankiPreview.text.includes("Pitch Probe: pitch 0, 2"), "Anki preview should render pitch tokens.", ankiPreview);
-    assert(ankiPreview.text.includes("Word audio token present"), "Anki preview should expose the word-audio boundary.", ankiPreview);
-    assert(ankiPreview.text.includes("beforeafter"), "Unknown Anki handlebars should render empty.", ankiPreview);
-    assert(ankiPreview.ankiAddCount === 0, "Previewing fields should not add an Anki note.", ankiPreview);
+    const configuredAnki = await popupMetrics(page);
+    assert(!configuredAnki.ankiDisabled && configuredAnki.ankiAriaLabel === "Add to Anki", "Configured Anki action should be enabled as a header icon.", configuredAnki);
+    assert(configuredAnki.ankiPreviewButtons === 0 && configuredAnki.ankiPreviewRows === 0, "Configured popup should not expose manual Anki preview UI.", configuredAnki);
 
-    await page.getByRole("button", { name: "Add Anki" }).click();
+    await page.getByRole("button", { name: "Add to Anki" }).click();
     const ankiAdded = await popupMetrics(page);
     assert(ankiAdded.ankiAddCount === 1, "Add Anki should call the note creation callback once.", ankiAdded);
     assert(ankiAdded.ankiStoreCount === 1, "Add Anki should store dictionary media before note creation.", ankiAdded);
     assert(ankiAdded.ankiLastMedia.length === 1 && ankiAdded.ankiLastMedia[0].filename.startsWith("hsw_"), "Stored media request should use deterministic HSW filenames.", ankiAdded);
     assert(ankiAdded.ankiLastDeck === "Mining" && ankiAdded.ankiLastModel === "Hoshi Vocabulary", "Add Anki should send selected deck and note type.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Expression === "school / school", "Add Anki should send rendered field values.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.Sentence === "The academy school sentence contains the selected lookup term in a longer source paragraph.", "Add Anki should send sentence context rather than only selected text.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.Meaning.includes("classroom school room") && !ankiAdded.ankiLastFields.Meaning.includes("\"tag\""), "Add Anki should send rendered structured glossary values.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.JmOnly === "school; a place of study", "Add Anki should send dictionary-specific glossary values.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.MissingDict === "", "Unknown dictionary-specific glossary tokens should render empty.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Audio === "", "Add Anki should keep audio fields empty until audio export is implemented.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Media.includes("<img src=\"stored_hsw_") && ankiAdded.ankiLastFields.Media.includes(".svg"), "Add Anki should include stored dictionary media filenames.", ankiAdded);
     assert(ankiAdded.text.includes("Added Anki note 4242."), "Added state should show the Anki note id message.", ankiAdded);
+    assert(ankiAdded.text.includes("Word audio token present"), "Add state should expose the word-audio boundary.", ankiAdded);
 
     await openProbe(page, "ready", { ankiMode: "configured", ankiStoreMode: "missing" });
-    await page.getByRole("button", { name: "Add Anki" }).click();
+    await page.getByRole("button", { name: "Add to Anki" }).click();
     const ankiMissingMedia = await popupMetrics(page);
     assert(ankiMissingMedia.ankiStoreCount === 1, "Missing media path should still attempt media storage.", ankiMissingMedia);
     assert(ankiMissingMedia.ankiAddCount === 1, "Missing media warnings should not block text note creation.", ankiMissingMedia);
@@ -266,20 +286,20 @@ async function main() {
     assert(ankiMissingMedia.text.includes("Missing probe media:"), "Missing media warnings should be visible in the popup.", ankiMissingMedia);
 
     await openProbe(page, "ready", { ankiMode: "configured", ankiStoreMode: "error" });
-    await page.getByRole("button", { name: "Add Anki" }).click();
+    await page.getByRole("button", { name: "Add to Anki" }).click();
     const ankiMediaError = await popupMetrics(page);
     assert(ankiMediaError.ankiStoreCount === 1, "Media store errors should be surfaced after one store attempt.", ankiMediaError);
     assert(ankiMediaError.ankiAddCount === 0, "Hard media storage errors should stop note creation.", ankiMediaError);
     assert(ankiMediaError.text.includes("Probe media store failure"), "Media store errors should be visible in the popup.", ankiMediaError);
 
     await openProbe(page, "ready", { ankiMode: "configured", ankiAddMode: "duplicate" });
-    await page.getByRole("button", { name: "Add Anki" }).click();
+    await page.getByRole("button", { name: "Add to Anki" }).click();
     const ankiDuplicate = await popupMetrics(page);
     assert(ankiDuplicate.ankiAddCount === 1, "Duplicate check should still make a single add attempt callback.", ankiDuplicate);
     assert(ankiDuplicate.text.includes("cannot create note because it is a duplicate"), "Duplicate state should show duplicate details.", ankiDuplicate);
 
     await openProbe(page, "ready", { ankiMode: "configured", ankiAddMode: "error" });
-    await page.getByRole("button", { name: "Add Anki" }).click();
+    await page.getByRole("button", { name: "Add to Anki" }).click();
     const ankiError = await popupMetrics(page);
     assert(ankiError.text.includes("Probe AnkiConnect failure"), "Anki error state should show failure details.", ankiError);
 
@@ -297,6 +317,7 @@ async function main() {
     assert(bottomEdge.hasResultsScroller, "Bottom-edge long results should still scroll inside the popup.", bottomEdge);
 
     await openProbe(page, "ready", { longResult: true, mediaMode: "fail" });
+    await scrollFirstMediaPlaceholderIntoView(page);
     await page.waitForFunction(() => (
       document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='error']").length >= 1
     ));
@@ -306,6 +327,7 @@ async function main() {
     assert(mediaFailed.text.includes("classroom school room"), "Missing dictionary media should not break text glossary rendering.", mediaFailed);
 
     await openProbe(page, "ready", { longResult: true, mediaMode: "none" });
+    await scrollFirstMediaPlaceholderIntoView(page);
     await page.waitForFunction(() => (
       document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='error']").length >= 1
     ));
@@ -314,6 +336,7 @@ async function main() {
     assert(mediaNoTauri.mediaImages === 0, "Non-Tauri media fallback should not fake loaded images.", mediaNoTauri);
 
     await openProbe(page, "ready", { longResult: true });
+    await scrollFirstMediaPlaceholderIntoView(page);
     await page.waitForFunction(() => (
       document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='loaded']").length >= 1
     ));

@@ -1,24 +1,89 @@
 <script lang="ts">
   import AnkiConnectPanel from "./AnkiConnectPanel.svelte";
+  import { ankiHandlebarOptions } from "./anki-field-renderer";
   import type { AnkiSettings } from "./types";
 
   const params = new URLSearchParams(window.location.search);
   const mode = params.get("ankiConnectMode") ?? "ready";
+  const largeFields = [
+    "Expression",
+    "ExpressionFurigana",
+    "ExpressionReading",
+    "ExpressionAudio",
+    "MainDefinition",
+    "DefinitionPicture",
+    "Sentence",
+    "SentenceFurigana",
+    "SentenceAudio",
+    "Picture",
+    "Glossary",
+    "Hint",
+    "IsWordAndSentenceCard",
+    "IsClickCard",
+    "IsSentenceCard",
+    "IsAudioCard",
+    "PitchPosition",
+    "PitchCategories",
+    "Frequency",
+    "FreqSort",
+    "MiscInfo",
+    "IsAudioCard+",
+  ];
+  const lapisFields = [
+    "Expression",
+    "ExpressionFurigana",
+    "ExpressionReading",
+    "ExpressionAudio",
+    "SelectionText",
+    "MainDefinition",
+    "DefinitionPicture",
+    "Sentence",
+    "SentenceFurigana",
+    "SentenceAudio",
+    "Picture",
+    "Glossary",
+    "Hint",
+    "IsWordAndSentenceCard",
+    "IsClickCard",
+    "IsSentenceCard",
+    "IsAudioCard",
+    "PitchPosition",
+    "PitchCategories",
+    "Frequency",
+    "FreqSort",
+    "MiscInfo",
+    "IsAudioCard+",
+  ];
+  const noteTypes = [
+    { name: "Basic", fields: ["Front", "Back", "Audio"] },
+    { name: "Hoshi Vocabulary", fields: ["Expression", "Reading", "Glossary", "Sentence", "ExpressionAudio"] },
+    ...(mode === "large" ? [{ name: "Large Vocabulary", fields: largeFields }] : []),
+    ...(mode === "lapis" || mode === "lapisMapped" ? [{ name: "Lapis", fields: lapisFields }] : []),
+    ...(mode === "customLapis" ? [{ name: "Custom Lapis", fields: lapisFields }] : []),
+  ];
+  const selectedNoteType = mode === "large"
+    ? "Large Vocabulary"
+    : mode === "lapis" || mode === "lapisMapped"
+      ? "Lapis"
+      : mode === "customLapis"
+        ? "Custom Lapis"
+        : "Basic";
 
   const readySettings: AnkiSettings = {
     version: 1,
     endpoint: "http://127.0.0.1:8765",
     selectedDeck: "Mining",
-    selectedNoteType: "Basic",
+    selectedNoteType,
     decks: [{ name: "Mining" }, { name: "Japanese::Reading" }],
-    noteTypes: [
-      { name: "Basic", fields: ["Front", "Back", "Audio"] },
-      { name: "Hoshi Vocabulary", fields: ["Expression", "Reading", "Glossary", "Sentence", "ExpressionAudio"] },
-    ],
-    fieldMappings: [
-      { field: "Front", template: "{expression}" },
-      { field: "Back", template: "{glossary-first}" },
-    ],
+    noteTypes,
+    fieldMappings: mode === "lapis" || mode === "customLapis"
+      ? []
+      : mode === "lapisMapped"
+        ? [{ field: "MainDefinition", template: "{single-glossary-JMdict}" }]
+        : [
+          { field: "Front", template: "{expression}" },
+          { field: "Back", template: "{glossary-first}" },
+        ],
     audioEnabled: false,
     audioSources: [{ name: "Default", url: "", enabled: false }],
     audioDownloadTimeoutMs: 5000,
@@ -34,6 +99,7 @@
   let noteTypeEvents = $state<string[]>([]);
   let fieldTemplateEvents = $state<string[]>([]);
   let audioEvents = $state<string[]>([]);
+  const handlebarOptions = ankiHandlebarOptions(["JMdict", "明鏡国語辞典 第三版", "JMdict"]);
 
   function selectDeck(deck: string) {
     deckEvents = [...deckEvents, deck];
@@ -76,6 +142,7 @@
     status={mode === "connected" ? "Connected to AnkiConnect." : ""}
     error={mode === "error" ? "Cannot connect to AnkiConnect at 127.0.0.1:8765." : ""}
     busy={mode === "busy"}
+    {handlebarOptions}
     onEndpointChange={(next) => endpoint = next}
     onPing={() => pingClicks += 1}
     onFetch={() => fetchClicks += 1}

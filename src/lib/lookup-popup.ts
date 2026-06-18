@@ -1,4 +1,4 @@
-import type { DictResult, GlossaryEntry } from "./types";
+import type { DictResult, FrequencyEntry, GlossaryEntry, PitchEntry } from "./types";
 
 export type LookupState = "idle" | "loading" | "ready" | "empty" | "error" | "noDictionaries" | "engineUnavailable";
 
@@ -10,19 +10,14 @@ export function formatLookupMatch(result: DictResult): string {
 }
 
 export function frequencyLabel(result: DictResult): string {
-  const entry = result.frequencies.find((frequency) => frequency.items.length > 0);
+  const entry = frequencyGroups(result)[0];
   if (!entry) return "";
 
-  const values = entry.items
-    .slice(0, 3)
-    .map((item) => item.displayValue || String(item.value))
-    .filter(Boolean);
-  if (values.length === 0) return "";
-  return `${entry.dictionary}: ${values.join(", ")}`;
+  return `${entry.dictionary}: ${entry.values.join(", ")}`;
 }
 
 export function pitchLabel(result: DictResult): string {
-  const entry = result.pitches.find((pitch) => pitch.positions.length > 0 || pitch.transcriptions.length > 0);
+  const entry = pitchGroups(result)[0];
   if (!entry) return "";
 
   const details = [
@@ -31,6 +26,39 @@ export function pitchLabel(result: DictResult): string {
   ].filter(Boolean);
   if (details.length === 0) return "";
   return `${entry.dictionary}: ${details.join(" | ")}`;
+}
+
+export interface LookupFrequencyGroup {
+  dictionary: string;
+  values: string[];
+}
+
+export interface LookupPitchGroup {
+  dictionary: string;
+  positions: number[];
+  transcriptions: string[];
+}
+
+export function frequencyGroups(result: Pick<DictResult, "frequencies">): LookupFrequencyGroup[] {
+  return result.frequencies
+    .map((entry: FrequencyEntry) => ({
+      dictionary: entry.dictionary || "Frequency",
+      values: entry.items
+        .slice(0, 3)
+        .map((item) => item.displayValue || String(item.value))
+        .filter(Boolean),
+    }))
+    .filter((entry) => entry.values.length > 0);
+}
+
+export function pitchGroups(result: Pick<DictResult, "pitches">): LookupPitchGroup[] {
+  return result.pitches
+    .map((entry: PitchEntry) => ({
+      dictionary: entry.dictionary || "Pitch",
+      positions: [...new Set(entry.positions.filter((position) => Number.isFinite(position)))],
+      transcriptions: [...new Set(entry.transcriptions.map((item) => item.trim()).filter(Boolean))],
+    }))
+    .filter((entry) => entry.positions.length > 0 || entry.transcriptions.length > 0);
 }
 
 export function resultDictionaryLabel(result: DictResult): string {

@@ -1,7 +1,77 @@
-import { frequencyLabel, pitchLabel } from "./lookup-popup";
-import type { AnkiDictionaryMediaRef, AnkiFieldMapping, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, AnkiStoredMedia, GlossaryEntry, LookupAnkiMediaReference, LookupAnkiPayload } from "./types";
+import { frequencyLabel, pitchLabel, renderGlossaryContent } from "./lookup-popup";
+import type { AnkiDictionaryMediaRef, AnkiFieldMapping, AnkiFieldPreview, AnkiNoteRequest, AnkiNoteType, AnkiSettings, AnkiStoredMedia, GlossaryEntry, LookupAnkiMediaReference, LookupAnkiPayload } from "./types";
 
-const TOKEN_PATTERN = /\{([a-z0-9-]+)\}/gi;
+const TOKEN_PATTERN = /\{([^{}]+)\}/g;
+const SINGLE_GLOSSARY_PREFIX = "single-glossary-";
+const CORE_HANDLEBAR_OPTIONS = [
+  "-",
+  "{expression}",
+  "{reading}",
+  "{popup-selection-text}",
+  "{glossary-first}",
+  "{glossary}",
+  "{sentence}",
+  "{document-title}",
+  "{frequencies}",
+  "{pitch-accent-positions}",
+  "{dictionary-media}",
+  "{audio}",
+];
+const KNOWN_NOTE_TYPE_TEMPLATES: Record<string, Record<string, string>> = {
+  Lapis: {
+    Expression: "{expression}",
+    ExpressionFurigana: "{furigana-plain}",
+    ExpressionReading: "{reading}",
+    ExpressionAudio: "{audio}",
+    SelectionText: "{popup-selection-text}",
+    MainDefinition: "{glossary-first}",
+    Sentence: "{sentence}",
+    SentenceAudio: "{sasayaki-audio}",
+    Picture: "{book-cover}",
+    Glossary: "{glossary}",
+    PitchPosition: "{pitch-accent-positions}",
+    PitchCategories: "{pitch-accent-categories}",
+    Frequency: "{frequencies}",
+    FreqSort: "{frequency-harmonic-rank}",
+    MiscInfo: "{document-title}",
+    IsWordAndSentenceCard: "x",
+  },
+  Kiku: {
+    Expression: "{expression}",
+    ExpressionFurigana: "{furigana-plain}",
+    ExpressionReading: "{reading}",
+    ExpressionAudio: "{audio}",
+    SelectionText: "{popup-selection-text}",
+    MainDefinition: "{glossary-first}",
+    Sentence: "{sentence}",
+    SentenceAudio: "{sasayaki-audio}",
+    Picture: "{book-cover}",
+    Glossary: "{glossary}",
+    PitchPosition: "{pitch-accent-positions}",
+    PitchCategories: "{pitch-accent-categories}",
+    Frequency: "{frequencies}",
+    FreqSort: "{frequency-harmonic-rank}",
+    MiscInfo: "{document-title}",
+    IsWordAndSentenceCard: "x",
+  },
+  Senren: {
+    word: "{expression}",
+    reading: "{reading}",
+    sentence: "{sentence}",
+    sentenceCard: "x",
+    selectionText: "{popup-selection-text}",
+    definition: "{glossary-first}",
+    wordAudio: "{audio}",
+    sentenceAudio: "{sasayaki-audio}",
+    picture: "{book-cover}",
+    glossary: "{glossary}",
+    pitchPositions: "{pitch-accent-positions}",
+    pitchCategories: "{pitch-accent-categories}",
+    frequencies: "{frequencies}",
+    freqSort: "{frequency-harmonic-rank}",
+    miscInfo: "{document-title}",
+  },
+};
 
 export function isAnkiPreviewConfigured(settings: AnkiSettings | null | undefined): boolean {
   const noteType = selectedNoteType(settings);
@@ -19,6 +89,8 @@ export function effectiveTemplateForField(
 ): string {
   const explicit = settings?.fieldMappings.find((mapping) => mapping.field === field)?.template;
   if (explicit !== undefined) return explicit;
+  const known = knownTemplateForField(selectedNoteType(settings), field);
+  if (known !== null) return known;
   return defaultTemplateForField(field);
 }
 
@@ -35,6 +107,13 @@ export function upsertFieldTemplate(
 export function pruneFieldMappings(settings: AnkiSettings): AnkiFieldMapping[] {
   const fields = new Set(selectedNoteType(settings)?.fields ?? []);
   return settings.fieldMappings.filter((mapping) => fields.has(mapping.field));
+}
+
+export function applyKnownNoteTypeDefaultsIfUnmapped(settings: AnkiSettings): AnkiFieldMapping[] {
+  const noteType = selectedNoteType(settings);
+  const pruned = pruneFieldMappings(settings);
+  if (!noteType || pruned.length > 0) return pruned;
+  return knownDefaultMappings(noteType);
 }
 
 export function renderAnkiFieldPreview(
@@ -73,11 +152,15 @@ export function buildAnkiNoteRequest(
 }
 
 export function renderTemplate(template: string, payload: LookupAnkiPayload): string {
-  return template.replace(TOKEN_PATTERN, (_match, token: string) => tokenValue(token.toLowerCase(), payload));
+  return template.replace(TOKEN_PATTERN, (_match, token: string) => tokenValue(token, payload));
 }
 
 function tokenValue(token: string, payload: LookupAnkiPayload): string {
-  switch (token) {
+  const normalized = token.toLowerCase();
+  if (normalized.startsWith(SINGLE_GLOSSARY_PREFIX)) {
+    return glossaryTextForDictionary(token.slice(SINGLE_GLOSSARY_PREFIX.length), payload);
+  }
+  switch (normalized) {
     case "expression":
       return payload.expression;
     case "reading":
@@ -85,11 +168,11 @@ function tokenValue(token: string, payload: LookupAnkiPayload): string {
     case "popup-selection-text":
       return payload.selectedText;
     case "glossary-first":
-      return payload.glossary[0]?.text ?? "";
+      return payload.glossary[0] ? renderAnkiGlossaryEntry(payload.glossary[0]) : "";
     case "glossary":
-      return payload.glossary.map((entry) => entry.text).filter(Boolean).join("\n\n");
+      return renderAnkiGlossaryEntries(payload.glossary);
     case "sentence":
-      return payload.selectedText;
+      return payload.sentence;
     case "document-title":
       return payload.sourceBook.title ?? "";
     case "frequencies":
@@ -103,6 +186,20 @@ function tokenValue(token: string, payload: LookupAnkiPayload): string {
     default:
       return "";
   }
+}
+
+export function ankiHandlebarOptions(dictionaryNames: string[]): string[] {
+  const seen = new Set<string>();
+  const dictionaryOptions = dictionaryNames
+    .map((name) => name.trim())
+    .filter(Boolean)
+    .filter((name) => {
+      if (seen.has(name)) return false;
+      seen.add(name);
+      return true;
+    })
+    .map((name) => `{${SINGLE_GLOSSARY_PREFIX}${name}}`);
+  return [...CORE_HANDLEBAR_OPTIONS, ...dictionaryOptions];
 }
 
 export function extractDictionaryMediaReferences(glossary: GlossaryEntry[]): LookupAnkiMediaReference[] {
@@ -155,6 +252,21 @@ export function stableDictionaryMediaFilename(dictionary: string, path: string):
   return `hsw_${fnv1a(`${dictionary}\u0000${path}`)}${extension}`;
 }
 
+function knownDefaultMappings(noteType: AnkiNoteType): AnkiFieldMapping[] {
+  const templates = KNOWN_NOTE_TYPE_TEMPLATES[noteType.name];
+  if (!templates) return [];
+  return noteType.fields
+    .filter((field) => templates[field] !== undefined)
+    .map((field) => ({ field, template: templates[field] }));
+}
+
+function knownTemplateForField(noteType: AnkiNoteType | null, field: string): string | null {
+  if (!noteType) return null;
+  const templates = KNOWN_NOTE_TYPE_TEMPLATES[noteType.name];
+  if (!templates) return null;
+  return templates[field] ?? "";
+}
+
 function defaultTemplateForField(field: string): string {
   const normalized = field.toLowerCase().replace(/[\s_-]+/g, "");
   if (["expression", "word", "term", "vocab", "vocabulary", "front"].includes(normalized)) return "{expression}";
@@ -167,6 +279,18 @@ function defaultTemplateForField(field: string): string {
   if (["media", "image", "images", "picture", "pictures", "dictionarymedia"].includes(normalized)) return "{dictionary-media}";
   if (["audio", "sound", "wordaudio", "expressionaudio"].includes(normalized)) return "{audio}";
   return "";
+}
+
+function glossaryTextForDictionary(dictionary: string, payload: LookupAnkiPayload): string {
+  return renderAnkiGlossaryEntries(payload.glossary.filter((entry) => entry.dict === dictionary));
+}
+
+function renderAnkiGlossaryEntries(entries: GlossaryEntry[]): string {
+  return entries.map(renderAnkiGlossaryEntry).filter(Boolean).join("<br><br>");
+}
+
+function renderAnkiGlossaryEntry(entry: GlossaryEntry): string {
+  return renderGlossaryContent(entry.text, entry.dict);
 }
 
 function renderDictionaryMedia(media: LookupAnkiMediaReference[]): string {

@@ -207,6 +207,10 @@ async function probeSelectionText(page) {
   return await page.locator(".probe-state").getAttribute("data-selection") ?? "";
 }
 
+async function probeSentenceText(page) {
+  return await page.locator(".probe-state").getAttribute("data-sentence") ?? "";
+}
+
 async function probeSelectionCount(page) {
   return Number(await page.locator(".probe-state").getAttribute("data-selection-count") ?? 0);
 }
@@ -284,6 +288,12 @@ async function main() {
     await page.keyboard.up("Shift");
     const shiftHoverSelection = await probeSelectionText(page);
     assert(shiftHoverSelection.length > 0, "Shift hover should select reader text for lookup.", { lookupPoint, shiftHoverSelection });
+    const shiftHoverSentence = await probeSentenceText(page);
+    assert(
+      shiftHoverSentence.includes(shiftHoverSelection) && shiftHoverSentence.length > shiftHoverSelection.length,
+      "Shift hover should capture the source paragraph separately from the lookup term.",
+      { lookupPoint, shiftHoverSelection, shiftHoverSentence },
+    );
     const shiftHoverCount = await probeSelectionCount(page);
 
     await page.keyboard.down("Shift");
