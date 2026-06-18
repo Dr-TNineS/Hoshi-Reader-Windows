@@ -1087,8 +1087,6 @@
           <button class="secondary-action" onclick={() => showDictionaryManager = !showDictionaryManager}>
             Dictionaries
           </button>
-          <button class="secondary-action" disabled={dictionaryBusy} onclick={importDictionary}>Import Dictionaries</button>
-          <button class="secondary-action" disabled={dictionaryBusy} onclick={importDictionaryFolder}>Import Folder</button>
           <button class="ob" disabled={bookImportBusy} onclick={openBook}>
             {bookImportBusy ? "Importing..." : "Open EPUB"}
           </button>
