@@ -207,7 +207,8 @@ function structuredAttributes(record: Record<string, unknown>, tag: string): str
   if (data && typeof data === "object") {
     for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
       if (typeof value !== "string" && typeof value !== "number") continue;
-      attrs.push(`data-sc-${toKebabCase(key)}="${escapeAttribute(String(value))}"`);
+      const prefix = /^[\u3000-\u9fff\uf900-\ufaff]/u.test(key) ? "data-sc" : "data-sc-";
+      attrs.push(`${prefix}${toKebabCase(key)}="${escapeAttribute(String(value))}"`);
     }
   }
 

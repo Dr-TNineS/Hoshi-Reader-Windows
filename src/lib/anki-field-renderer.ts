@@ -168,7 +168,7 @@ function tokenValue(token: string, payload: LookupAnkiPayload): string {
     case "popup-selection-text":
       return payload.selectedText;
     case "glossary-first":
-      return payload.glossary[0] ? renderAnkiGlossaryEntry(payload.glossary[0]) : "";
+      return payload.glossary[0] ? renderAnkiGlossaryEntries([payload.glossary[0]]) : "";
     case "glossary":
       return renderAnkiGlossaryEntries(payload.glossary);
     case "sentence":
@@ -282,15 +282,35 @@ function defaultTemplateForField(field: string): string {
 }
 
 function glossaryTextForDictionary(dictionary: string, payload: LookupAnkiPayload): string {
-  return renderAnkiGlossaryEntries(payload.glossary.filter((entry) => entry.dict === dictionary));
+  const exact = payload.glossary.filter((entry) => entry.dict === dictionary);
+  if (exact.length > 0) return renderAnkiGlossaryEntries(exact);
+
+  const normalized = normalizeDictionaryName(dictionary);
+  return renderAnkiGlossaryEntries(payload.glossary.filter((entry) => normalizeDictionaryName(entry.dict) === normalized));
 }
 
 function renderAnkiGlossaryEntries(entries: GlossaryEntry[]): string {
-  return entries.map(renderAnkiGlossaryEntry).filter(Boolean).join("<br><br>");
+  const items = entries.map((entry, index) => renderAnkiGlossaryEntry(entry, index)).filter(Boolean).join("");
+  if (!items) return "";
+  return `<div style="text-align: left;" class="yomitan-glossary"><ol>${items}</ol></div>`;
 }
 
-function renderAnkiGlossaryEntry(entry: GlossaryEntry): string {
-  return renderGlossaryContent(entry.text, entry.dict);
+function renderAnkiGlossaryEntry(entry: GlossaryEntry, index: number): string {
+  const content = renderGlossaryContent(entry.text, entry.dict);
+  const dictionary = entry.dict || "Dictionary";
+  const tags = splitTags(entry.definitionTags).filter((tag) => !/^\d+$/.test(tag)).join(", ");
+  const label = tags
+    ? `(${index + 1}, ${tags}, ${dictionary})`
+    : `(${index + 1}, ${dictionary})`;
+  return `<li data-dictionary="${escapeHtml(dictionary)}"><i>${escapeHtml(label)}</i> <span>${content}</span></li>`;
+}
+
+function normalizeDictionaryName(dictionary: string): string {
+  return dictionary.trim().replace(/\s*\[[^\]]+]\s*$/, "");
+}
+
+function splitTags(value: string | undefined): string[] {
+  return [...new Set((value ?? "").split(/[\s,;|]+/).map((tag) => tag.trim()).filter(Boolean))];
 }
 
 function renderDictionaryMedia(media: LookupAnkiMediaReference[]): string {

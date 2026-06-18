@@ -30,7 +30,7 @@
     {
       type: "structured-content",
       content: [
-        { tag: "div", content: "classroom school room" },
+        { tag: "div", data: { class: "probe-entry", headword: "school" }, content: "classroom school room" },
         {
           tag: "ul",
           content: [

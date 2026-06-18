@@ -276,7 +276,10 @@ async function main() {
     assert(ankiAdded.ankiLastFields.Expression === "school / school", "Add Anki should send rendered field values.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Sentence === "The academy school sentence contains the selected lookup term in a longer source paragraph.", "Add Anki should send sentence context rather than only selected text.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Meaning.includes("classroom school room") && !ankiAdded.ankiLastFields.Meaning.includes("\"tag\""), "Add Anki should send rendered structured glossary values.", ankiAdded);
-    assert(ankiAdded.ankiLastFields.JmOnly === "school; a place of study", "Add Anki should send dictionary-specific glossary values.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.Meaning.includes("yomitan-glossary"), "Add Anki should wrap glossary HTML in an HSA/Lapis-compatible glossary container.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.Meaning.includes('data-dictionary="Jitendex.org [probe]"'), "Add Anki should preserve dictionary identity for note template CSS.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.Meaning.includes('data-sc-headword="school"'), "Add Anki should preserve structured glossary data attributes.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.JmOnly.includes("school; a place of study") && ankiAdded.ankiLastFields.JmOnly.includes('data-dictionary="JMdict [probe]"'), "Add Anki should send dictionary-specific glossary values with template-compatible wrappers.", ankiAdded);
     assert(ankiAdded.ankiLastFields.MissingDict === "", "Unknown dictionary-specific glossary tokens should render empty.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Audio === "", "Add Anki should keep audio fields empty until audio export is implemented.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Media.includes("<img src=\"stored_hsw_") && ankiAdded.ankiLastFields.Media.includes(".svg"), "Add Anki should include stored dictionary media filenames.", ankiAdded);
