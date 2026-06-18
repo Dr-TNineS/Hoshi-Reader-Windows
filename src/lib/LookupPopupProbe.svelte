@@ -31,6 +31,9 @@
       type: "structured-content",
       content: [
         { tag: "div", data: { class: "probe-entry", headword: "school" }, content: "classroom school room" },
+        { tag: "div", data: { class: "probe-japanese-prefix" }, content: "Aことは A" },
+        { tag: "div", data: { class: "probe-japanese-quote" }, content: "って「ことと言いなさい」" },
+        { tag: "div", data: { class: "probe-japanese-plain" }, content: "ことは純日文" },
         {
           tag: "ul",
           content: [
@@ -80,6 +83,19 @@
     pitches: [{ dictionary: "Pitch Probe", positions: [0, 2], transcriptions: ["school"] }],
   };
 
+  const extraResults: DictResult[] = longResult
+    ? Array.from({ length: 4 }, (_, index) => ({
+      ...baseResult,
+      expression: `school extra ${index + 2}`,
+      reading: "",
+      glossary: [{ dict: "Jitendex.org [probe]", text: `extra rendered lookup result ${index + 2}` }],
+      matched: `school${index + 2}`,
+      deinflected: `school${index + 2}`,
+      frequencies: [],
+      pitches: [],
+    }))
+    : [];
+
   const ankiSettings: AnkiSettings | null = ankiMode === "configured"
     ? {
       version: 1,
@@ -121,7 +137,7 @@
   let popups: ProbePopup[] = $state([{
     id: "root",
     selection: rootSelection,
-    results: [{ ...baseResult }],
+    results: [{ ...baseResult }, ...extraResults],
     clearSelectionSignal: 0,
     historyBack: [],
     historyForward: [],
@@ -204,9 +220,7 @@
     const parentIndex = popups.findIndex((popup) => popup.id === parentId);
     if (parentIndex < 0) return;
     popups = [
-      ...popups.slice(0, parentIndex + 1).map((popup, index) => (
-        index === parentIndex ? { ...popup, clearSelectionSignal: popup.clearSelectionSignal + 1 } : popup
-      )),
+      ...popups.slice(0, parentIndex + 1),
       {
         id: `child-${nestedLookupCount}`,
         selection: nestedSelection,
@@ -378,6 +392,7 @@
       data-state={lookupState}
       data-popup-id={popup.id}
       use:measureLookupPopup={popup.id}
+      onpointerdown={() => closeChildren(popup.id)}
       style={positionedPopupStyle(popup, index)}
     >
       <LookupPopupContent

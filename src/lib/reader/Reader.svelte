@@ -1,6 +1,7 @@
 ﻿<script lang="ts">
   import { countChars, createWalker, getTotalChars, rawOffsetForReaderChars, textEndOffsets } from "../reader";
   import type { ReaderAppearancePalette } from "../appearance";
+  import { clearLookupHighlight, READER_LOOKUP_HIGHLIGHT, setLookupHighlightRange } from "../lookup-highlight";
   import type { ReaderProgress, ReaderSelection, ReaderSelectionRect } from "../types";
 
   let {
@@ -47,6 +48,7 @@
   let hasActiveSelection = false;
   let shiftKeyPressed = false;
   let lastPointer: { x: number; y: number } | null = null;
+  let pointerDownPoint: { x: number; y: number } | null = null;
   let lastShiftHoverPoint: { x: number; y: number } | null = null;
   let lastLookupSelectionKey = "";
   let lastAppliedLookupHighlightText = "";
@@ -457,6 +459,7 @@
     activeLookupRange?.detach();
     activeLookupRange = null;
     lastAppliedLookupHighlightText = "";
+    clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
   }
 
   function rangeTextPrefixEnd(range: Range, targetText: string): { node: Text; offset: number } | null {
@@ -510,9 +513,7 @@
   function applyLookupHighlightText(text: string) {
     if (!activeLookupRange || text === lastAppliedLookupHighlightText) return;
     if (!text) {
-      const visibleSelection = window.getSelection();
-      visibleSelection?.removeAllRanges();
-      visibleSelection?.addRange(activeLookupRange.cloneRange());
+      setLookupHighlightRange(READER_LOOKUP_HIGHLIGHT, activeLookupRange);
       lastAppliedLookupHighlightText = "";
       return;
     }
@@ -523,9 +524,7 @@
     const visibleRange = document.createRange();
     visibleRange.setStart(activeLookupRange.startContainer, activeLookupRange.startOffset);
     visibleRange.setEnd(end.node, end.offset);
-    const visibleSelection = window.getSelection();
-    visibleSelection?.removeAllRanges();
-    visibleSelection?.addRange(visibleRange);
+    setLookupHighlightRange(READER_LOOKUP_HIGHLIGHT, visibleRange);
     visibleRange.detach();
     lastAppliedLookupHighlightText = text;
   }
@@ -582,16 +581,15 @@
       return null;
     }
 
-    const visibleSelection = window.getSelection();
-    visibleSelection?.removeAllRanges();
     const visibleRange = document.createRange();
     visibleRange.setStart(ranges[0].startContainer, ranges[0].startOffset);
     const lastRange = ranges[ranges.length - 1];
     visibleRange.setEnd(lastRange.endContainer, lastRange.endOffset);
-    visibleSelection?.addRange(visibleRange);
     detachActiveLookupRange();
     activeLookupRange = visibleRange.cloneRange();
+    lastAppliedLookupHighlightText = "__pending_lookup_highlight__";
     applyLookupHighlightText(lookupHighlightText);
+    window.getSelection()?.removeAllRanges();
 
     const rect = unionRects(ranges.flatMap((range) => Array.from(range.getClientRects())));
     ranges.forEach((range) => range.detach());
@@ -636,6 +634,7 @@
 
   function leaveReaderPointerState() {
     lastPointer = null;
+    pointerDownPoint = null;
     resetShiftHoverState();
   }
 
@@ -862,15 +861,27 @@
 
     const link = e.target.closest<HTMLAnchorElement>("a[data-epub-href]");
     const href = link?.dataset.epubHref;
-    if (!href) return;
+    if (!href) {
+      if (e.button !== 0 || movedAfterPointerDown(e.clientX, e.clientY)) return;
+      selectTextFromPoint(e.clientX, e.clientY);
+      return;
+    }
 
     e.preventDefault();
     onNavigateHref(href);
   }
 
   function handlePointerDown(e: PointerEvent) {
+    pointerDownPoint = e.button === 0 ? { x: e.clientX, y: e.clientY } : null;
     if (e.target instanceof Element && e.target.closest("a[data-epub-href]")) return;
     if (hasActiveSelection) clearSelection();
+  }
+
+  function movedAfterPointerDown(x: number, y: number): boolean {
+    if (!pointerDownPoint) return false;
+    const dx = x - pointerDownPoint.x;
+    const dy = y - pointerDownPoint.y;
+    return dx * dx + dy * dy > 16;
   }
 
   function handlePointerMove(e: PointerEvent) {
@@ -937,12 +948,12 @@
     const viewport = containerEl;
     if (!content || !viewport) return;
 
-    content.addEventListener("click", handleContentClick);
+    viewport.addEventListener("click", handleContentClick);
     viewport.addEventListener("pointerdown", handlePointerDown);
     viewport.addEventListener("pointermove", handlePointerMove);
     viewport.addEventListener("pointerleave", leaveReaderPointerState);
     return () => {
-      content.removeEventListener("click", handleContentClick);
+      viewport.removeEventListener("click", handleContentClick);
       viewport.removeEventListener("pointerdown", handlePointerDown);
       viewport.removeEventListener("pointermove", handlePointerMove);
       viewport.removeEventListener("pointerleave", leaveReaderPointerState);
@@ -1298,4 +1309,5 @@
   .rct :global(rt) {
     font-size: 0.5em;
   }
+
 </style>

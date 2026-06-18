@@ -31,6 +31,8 @@ pub fn run() {
             storage::reading_forget_book,
             storage::reading_import_legacy_state,
             dict::commands::dictionary_import_yomitan_zip,
+            dict::commands::dictionary_import_yomitan_zips,
+            dict::commands::dictionary_import_yomitan_folder,
             dict::commands::dictionary_list,
             dict::commands::dictionary_media,
             dict::commands::dictionary_styles,

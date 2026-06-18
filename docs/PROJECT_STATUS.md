@@ -57,15 +57,16 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - EPUB asset URL rewriting.
   - Basic image load/reflow handling, SVG cover replacement, gaiji image handling, and block image handling.
   - Reader progress based on visible text position.
-- Reader visual probe fixture and `npm run check:reader-visual` cover baseline pagination geometry, final-page alignment, block image rendering, Shift-hover lookup selection, Shift-hover tiny-movement dedupe, plain mouse selection not opening lookup, narrow-window overflow, Ctrl chapter navigation, and page-boundary chapter navigation.
+- Reader visual probe fixture and `npm run check:reader-visual` cover baseline pagination geometry, final-page alignment, block image rendering, Shift-hover and left-click lookup selection, Shift-hover tiny-movement dedupe, plain mouse drag selection not opening lookup, narrow-window overflow, Ctrl chapter navigation, and page-boundary chapter navigation.
 - Reader selection and popup:
   - Captures selected reader text with rect and chapter index.
   - Supports Shift hover lookup trigger.
   - Supports holding Shift while moving the pointer to continuously rescan/select new text, with Hibiki-style 8px movement thresholding and same-selection dedupe.
-  - Plain mouse text selection does not open the lookup popup; lookup selection is a deliberate Shift-hover path.
+  - Supports left-click lookup selection in reader text and popup glossary text; plain mouse drag selection does not open the lookup popup.
+  - Lookup-triggered highlights use HSA-style CSS Highlight gray highlighting instead of the native blue browser selection; user-driven text selection remains separate.
   - Popup prefers left/right side placement beside the selected text, with top/bottom fallback.
   - Popup distinguishes loading, no dictionary, engine unavailable, empty, error, and ready states.
-  - Popup renders the current lookup result shape: expression, reading, source dictionary, matched/deinflected text, rules, HSA-style frequency/pitch metadata groups, grouped glossary content, dictionary media, and scoped dictionary `styles.css`.
+  - Popup renders the full backend lookup result set, up to the current backend max results, with expression, reading, source dictionary, matched/deinflected text, rules, HSA-style frequency/pitch metadata groups, grouped glossary content, dictionary media, and scoped dictionary `styles.css`.
   - Dictionary media loads lazily inside popup glossary content; loaded, unavailable, and non-Tauri fallback states are covered by the lookup popup probe.
   - Popup glossary text supports Shift hover nested lookup as a popup stack: root lookup stays open, child popups anchor to glossary text, closing a child preserves the parent, and parent scroll closes children.
   - Popup has a disabled Anki boundary affordance and can build a typed lookup-to-Anki payload from the selected result and current book/chapter context.
@@ -95,7 +96,9 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Direct Tauri file-dialog import was verified with `jitendex-yomitan.zip`; the reader popup rendered real Jitendex results for text selected from a real `かがみの孤城` EPUB.
   - Dictionary importer exceptions from the C bridge are surfaced through the Rust command path instead of collapsing to only `Dictionary import failed.`
   - `MK3Fix0213.zip` imports on Windows through a compatibility retry path that skips legacy-encoded media entries, preserves the original manifest title, and loads real lookup results.
+  - Windows compatibility imports preflight zips with non-ASCII non-core media paths and go directly to lookup-safe import when needed; lookup-safe temporary zips are stored without compression to avoid long CPU-bound recompression stalls.
   - Final linked validation on 2026-06-12 ran `imports_real_yomitan_zip_and_loads_runtime` against local `MK3Fix0213.zip`: `dict_id=93e8e532b599ba4a`, `term=140821`, `media=0`, and `lookup_results=2`.
+  - MK3 compatibility import performance validation on 2026-06-18 with local `MK3Fix0213.zip` completed in about 24 seconds in the linked ignored Rust test; before switching the lookup-safe temp zip to stored entries, the safe-zip creation step alone took about 187 seconds.
   - Lookup responses map compatibility-import internal ASCII titles back to manifest titles for result, glossary, frequency, and pitch source labels.
 - Anki:
   - Lookup popup keeps the Anki affordance disabled until endpoint, deck, note type, and fields are configured.

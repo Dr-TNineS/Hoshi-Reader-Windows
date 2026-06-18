@@ -2,6 +2,7 @@
   import { invoke, isTauri } from "@tauri-apps/api/core";
   import { ankiDictionaryMediaRefs, buildAnkiNoteRequest, isAnkiPreviewConfigured, payloadWithStoredDictionaryMedia, renderAnkiFieldPreview } from "./anki-field-renderer";
   import { formatLookupMatch, frequencyGroups, glossaryGroups, pitchGroups, renderGlossaryContent, ruleTags, scopeDictionaryCss, type LookupPitchGroup, type LookupState } from "./lookup-popup";
+  import { clearLookupHighlight, POPUP_LOOKUP_HIGHLIGHT } from "./lookup-highlight";
   import { selectPopupTextFromPoint } from "./popup-selection";
   import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, AnkiStoreMediaResult, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
@@ -88,6 +89,10 @@
   }
 
   $effect(() => {
+    return () => clearLookupHighlight(POPUP_LOOKUP_HIGHLIGHT);
+  });
+
+  $effect(() => {
     if (previousClearSelectionSignal === null) {
       previousClearSelectionSignal = clearSelectionSignal;
       return;
@@ -95,6 +100,7 @@
     if (clearSelectionSignal === previousClearSelectionSignal) return;
     previousClearSelectionSignal = clearSelectionSignal;
     window.getSelection()?.removeAllRanges();
+    clearLookupHighlight(POPUP_LOOKUP_HIGHLIGHT);
     resetShiftHover();
     lastNestedLookupKey = "";
   });
@@ -108,6 +114,7 @@
 
   $effect(() => {
     if (lookupState !== "ready") {
+      clearLookupHighlight(POPUP_LOOKUP_HIGHLIGHT);
       dictionaryStyleCss = "";
       ankiPreviewKey = "";
       ankiActionKey = "";
@@ -174,7 +181,17 @@
     const target = event.target instanceof Element
       ? event.target.closest<HTMLAnchorElement>("a[data-lookup-redirect]")
       : null;
-    if (!target) return;
+    if (!target) {
+      if (event.button !== 0) return;
+      const nestedSelection = selectPopupTextFromPoint(event.clientX, event.clientY, selection.chapterIndex);
+      if (!nestedSelection) return;
+
+      const nestedKey = `${nestedSelection.text}:${Math.round(nestedSelection.rect.x)}:${Math.round(nestedSelection.rect.y)}`;
+      if (nestedKey === lastNestedLookupKey) return;
+      lastNestedLookupKey = nestedKey;
+      onNestedLookup(popupId, nestedSelection);
+      return;
+    }
 
     const text = target.dataset.lookupRedirect?.trim() || target.textContent?.trim() || "";
     if (!text) return;
@@ -412,7 +429,7 @@
     <p class="lookup-state">No dictionary results for "{selection.text}".</p>
   {:else if lookupState === "ready"}
     <div class="lookup-results" onscroll={handleResultsScroll}>
-      {#each results.slice(0, 3) as result, resultIndex}
+      {#each results as result, resultIndex}
         <section class="lookup-result">
           <div class="lookup-result-head">
             <div class="lookup-expression-wrap">

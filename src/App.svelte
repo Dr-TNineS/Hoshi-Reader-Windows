@@ -16,6 +16,7 @@
   import { resolveChapterAssets } from "./lib/epub-assets";
   import LookupPopupContent from "./lib/LookupPopupContent.svelte";
   import { resultDictionaryLabel, type LookupState } from "./lib/lookup-popup";
+  import { clearLookupHighlight, READER_LOOKUP_HIGHLIGHT } from "./lib/lookup-highlight";
   import { lookupPopupStyle } from "./lib/lookup-popup-position";
   import Reader from "./lib/reader/Reader.svelte";
   import {
@@ -40,6 +41,7 @@
     AnkiNoteRequest,
     AnkiSettings,
     AnkiStoreMediaResult,
+    DictImportBatchSummary,
     DictImportSummary,
     DictResult,
     DictionaryManifestEntry,
@@ -528,6 +530,7 @@
 
   function closeReaderSelection() {
     window.getSelection()?.removeAllRanges();
+    clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
     readerSelection = null;
     readerLookupHighlightText = "";
     lookupPopups = [];
@@ -604,6 +607,35 @@
     };
   }
 
+  function dictionaryImportSummaryLabel(imported: DictImportSummary): string {
+    const reused = imported.reused ? "Reused" : "Imported";
+    const ready = imported.ready ? "ready" : "not ready";
+    return `${reused} ${imported.title} (${imported.termCount} terms, ${ready}).`;
+  }
+
+  function dictionaryBatchStatusLabel(summary: DictImportBatchSummary): string {
+    const importedCount = summary.imported.length;
+    const failedCount = summary.failures.length;
+    const skipped = summary.skippedCount > 0 ? ` Skipped ${summary.skippedCount} non-zip file${summary.skippedCount === 1 ? "" : "s"}.` : "";
+    const failures = summary.failures
+      .slice(0, 3)
+      .map((failure) => `${failure.path}: ${failure.error}`)
+      .join("\n");
+    const moreFailures = failedCount > 3 ? `\n...and ${failedCount - 3} more failure${failedCount - 3 === 1 ? "" : "s"}.` : "";
+
+    if (importedCount === 1 && failedCount === 0 && summary.skippedCount === 0) {
+      return dictionaryImportSummaryLabel(summary.imported[0]);
+    }
+
+    const importedTitles = summary.imported
+      .slice(0, 3)
+      .map((imported) => imported.title)
+      .join(", ");
+    const importedDetail = importedTitles ? ` ${importedTitles}${importedCount > 3 ? `, and ${importedCount - 3} more` : ""}.` : "";
+    const failureDetail = failures ? `\n${failures}${moreFailures}` : "";
+    return `Imported ${importedCount} dictionar${importedCount === 1 ? "y" : "ies"}.${importedDetail} ${failedCount} failed.${skipped}${failureDetail}`;
+  }
+
   async function importDictionary() {
     if (dictionaryBusy) return;
     try {
@@ -613,9 +645,9 @@
       }
 
       dictionaryBusy = true;
-      dictionaryStatus = "Importing dictionary...";
+      dictionaryStatus = "Importing dictionaries...";
       const selected = await open({
-        multiple: false,
+        multiple: true,
         filters: [{ name: "Yomitan Dictionary", extensions: ["zip"] }],
       });
       if (!selected) {
@@ -623,10 +655,44 @@
         return;
       }
 
-      const imported = await invoke<DictImportSummary>("dictionary_import_yomitan_zip", { zipPath: selected });
-      const reused = imported.reused ? "Reused" : "Imported";
-      const ready = imported.ready ? "ready" : "not ready";
-      dictionaryStatus = `${reused} ${imported.title} (${imported.termCount} terms, ${ready}).`;
+      const zipPaths = Array.isArray(selected) ? selected : [selected];
+      if (zipPaths.length === 0) {
+        dictionaryStatus = "Dictionary import cancelled.";
+        return;
+      }
+
+      const summary = await invoke<DictImportBatchSummary>("dictionary_import_yomitan_zips", { zipPaths });
+      dictionaryStatus = dictionaryBatchStatusLabel(summary);
+      await refreshDictionaries();
+      reloadLookupPopups();
+    } catch (e) {
+      dictionaryStatus = String(e);
+    } finally {
+      dictionaryBusy = false;
+    }
+  }
+
+  async function importDictionaryFolder() {
+    if (dictionaryBusy) return;
+    try {
+      if (!isTauriRuntime()) {
+        dictionaryStatus = "Dictionary folder import requires Tauri runtime.";
+        return;
+      }
+
+      dictionaryBusy = true;
+      dictionaryStatus = "Importing dictionaries from folder...";
+      const selected = await open({
+        directory: true,
+        multiple: false,
+      });
+      if (!selected || Array.isArray(selected)) {
+        dictionaryStatus = "Dictionary folder import cancelled.";
+        return;
+      }
+
+      const summary = await invoke<DictImportBatchSummary>("dictionary_import_yomitan_folder", { folderPath: selected });
+      dictionaryStatus = dictionaryBatchStatusLabel(summary);
       await refreshDictionaries();
       reloadLookupPopups();
     } catch (e) {
@@ -797,9 +863,7 @@
     const childId = `popup-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const requestId = nextLookupRequestId();
     lookupPopups = [
-      ...lookupPopups.slice(0, index + 1).map((popup, popupIndex) => (
-        popupIndex === index ? { ...popup, clearSelectionSignal: popup.clearSelectionSignal + 1 } : popup
-      )),
+      ...lookupPopups.slice(0, index + 1),
       createLookupPopup(childId, selection, requestId),
     ];
     void lookupSelection(childId, selection, requestId);
@@ -1023,7 +1087,8 @@
           <button class="secondary-action" onclick={() => showDictionaryManager = !showDictionaryManager}>
             Dictionaries
           </button>
-          <button class="secondary-action" disabled={dictionaryBusy} onclick={importDictionary}>Import Dictionary</button>
+          <button class="secondary-action" disabled={dictionaryBusy} onclick={importDictionary}>Import Dictionaries</button>
+          <button class="secondary-action" disabled={dictionaryBusy} onclick={importDictionaryFolder}>Import Folder</button>
           <button class="ob" disabled={bookImportBusy} onclick={openBook}>
             {bookImportBusy ? "Importing..." : "Open EPUB"}
           </button>
@@ -1061,6 +1126,7 @@
           busy={dictionaryBusy}
           onRefresh={refreshDictionaries}
           onImport={importDictionary}
+          onImportFolder={importDictionaryFolder}
           onSetEnabled={setDictionaryEnabled}
           onMove={moveDictionary}
           onRemove={removeDictionaryImport}
@@ -1132,6 +1198,7 @@
         class="lookup-pop"
         data-popup-id={popup.id}
         use:measureLookupPopup={popup.id}
+        onpointerdown={() => clearPopupChildren(popup.id)}
         style={`${popupStyle(popup.id, popup.selection)};--popup-z:${125 + popupIndex}`}
       >
         <LookupPopupContent

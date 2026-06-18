@@ -1,13 +1,9 @@
 import type { ReaderSelection, ReaderSelectionRect } from "./types";
+import { POPUP_LOOKUP_HIGHLIGHT, setLookupHighlightRange } from "./lookup-highlight";
 
-const POPUP_SCAN_BOUNDARIES = new Set([
-  " ", "\t", "\n", "\r", "　", "。", "、", "！", "？", "…", "‥", "「", "」", "『", "』",
-  "（", "）", "(", ")", "【", "】", "〈", "〉", "《", "》", "〔", "〕", "｛", "｝", "{", "}",
-  "［", "］", "[", "]", "・", "：", "；", ":", ";", "，", ",", ".", "─", "\"", "'", "“",
-  "”", "‘", "’", "«", "»", "‹", "›",
-]);
+const POPUP_SCAN_BOUNDARIES = new Set(Array.from("。、！？…‥「」『』（）()【】〈〉《》〔〕｛｝{}［］[]・：；:;，,.─"));
 
-const LOOKUP_MAX_LENGTH = 20;
+const LOOKUP_MAX_LENGTH = 16;
 
 type CaretDocument = Document & {
   caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
@@ -47,9 +43,7 @@ export function selectPopupTextFromPoint(x: number, y: number, chapterIndex: num
   const selection = buildSelection(hit, glossaryRoot, x, y, chapterIndex);
   if (!selection) return null;
 
-  const visibleSelection = window.getSelection();
-  visibleSelection?.removeAllRanges();
-  visibleSelection?.addRange(selection.range);
+  setLookupHighlightRange(POPUP_LOOKUP_HIGHLIGHT, selection.range);
   selection.range.detach();
 
   return {
@@ -135,7 +129,7 @@ function buildSelection(hit: TextHit, root: HTMLElement, x: number, y: number, c
   walker.currentNode = hit.node;
 
   let node: Text | null = hit.node;
-  let offset = expandTokenStart(node.data, hit.offset);
+  let offset = hit.offset;
   let text = "";
 
   while (node && text.length < LOOKUP_MAX_LENGTH) {
@@ -223,23 +217,6 @@ function textWalker(root: HTMLElement): TreeWalker {
 function nodeInsideRoot(node: Node, root: HTMLElement): boolean {
   const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
   return element instanceof Node && root.contains(element);
-}
-
-function expandTokenStart(text: string, offset: number): number {
-  let current = offset;
-  while (current > 0) {
-    const previous = previousCodePoint(text, current);
-    if (!previous || isScanBoundary(previous.char)) break;
-    current = previous.offset;
-  }
-  return current;
-}
-
-function previousCodePoint(text: string, offset: number): { char: string; offset: number } | null {
-  if (offset <= 0) return null;
-  const first = text.charCodeAt(offset - 1);
-  const start = first >= 0xdc00 && first <= 0xdfff && offset > 1 ? offset - 2 : offset - 1;
-  return { char: String.fromCodePoint(text.codePointAt(start) ?? 0), offset: start };
 }
 
 function codeUnitLengthAt(text: string, offset: number): number {

@@ -14,8 +14,9 @@ use crate::dict::ffi;
 use std::ffi::{c_void, CStr, CString};
 #[cfg(hoshi_dicts_linked)]
 use std::fs::File;
+use std::io::Read;
 #[cfg(hoshi_dicts_linked)]
-use std::io::{Read, Write};
+use std::io::Write;
 
 #[cfg(hoshi_dicts_linked)]
 const MAX_LOOKUP_RESULTS: i32 = 16;
@@ -76,6 +77,21 @@ pub struct DictImportSummary {
     pub media_count: usize,
     pub ready: bool,
     pub reused: bool,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictImportFailure {
+    pub path: String,
+    pub error: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictImportBatchSummary {
+    pub imported: Vec<DictImportSummary>,
+    pub failures: Vec<DictImportFailure>,
+    pub skipped_count: usize,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -329,13 +345,97 @@ pub fn dictionary_import_yomitan_zip(
     app: AppHandle,
     state: tauri::State<DictState>,
 ) -> Result<DictImportSummary, String> {
-    import_yomitan_zip(&zip_path, &app, &state)
+    import_yomitan_zip(
+        &zip_path,
+        &app,
+        &state,
+        ReloadDictionaryRuntime::AfterImport,
+    )
+}
+
+#[tauri::command]
+pub fn dictionary_import_yomitan_zips(
+    zip_paths: Vec<String>,
+    app: AppHandle,
+    state: tauri::State<DictState>,
+) -> Result<DictImportBatchSummary, String> {
+    import_yomitan_zip_batch(zip_paths, 0, &app, &state)
+}
+
+#[tauri::command]
+pub fn dictionary_import_yomitan_folder(
+    folder_path: String,
+    app: AppHandle,
+    state: tauri::State<DictState>,
+) -> Result<DictImportBatchSummary, String> {
+    let root = PathBuf::from(&folder_path);
+    if !root.is_dir() {
+        return Err(format!(
+            "Dictionary folder does not exist: {}",
+            root.display()
+        ));
+    }
+
+    let mut zip_paths = Vec::new();
+    let skipped_count = collect_dictionary_zip_paths(&root, &mut zip_paths)?;
+    zip_paths.sort();
+    import_yomitan_zip_batch(
+        zip_paths
+            .into_iter()
+            .map(|path| path.to_string_lossy().into_owned())
+            .collect(),
+        skipped_count,
+        &app,
+        &state,
+    )
+}
+
+fn import_yomitan_zip_batch(
+    zip_paths: Vec<String>,
+    skipped_count: usize,
+    app: &AppHandle,
+    state: &DictState,
+) -> Result<DictImportBatchSummary, String> {
+    let mut imported = Vec::new();
+    let mut failures = Vec::new();
+
+    for zip_path in zip_paths {
+        match import_yomitan_zip(&zip_path, app, state, ReloadDictionaryRuntime::Deferred) {
+            Ok(summary) => imported.push(summary),
+            Err(error) => failures.push(DictImportFailure {
+                path: zip_path,
+                error,
+            }),
+        }
+    }
+
+    if !imported.is_empty() {
+        state.initialize(app);
+        let runtime = state.runtime.lock().unwrap();
+        let ready = dict_runtime_ready(&runtime);
+        for summary in &mut imported {
+            summary.ready = ready;
+        }
+    }
+
+    Ok(DictImportBatchSummary {
+        imported,
+        failures,
+        skipped_count,
+    })
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum ReloadDictionaryRuntime {
+    AfterImport,
+    Deferred,
 }
 
 fn import_yomitan_zip(
     zip_path: &str,
     app: &AppHandle,
     state: &DictState,
+    reload_runtime: ReloadDictionaryRuntime,
 ) -> Result<DictImportSummary, String> {
     let source = PathBuf::from(zip_path);
     if !source.is_file() {
@@ -372,8 +472,13 @@ fn import_yomitan_zip(
                         .ok_or_else(|| "Dictionary import created no entries.".into())
                 })
             })?;
-        state.initialize(app);
-        let runtime = state.runtime.lock().unwrap();
+        let ready = if reload_runtime == ReloadDictionaryRuntime::AfterImport {
+            state.initialize(app);
+            let runtime = state.runtime.lock().unwrap();
+            dict_runtime_ready(&runtime)
+        } else {
+            false
+        };
         return Ok(DictImportSummary {
             dict_id,
             title: existing.title,
@@ -383,7 +488,7 @@ fn import_yomitan_zip(
             freq_count: existing.freq_count,
             pitch_count: existing.pitch_count,
             media_count: existing.media_count,
-            ready: dict_runtime_ready(&runtime),
+            ready,
             reused: true,
         });
     }
@@ -398,6 +503,7 @@ fn import_yomitan_zip(
             &dict_id,
             app,
             state,
+            reload_runtime,
         )
     }
 
@@ -1146,9 +1252,54 @@ fn current_unix_time() -> u64 {
 }
 
 fn dictionary_zip_id(path: &Path) -> Result<String, String> {
-    let bytes = fs::read(path).map_err(|e| format!("Cannot read dictionary zip: {e}"))?;
-    let hash = Sha256::digest(bytes);
+    let mut file = fs::File::open(path).map_err(|e| format!("Cannot read dictionary zip: {e}"))?;
+    let mut hasher = Sha256::new();
+    let mut buffer = [0u8; 1024 * 1024];
+    loop {
+        let read = file
+            .read(&mut buffer)
+            .map_err(|e| format!("Cannot read dictionary zip: {e}"))?;
+        if read == 0 {
+            break;
+        }
+        hasher.update(&buffer[..read]);
+    }
+    let hash = hasher.finalize();
     Ok(hash[..8].iter().map(|byte| format!("{byte:02x}")).collect())
+}
+
+fn collect_dictionary_zip_paths(
+    root: &Path,
+    zip_paths: &mut Vec<PathBuf>,
+) -> Result<usize, String> {
+    let mut skipped_count = 0;
+    for entry in fs::read_dir(root).map_err(|e| {
+        format!(
+            "Cannot read dictionary import folder {}: {e}",
+            root.display()
+        )
+    })? {
+        let entry =
+            entry.map_err(|e| format!("Cannot read dictionary import folder entry: {e}"))?;
+        let path = entry.path();
+        let file_type = entry
+            .file_type()
+            .map_err(|e| format!("Cannot read dictionary import path {}: {e}", path.display()))?;
+        if file_type.is_dir() {
+            skipped_count += collect_dictionary_zip_paths(&path, zip_paths)?;
+        } else if file_type.is_file() && is_zip_path(&path) {
+            zip_paths.push(path);
+        } else {
+            skipped_count += 1;
+        }
+    }
+    Ok(skipped_count)
+}
+
+fn is_zip_path(path: &Path) -> bool {
+    path.extension()
+        .and_then(|extension| extension.to_str())
+        .is_some_and(|extension| extension.eq_ignore_ascii_case("zip"))
 }
 
 #[cfg(any(hoshi_dicts_linked, test))]
@@ -1220,6 +1371,7 @@ fn import_yomitan_zip_linked(
     dict_id: &str,
     app: &AppHandle,
     state: &DictState,
+    reload_runtime: ReloadDictionaryRuntime,
 ) -> Result<DictImportSummary, String> {
     let staging_root = imported_root.join(format!(".importing-{dict_id}"));
     let mut temp_paths = Vec::<PathBuf>::new();
@@ -1235,10 +1387,23 @@ fn import_yomitan_zip_linked(
             prepare_ascii_dictionary_import_source(source, imported_root, dict_id)?;
         temp_paths.push(ascii_source_zip.clone());
 
-        let mut attempt = run_linked_import_attempt(&ascii_source_zip, &staging_root)?;
         let mut restored_title = None;
+        let prefer_lookup_safe = prefers_lookup_safe_import_first(&ascii_source_zip)?;
+        let mut attempt = if prefer_lookup_safe {
+            let safe_zip_path = imported_root.join(format!(".importing-{dict_id}.lookup-safe.zip"));
+            let safe_zip =
+                create_lookup_safe_import_zip(&ascii_source_zip, &safe_zip_path, dict_id)?;
+            restored_title = safe_zip.original_title;
+            temp_paths.push(safe_zip.path.clone());
+            run_linked_import_attempt(&safe_zip.path, &staging_root)?
+        } else {
+            run_linked_import_attempt(&ascii_source_zip, &staging_root)?
+        };
 
-        if !attempt.ok() && is_windows_code_page_import_error(&attempt.errors) {
+        if !prefer_lookup_safe
+            && !attempt.ok()
+            && is_windows_code_page_import_error(&attempt.errors)
+        {
             let _ = fs::remove_dir_all(&staging_root);
             fs::create_dir_all(&staging_root)
                 .map_err(|e| format!("Cannot recreate dictionary import staging dir: {e}"))?;
@@ -1281,8 +1446,13 @@ fn import_yomitan_zip_linked(
             .cloned()
             .ok_or_else(|| "Dictionary import created no entries.".to_string())?;
 
-        state.initialize(app);
-        let runtime = state.runtime.lock().unwrap();
+        let ready = if reload_runtime == ReloadDictionaryRuntime::AfterImport {
+            state.initialize(app);
+            let runtime = state.runtime.lock().unwrap();
+            dict_runtime_ready(&runtime)
+        } else {
+            false
+        };
         Ok(DictImportSummary {
             dict_id: entry.dict_id,
             title: entry.title,
@@ -1292,7 +1462,7 @@ fn import_yomitan_zip_linked(
             freq_count: entry.freq_count,
             pitch_count: entry.pitch_count,
             media_count: entry.media_count,
-            ready: dict_runtime_ready(&runtime),
+            ready,
             reused: false,
         })
     })();
@@ -1385,6 +1555,29 @@ fn is_windows_code_page_import_error(errors: &[String]) -> bool {
 }
 
 #[cfg(hoshi_dicts_linked)]
+fn prefers_lookup_safe_import_first(source: &Path) -> Result<bool, String> {
+    if !cfg!(windows) {
+        return Ok(false);
+    }
+
+    let input = File::open(source).map_err(|e| format!("Cannot open dictionary zip: {e}"))?;
+    let mut archive =
+        zip::ZipArchive::new(input).map_err(|e| format!("Cannot read dictionary zip: {e}"))?;
+
+    for i in 0..archive.len() {
+        let file = archive
+            .by_index(i)
+            .map_err(|e| format!("Cannot read dictionary zip entry: {e}"))?;
+        let name = file.name().replace('\\', "/");
+        if !is_lookup_safe_yomitan_entry(&name) && !name.is_ascii() {
+            return Ok(true);
+        }
+    }
+
+    Ok(false)
+}
+
+#[cfg(hoshi_dicts_linked)]
 fn create_lookup_safe_import_zip(
     source: &Path,
     output: &Path,
@@ -1401,7 +1594,7 @@ fn create_lookup_safe_import_zip(
         .map_err(|e| format!("Cannot create dictionary compatibility zip: {e}"))?;
     let mut writer = zip::ZipWriter::new(output_file);
     let options =
-        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Deflated);
+        zip::write::FileOptions::default().compression_method(zip::CompressionMethod::Stored);
     let mut original_index_json = None;
 
     for i in 0..archive.len() {
@@ -2617,6 +2810,7 @@ mod tests {
     #[test]
     #[ignore]
     fn imports_real_yomitan_zip_and_loads_runtime() {
+        let total_started = std::time::Instant::now();
         let zip_path =
             std::env::var("HSW_REAL_YOMITAN_ZIP").expect("HSW_REAL_YOMITAN_ZIP is required");
         let source = PathBuf::from(zip_path);
@@ -2629,21 +2823,71 @@ mod tests {
         fs::create_dir_all(&staging_root).unwrap();
         fs::create_dir_all(&imported_root).unwrap();
 
+        let hash_started = std::time::Instant::now();
         let dict_id = dictionary_zip_id(&source).unwrap();
+        eprintln!("timing hash_ms={}", hash_started.elapsed().as_millis());
         let mut temp_paths = Vec::<PathBuf>::new();
+        let copy_started = std::time::Instant::now();
         let ascii_source_zip =
             prepare_ascii_dictionary_import_source(&source, &imported_root, &dict_id).unwrap();
+        eprintln!("timing copy_ms={}", copy_started.elapsed().as_millis());
         temp_paths.push(ascii_source_zip.clone());
-        let mut attempt = run_linked_import_attempt(&ascii_source_zip, &staging_root).unwrap();
         let mut restored_title = None;
+        let preflight_started = std::time::Instant::now();
+        let prefer_lookup_safe = prefers_lookup_safe_import_first(&ascii_source_zip).unwrap();
+        eprintln!(
+            "timing preflight_ms={} prefer_lookup_safe={}",
+            preflight_started.elapsed().as_millis(),
+            prefer_lookup_safe
+        );
+        let mut attempt = if prefer_lookup_safe {
+            let safe_zip_path = imported_root.join(format!(".importing-{dict_id}.lookup-safe.zip"));
+            let safe_zip_started = std::time::Instant::now();
+            let safe_zip =
+                create_lookup_safe_import_zip(&ascii_source_zip, &safe_zip_path, &dict_id).unwrap();
+            eprintln!(
+                "timing safe_zip_ms={}",
+                safe_zip_started.elapsed().as_millis()
+            );
+            restored_title = safe_zip.original_title;
+            temp_paths.push(safe_zip.path.clone());
+            let import_started = std::time::Instant::now();
+            let attempt = run_linked_import_attempt(&safe_zip.path, &staging_root).unwrap();
+            eprintln!(
+                "timing linked_import_ms={}",
+                import_started.elapsed().as_millis()
+            );
+            attempt
+        } else {
+            let import_started = std::time::Instant::now();
+            let attempt = run_linked_import_attempt(&ascii_source_zip, &staging_root).unwrap();
+            eprintln!(
+                "timing linked_import_ms={}",
+                import_started.elapsed().as_millis()
+            );
+            attempt
+        };
 
-        if !attempt.ok() && is_windows_code_page_import_error(&attempt.errors) {
+        if !prefer_lookup_safe
+            && !attempt.ok()
+            && is_windows_code_page_import_error(&attempt.errors)
+        {
             let _ = fs::remove_dir_all(&staging_root);
             fs::create_dir_all(&staging_root).unwrap();
             let safe_zip_path = imported_root.join(format!(".importing-{dict_id}.lookup-safe.zip"));
+            let safe_zip_started = std::time::Instant::now();
             let safe_zip =
                 create_lookup_safe_import_zip(&ascii_source_zip, &safe_zip_path, &dict_id).unwrap();
+            eprintln!(
+                "timing safe_zip_ms={}",
+                safe_zip_started.elapsed().as_millis()
+            );
+            let import_started = std::time::Instant::now();
             attempt = run_linked_import_attempt(&safe_zip.path, &staging_root).unwrap();
+            eprintln!(
+                "timing linked_import_retry_ms={}",
+                import_started.elapsed().as_millis()
+            );
             restored_title = safe_zip.original_title;
             temp_paths.push(safe_zip.path);
         }
@@ -2691,7 +2935,11 @@ mod tests {
 
         let manifest = read_dictionary_manifest(&manifest_path).unwrap();
         assert_eq!(manifest.dictionaries.len(), 1);
-        assert_eq!(manifest.dictionaries[0].dict_id, dict_id);
+        assert_eq!(
+            manifest.dictionaries[0].dict_id,
+            role_dict_id(&dict_id, "term")
+        );
+        assert_eq!(manifest.dictionaries[0].import_id, dict_id);
         assert!(manifest.dictionaries[0].enabled);
         assert_eq!(manifest.dictionaries[0].kind, "term");
         assert_eq!(manifest.dictionaries[0].internal_path, first.internal_path);
@@ -2700,8 +2948,15 @@ mod tests {
 
         let plan = enabled_dictionary_load_plan(&manifest);
         assert_eq!(plan.len(), 1);
+        let load_started = std::time::Instant::now();
         let backend = DictBackend::load(&plan).expect("linked runtime loads real dictionary");
+        eprintln!(
+            "timing runtime_load_ms={}",
+            load_started.elapsed().as_millis()
+        );
+        let lookup_started = std::time::Instant::now();
         let results = backend.lookup("学校").expect("real lookup succeeds");
+        eprintln!("timing lookup_ms={}", lookup_started.elapsed().as_millis());
         assert!(!results.is_empty(), "real lookup should return results");
 
         eprintln!("title={}", first.title);
@@ -2711,6 +2966,7 @@ mod tests {
             counts.0, counts.1, counts.2, counts.3, counts.4
         );
         eprintln!("lookup_results={}", results.len());
+        eprintln!("timing total_ms={}", total_started.elapsed().as_millis());
 
         let _ = fs::remove_dir_all(root);
     }

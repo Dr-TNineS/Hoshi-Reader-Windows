@@ -71,6 +71,17 @@ async function popupMetrics(page) {
     const controlsRect = controls instanceof HTMLElement ? controls.getBoundingClientRect() : null;
     return {
       text: Array.from(document.querySelectorAll(".lookup-pop")).map((node) => node.textContent ?? "").join("\n"),
+      nativeSelectionText: window.getSelection()?.toString().replace(/\s+/g, " ").trim() ?? "",
+      popupHighlightText: (() => {
+        const highlight = CSS.highlights?.get("hsw-popup-lookup-selection");
+        const parts = [];
+        if (highlight?.forEach) {
+          highlight.forEach((range) => parts.push(range.toString()));
+        } else if (highlight?.[Symbol.iterator]) {
+          for (const range of highlight) parts.push(range.toString());
+        }
+        return parts.join("").replace(/\s+/g, " ").trim();
+      })(),
       state: state?.getAttribute("data-state") ?? "",
       importClicks: Number(state?.getAttribute("data-import-clicks") ?? 0),
       closeClicks: Number(state?.getAttribute("data-close-clicks") ?? 0),
@@ -94,6 +105,7 @@ async function popupMetrics(page) {
       resultsScrollbarWidth: results instanceof HTMLElement ? results.offsetWidth - results.clientWidth : 0,
       lookupTextRows: document.querySelectorAll(".lookup-text").length,
       lookupMetaRows: document.querySelectorAll(".lookup-meta").length,
+      lookupResultRows: document.querySelectorAll(".lookup-result").length,
       ankiDisabled: document.querySelector(".lookup-anki")?.hasAttribute("disabled") ?? false,
       ankiAriaLabel: document.querySelector(".lookup-anki")?.getAttribute("aria-label") ?? "",
       ankiTitle: document.querySelector(".lookup-anki")?.getAttribute("title") ?? "",
@@ -139,8 +151,16 @@ async function popupMetrics(page) {
   });
 }
 
-async function dispatchShiftHover(page, text) {
-  await page.evaluate((needle) => {
+async function dispatchShiftHover(page, text, offsetInText = null) {
+  await dispatchGlossaryPointer(page, text, "pointermove", { shiftKey: true, offsetInText });
+}
+
+async function dispatchGlossaryClick(page, text, offsetInText = null) {
+  await dispatchGlossaryPointer(page, text, "click", { shiftKey: false, offsetInText });
+}
+
+async function dispatchGlossaryPointer(page, text, eventType, options = {}) {
+  await page.evaluate(({ needle, requestedOffset, type, shiftKey }) => {
     const content = document.querySelector(".lookup-glossary-content");
     if (!(content instanceof HTMLElement)) throw new Error("Glossary content not found.");
 
@@ -152,7 +172,10 @@ async function dispatchShiftHover(page, text) {
       const index = node.textContent?.indexOf(needle) ?? -1;
       if (index >= 0) {
         textNode = node;
-        offset = index + Math.min(2, Math.max(0, needle.length - 1));
+        const localOffset = Number.isInteger(requestedOffset)
+          ? Math.max(0, Math.min(requestedOffset, Math.max(0, needle.length - 1)))
+          : 0;
+        offset = index + localOffset;
         break;
       }
     }
@@ -163,13 +186,31 @@ async function dispatchShiftHover(page, text) {
     range.setEnd(textNode, offset + 1);
     const rect = range.getBoundingClientRect();
     range.detach();
-    content.dispatchEvent(new PointerEvent("pointermove", {
+    const eventInit = {
       bubbles: true,
       clientX: rect.left + rect.width / 2,
       clientY: rect.top + rect.height / 2,
-      shiftKey: true,
-    }));
-  }, text);
+      button: 0,
+      shiftKey,
+    };
+    const event = type === "click"
+      ? new MouseEvent(type, eventInit)
+      : new PointerEvent(type, eventInit);
+    content.dispatchEvent(event);
+  }, { needle: text, requestedOffset: options.offsetInText ?? null, type: eventType, shiftKey: options.shiftKey ?? false });
+}
+
+async function closeChildPopup(page) {
+  await page.waitForFunction(() => document.querySelectorAll(".lookup-pop").length > 1, { timeout: 10000 });
+  await page.evaluate(() => {
+    const popups = Array.from(document.querySelectorAll(".lookup-pop"));
+    const child = popups.reverse().find((popup) => popup instanceof HTMLElement && popup.dataset.popupId !== "root");
+    const button = child?.querySelector("button[aria-label='Close lookup']");
+    if (!(button instanceof HTMLButtonElement)) {
+      throw new Error(`Child close button not found: ${popups.map((popup) => popup instanceof HTMLElement ? popup.dataset.popupId : "").join(",")}`);
+    }
+    button.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true }));
+  });
 }
 
 async function scrollFirstMediaPlaceholderIntoView(page) {
@@ -227,6 +268,7 @@ async function main() {
     ));
     const ready = await popupMetrics(page);
     assert(ready.text.includes("school"), "Ready popup should render expression.", ready);
+    assert(ready.lookupResultRows >= 5 && ready.text.includes("extra rendered lookup result 5"), "Ready popup should render all backend lookup results, not only the first three.", ready);
     assert(ready.text.includes("Jitendex.org [probe]"), "Ready popup should render dictionary source.", ready);
     assert(ready.lookupTextRows === 0, "Ready popup should not render the original selected text row.", ready);
     assert(ready.lookupMetaRows === 0, "Ready popup should not render the dictionary source meta row.", ready);
@@ -377,23 +419,62 @@ async function main() {
 
     await page.locator(".lookup-pop[data-popup-id='root']").getByRole("button", { name: "Back" }).click();
 
+    await dispatchGlossaryClick(page, "classroom");
+    const clickNested = await popupMetrics(page);
+    assert(clickNested.nestedLookupCount === 1, "Plain left click inside glossary should trigger nested lookup callback.", clickNested);
+    assert(clickNested.nestedLookupText.includes("classroom"), "Plain left click should select the glossary word under the pointer.", clickNested);
+    assert(clickNested.popupCount === 2, "Plain left click inside glossary should append a child popup.", clickNested);
+    assert(clickNested.nativeSelectionText === "", "Plain left click nested lookup should not leave a native browser selection.", clickNested);
+    assert(clickNested.popupHighlightText.includes("classroom"), "Plain left click nested lookup should render a CSS Highlight selection.", clickNested);
+
     await dispatchShiftHover(page, "classroom");
     const nested = await popupMetrics(page);
-    assert(nested.nestedLookupCount === 1, "Shift-hover inside glossary should trigger nested lookup callback.", nested);
+    assert(nested.nestedLookupCount === 2, "Shift-hover inside glossary should trigger nested lookup callback.", nested);
     assert(nested.nestedLookupText.includes("classroom"), "Nested lookup should select the glossary word under the pointer.", nested);
     assert(nested.popupCount === 2, "Nested lookup should append a child popup.", nested);
     assert(nested.text.includes("nested result for classroom"), "Nested lookup child should render its own result.", nested);
     assert(nested.text.includes("classroom school room"), "Nested lookup should keep the root popup open.", nested);
     assert(nested.topPopupId.startsWith("child-"), "Nested lookup should make the child popup topmost.", nested);
+    assert(nested.nativeSelectionText === "", "Shift-hover nested lookup should not leave a native browser selection.", nested);
+    assert(nested.popupHighlightText.includes("classroom"), "Shift-hover nested lookup should render a CSS Highlight selection.", nested);
 
-    await page.locator(".lookup-pop[data-popup-id^='child-']").getByRole("button", { name: "Close lookup" }).click();
+    await closeChildPopup(page);
     const childClosed = await popupMetrics(page);
     assert(childClosed.popupCount === 1, "Closing a child popup should keep the root popup open.", childClosed);
     assert(childClosed.rootClearSelectionSignal > nested.rootClearSelectionSignal, "Closing a child popup should signal parent selection clear.", { nested, childClosed });
+    assert(childClosed.popupHighlightText === "", "Closing a child popup should clear the parent popup lookup highlight.", childClosed);
+
+    await dispatchShiftHover(page, "Aことは A", 1);
+    const japanesePrefix = await popupMetrics(page);
+    assert(japanesePrefix.nestedLookupText.startsWith("こと"), "Nested lookup should start at the hovered Japanese text, not the preceding Latin token.", japanesePrefix);
+    assert(!japanesePrefix.nestedLookupText.startsWith("A"), "Nested lookup should not include the preceding A token.", japanesePrefix);
+    assert(japanesePrefix.popupCount === 2 && japanesePrefix.text.includes("nested result for こと"), "Japanese prefix nested lookup should render a child popup.", japanesePrefix);
+
+    await dispatchShiftHover(page, "って「ことと言いなさい」", 3);
+    const japaneseQuoted = await popupMetrics(page);
+    assert(japaneseQuoted.nestedLookupText.startsWith("こと"), "Nested lookup should not backtrack into preceding quoted text.", japaneseQuoted);
+    assert(!japaneseQuoted.nestedLookupText.startsWith("って"), "Nested lookup should not include the previous token before punctuation.", japaneseQuoted);
+
+    await dispatchShiftHover(page, "ことは純日文", 0);
+    const japanesePlain = await popupMetrics(page);
+    assert(japanesePlain.nestedLookupText.startsWith("こと"), "Plain Japanese nested lookup should keep scanning after the hovered character.", japanesePlain);
+    assert(japanesePlain.nestedLookupText !== "こ", "Plain Japanese nested lookup should not stop at the first character.", japanesePlain);
 
     await dispatchShiftHover(page, "school room");
     const secondNested = await popupMetrics(page);
     assert(secondNested.popupCount === 2, "A second root nested lookup should replace the previous child, not stack siblings.", secondNested);
+
+    await page.locator(".lookup-pop[data-popup-id='root']").evaluate((popup) => {
+      popup.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true }));
+    });
+    const parentClicked = await popupMetrics(page);
+    assert(parentClicked.popupCount === 1, "Interacting with a parent popup should close child popups.", parentClicked);
+    assert(parentClicked.rootClearSelectionSignal > secondNested.rootClearSelectionSignal, "Parent interaction should clear the parent nested selection highlight.", { secondNested, parentClicked });
+    assert(parentClicked.popupHighlightText === "", "Interacting with a parent popup should clear child lookup highlight.", parentClicked);
+
+    await dispatchShiftHover(page, "school room");
+    const nestedForScroll = await popupMetrics(page);
+    assert(nestedForScroll.popupCount === 2, "Nested lookup should reopen a child before scroll-close validation.", nestedForScroll);
 
     await page.locator(".lookup-pop[data-popup-id='root'] .lookup-results").evaluate((el) => {
       el.scrollTop = 80;
@@ -402,6 +483,7 @@ async function main() {
     const scrolled = await popupMetrics(page);
     assert(scrolled.popupCount === 1, "Scrolling the parent popup should close child popups.", scrolled);
     assert(scrolled.scrollCloseCount >= 1, "Parent scroll should record child close behavior.", scrolled);
+    assert(scrolled.popupHighlightText === "", "Scrolling the parent popup should clear child lookup highlight.", scrolled);
 
     await page.setViewportSize({ width: 360, height: 640 });
     await openProbe(page, "ready", { longResult: true });

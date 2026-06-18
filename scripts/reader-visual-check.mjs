@@ -215,6 +215,10 @@ async function probeHighlightText(page) {
   return await page.locator(".probe-state").getAttribute("data-highlight-text") ?? "";
 }
 
+async function probeRenderedHighlightText(page) {
+  return await page.locator(".probe-state").getAttribute("data-rendered-highlight-text") ?? "";
+}
+
 async function probeSentenceText(page) {
   return await page.locator(".probe-state").getAttribute("data-sentence") ?? "";
 }
@@ -296,6 +300,10 @@ async function main() {
     await page.keyboard.up("Shift");
     const shiftHoverSelection = await probeSelectionText(page);
     assert(shiftHoverSelection.length > 0, "Shift hover should select reader text for lookup.", { lookupPoint, shiftHoverSelection });
+    const shiftHoverDomSelection = await probeDomSelectionText(page);
+    const shiftHoverRenderedHighlight = await probeRenderedHighlightText(page);
+    assert(shiftHoverDomSelection === "", "Shift hover lookup should not leave a native browser selection.", { shiftHoverDomSelection, shiftHoverRenderedHighlight });
+    assert(shiftHoverRenderedHighlight.length > 0, "Shift hover lookup should render a CSS Highlight selection.", { shiftHoverRenderedHighlight });
     const shiftHoverSentence = await probeSentenceText(page);
     assert(
       shiftHoverSentence.includes(shiftHoverSelection) && shiftHoverSentence.length > shiftHoverSelection.length,
@@ -326,6 +334,31 @@ async function main() {
 
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => (document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "") === "", { timeout: 10000 });
+    await page.mouse.click(lookupPoint.x, lookupPoint.y);
+    await page.waitForFunction(() => {
+      const value = document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "";
+      return value.length > 0;
+    }, { timeout: 10000 });
+    const clickSelection = await probeSelectionText(page);
+    assert(clickSelection.length > 0, "Plain left click should select reader text for lookup.", { lookupPoint, clickSelection });
+    assert(await probeDomSelectionText(page) === "", "Plain left click lookup should not leave a native browser selection.", { clickSelection });
+
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => (document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "") === "", { timeout: 10000 });
+    await page.keyboard.press("ArrowLeft");
+    await waitForHeaderText(page, `P.2/${desktop.totalPages}`);
+    const secondPageClickPoint = await visibleParagraphPoint(page);
+    await page.mouse.click(secondPageClickPoint.x, secondPageClickPoint.y);
+    await page.waitForFunction(() => {
+      const value = document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "";
+      return value.length > 0;
+    }, { timeout: 10000 });
+    const secondPageClickSelection = await probeSelectionText(page);
+    assert(secondPageClickSelection.length > 0, "Plain left click should select reader text after the first page.", { secondPageClickPoint, secondPageClickSelection });
+    assert(await probeDomSelectionText(page) === "", "Plain left click lookup after the first page should not leave a native browser selection.", { secondPageClickSelection });
+
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => (document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "") === "", { timeout: 10000 });
     await page.mouse.move(lookupPoint.x - 8, lookupPoint.y - 8);
     await page.mouse.down();
     await page.mouse.move(lookupPoint.x + 28, lookupPoint.y + 28, { steps: 8 });
@@ -341,18 +374,21 @@ async function main() {
     await page.waitForFunction(() => {
       const state = document.querySelector(".probe-state");
       return (state?.getAttribute("data-highlight-text") ?? "").length > 0 &&
-        (state?.getAttribute("data-dom-selection") ?? "") === state?.getAttribute("data-highlight-text");
+        (state?.getAttribute("data-rendered-highlight-text") ?? "") === state?.getAttribute("data-highlight-text") &&
+        (state?.getAttribute("data-dom-selection") ?? "") === "";
     }, { timeout: 10000 });
     await page.keyboard.up("Shift");
     const fullLookupSelection = await probeSelectionText(page);
     const narrowedDomSelection = await probeDomSelectionText(page);
     const highlightText = await probeHighlightText(page);
+    const renderedHighlightText = await probeRenderedHighlightText(page);
     assert(
-      fullLookupSelection.length > narrowedDomSelection.length &&
-        narrowedDomSelection === highlightText &&
+      fullLookupSelection.length > renderedHighlightText.length &&
+        narrowedDomSelection === "" &&
+        renderedHighlightText === highlightText &&
         fullLookupSelection.replace(/\s+/g, "").startsWith(highlightText),
       "Lookup highlight text should narrow the visible browser selection without changing the lookup input.",
-      { highlightPoint, fullLookupSelection, narrowedDomSelection, highlightText },
+      { highlightPoint, fullLookupSelection, narrowedDomSelection, renderedHighlightText, highlightText },
     );
 
     await page.locator(".rv").click();

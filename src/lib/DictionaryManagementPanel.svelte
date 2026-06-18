@@ -16,6 +16,7 @@
     busy = false,
     onRefresh = () => {},
     onImport = () => {},
+    onImportFolder = () => {},
     onSetEnabled = (_dictionary: DictionaryManifestEntry, _enabled: boolean) => {},
     onMove = (_dictionary: DictionaryManifestEntry, _direction: -1 | 1) => {},
     onRemove = (_dictionary: DictionaryManifestEntry) => {},
@@ -26,6 +27,7 @@
     busy?: boolean;
     onRefresh?: () => void;
     onImport?: () => void;
+    onImportFolder?: () => void;
     onSetEnabled?: (dictionary: DictionaryManifestEntry, enabled: boolean) => void;
     onMove?: (dictionary: DictionaryManifestEntry, direction: -1 | 1) => void;
     onRemove?: (dictionary: DictionaryManifestEntry) => void;
@@ -45,7 +47,8 @@
     </div>
     <div class="dictionary-actions">
       <button class="compact-action" disabled={busy} onclick={onRefresh}>Refresh</button>
-      <button class="compact-action" disabled={busy} onclick={onImport}>Import</button>
+      <button class="compact-action" disabled={busy} onclick={onImport}>Import Files</button>
+      <button class="compact-action" disabled={busy} onclick={onImportFolder}>Import Folder</button>
     </div>
   </div>
   {#if error}

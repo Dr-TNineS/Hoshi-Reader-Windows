@@ -95,7 +95,12 @@
 - Frontend 或共享 TypeScript 改动运行 `npm run check`。
 - Production frontend 改动运行 `npm run build`。
 - Rust command、EPUB、sanitizer 或 dictionary backend 改动运行 `cd src-tauri; cargo check` 和相关 Rust tests。
+- 对于cargo check，请运行
+  call "C:\Program Files (x86)\Microsoft Visual Studio\2022\BuildTools\VC\Auxiliary\Build\vcvarsall.bat" x64
+  cd /d D:\Hoshi-Reader-Windows\src-tauri
+  cargo check
 - Reader layout 改动还需要 runtime visual check，覆盖 pagination、final-page alignment、image/cover behavior、keyboard navigation。
 - Commit message 使用 Conventional Commits。
 - 不要把无关的既有 worktree 改动混进 commit。
 - 用户要求 commit 时，只 stage 本次完成任务相关文件。
+- build + zip：npm run package

@@ -1,5 +1,6 @@
 <script lang="ts">
   import Reader from "./Reader.svelte";
+  import { lookupHighlightText as renderedLookupHighlightTextFor, READER_LOOKUP_HIGHLIGHT } from "../lookup-highlight";
   import type { ReaderProgress, ReaderSelection } from "../types";
 
   const params = new URLSearchParams(window.location.search);
@@ -48,6 +49,7 @@
   let lastSelection = $state<ReaderSelection | null>(null);
   let lookupHighlightText = $state("");
   let visibleSelectionText = $state("");
+  let renderedLookupHighlightText = $state("");
   let selectionCount = $state(0);
 
   function recordProgress(progress: ReaderProgress) {
@@ -81,10 +83,12 @@
   }
 
   $effect(() => {
+    lastSelection;
     const waitForHighlight = lookupHighlightText.length > 0;
     let secondFrame = 0;
     const syncSelection = () => {
       visibleSelectionText = window.getSelection()?.toString().replace(/\s+/g, " ").trim() ?? "";
+      renderedLookupHighlightText = renderedLookupHighlightTextFor(READER_LOOKUP_HIGHLIGHT);
     };
     const firstFrame = requestAnimationFrame(() => {
       if (waitForHighlight) {
@@ -122,6 +126,7 @@
   data-selection={lastSelection?.text ?? ""}
   data-dom-selection={visibleSelectionText}
   data-highlight-text={lookupHighlightText}
+  data-rendered-highlight-text={renderedLookupHighlightText}
   data-sentence={lastSelection?.sentence ?? ""}
   data-selection-count={selectionCount}
 >

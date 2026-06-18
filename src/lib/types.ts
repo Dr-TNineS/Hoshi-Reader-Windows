@@ -166,6 +166,17 @@ export interface DictImportSummary {
   reused: boolean;
 }
 
+export interface DictImportFailure {
+  path: string;
+  error: string;
+}
+
+export interface DictImportBatchSummary {
+  imported: DictImportSummary[];
+  failures: DictImportFailure[];
+  skippedCount: number;
+}
+
 export type DictionaryStatusKind = "ready" | "noDictionaries" | "engineUnavailable" | "error";
 
 export interface DictionaryStatus {
