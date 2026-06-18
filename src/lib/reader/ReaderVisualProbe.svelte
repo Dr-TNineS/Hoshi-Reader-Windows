@@ -92,6 +92,7 @@
   data-chapter-index={chapterIndex}
   data-progress={lastProgress?.chapterProgress ?? 0}
   data-selection={lastSelection?.text ?? ""}
+  data-sentence={lastSelection?.sentence ?? ""}
   data-selection-count={selectionCount}
 >
   {lastProgress?.chapterReadChars ?? 0}:{lastSelection?.text ?? ""}

@@ -24,6 +24,7 @@
   const PAGE_EPSILON = 1;
   const MAX_SELECTION_TEXT = 80;
   const MAX_HOVER_SELECTION_TEXT = 16;
+  const MAX_SENTENCE_CONTEXT_TEXT = 1200;
   const SHIFT_HOVER_DELAY_MS = 45;
   const SHIFT_HOVER_MOVE_THRESHOLD_SQUARED = 64;
   const SCAN_BOUNDARY_PATTERN = /[\s\u3000\u3001\u3002\uff01\uff1f\uff08\uff09\u300c\u300d\u300e\u300f\u3010\u3011\u2014\u2026.,!?;:()[\]{}"'<>/\\|]/u;
@@ -438,7 +439,11 @@
 
   function paragraphRoot(node: Node): Node {
     const element = node.nodeType === Node.TEXT_NODE ? node.parentElement : node as Element;
-    return element?.closest("p, div, section, article") ?? contentEl;
+    return element?.closest("p, li, blockquote, div, section, article") ?? contentEl;
+  }
+
+  function sentenceContext(root: Node): string {
+    return (root.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_SENTENCE_CONTEXT_TEXT);
   }
 
   function selectTextFromPoint(x: number, y: number): ReaderSelection | null {
@@ -510,7 +515,7 @@
 
     const anchorRect = hit.rect;
     const selectionKey = `${chapterIndex}:${text}:${Math.round(anchorRect.x)}:${Math.round(anchorRect.y)}`;
-    const selection = { text, rect, anchorRect, chapterIndex };
+    const selection = { text, sentence: sentenceContext(root), rect, anchorRect, chapterIndex };
     if (selectionKey === lastLookupSelectionKey) return selection;
 
     lastLookupSelectionKey = selectionKey;

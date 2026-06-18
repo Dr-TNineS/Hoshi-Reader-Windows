@@ -2,7 +2,7 @@
   import { invoke, isTauri as isTauriRuntime } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-dialog";
   import AnkiConnectPanel from "./lib/AnkiConnectPanel.svelte";
-  import { extractDictionaryMediaReferences, pruneFieldMappings, upsertFieldTemplate } from "./lib/anki-field-renderer";
+  import { ankiHandlebarOptions, applyKnownNoteTypeDefaultsIfUnmapped, extractDictionaryMediaReferences, upsertFieldTemplate } from "./lib/anki-field-renderer";
   import DictionaryManagementPanel from "./lib/DictionaryManagementPanel.svelte";
   import {
     loadReaderAppearance,
@@ -95,6 +95,7 @@
   let chapterBookInfo = $derived(meta?.book_info.chapter_info[chapterIndex] ?? null);
   let appearancePalette = $derived(readerAppearancePalette(readerAppearance));
   let appearanceVars = $derived(readerAppearanceCssVars(appearancePalette));
+  let ankiTemplateOptions = $derived(ankiHandlebarOptions(dictionaryList.map((dictionary) => dictionary.title)));
 
   interface LookupPopupHistoryEntry {
     selection: ReaderSelection;
@@ -477,9 +478,11 @@
     ankiError = "";
     try {
       const settings = await invoke<AnkiSettings>("anki_fetch_config", { endpoint: ankiEndpointDraft });
-      ankiSettings = { ...settings, fieldMappings: pruneFieldMappings(settings) };
-      ankiEndpointDraft = settings.endpoint;
-      ankiStatus = `Fetched ${settings.decks.length} decks and ${settings.noteTypes.length} note types.`;
+      const mapped = { ...settings, fieldMappings: applyKnownNoteTypeDefaultsIfUnmapped(settings) };
+      const next = await invoke<AnkiSettings>("anki_save_settings", { settings: mapped });
+      ankiSettings = next;
+      ankiEndpointDraft = next.endpoint;
+      ankiStatus = `Fetched ${next.decks.length} decks and ${next.noteTypes.length} note types.`;
     } catch (e) {
       ankiError = String(e);
     } finally {
@@ -497,7 +500,7 @@
   async function selectAnkiNoteType(noteType: string) {
     if (!noteType || ankiBusy) return;
     const changed = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft, selectedNoteType: noteType };
-    const next = { ...changed, fieldMappings: pruneFieldMappings(changed) };
+    const next = { ...changed, fieldMappings: applyKnownNoteTypeDefaultsIfUnmapped(changed) };
     ankiSettings = next;
     await saveAnkiSettings();
   }
@@ -547,6 +550,7 @@
   function buildAnkiPayload(selection: ReaderSelection, result: DictResult, resultIndex: number): LookupAnkiPayload {
     return {
       selectedText: selection.text,
+      sentence: selection.sentence ?? selection.text,
       resultIndex,
       expression: result.expression,
       reading: result.reading,
@@ -1038,6 +1042,7 @@
           status={ankiStatus}
           error={ankiError}
           busy={ankiBusy}
+          handlebarOptions={ankiTemplateOptions}
           onEndpointChange={(endpoint) => ankiEndpointDraft = endpoint}
           onPing={pingAnkiConnect}
           onFetch={fetchAnkiConfig}

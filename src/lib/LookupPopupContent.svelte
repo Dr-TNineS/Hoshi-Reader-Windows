@@ -1,7 +1,7 @@
 <script lang="ts">
   import { invoke, isTauri } from "@tauri-apps/api/core";
   import { ankiDictionaryMediaRefs, buildAnkiNoteRequest, isAnkiPreviewConfigured, payloadWithStoredDictionaryMedia, renderAnkiFieldPreview } from "./anki-field-renderer";
-  import { formatLookupMatch, frequencyLabel, glossaryGroups, pitchLabel, renderGlossaryContent, resultDictionaryLabel, ruleTags, scopeDictionaryCss, type LookupState } from "./lookup-popup";
+  import { formatLookupMatch, frequencyGroups, glossaryGroups, pitchGroups, renderGlossaryContent, resultDictionaryLabel, ruleTags, scopeDictionaryCss, type LookupPitchGroup, type LookupState } from "./lookup-popup";
   import { selectPopupTextFromPoint } from "./popup-selection";
   import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, AnkiStoreMediaResult, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
@@ -63,7 +63,6 @@
   let contentRoot: HTMLDivElement | null = null;
   let dictionaryStyleCss = $state("");
   let ankiPreviewKey = $state("");
-  let ankiPreviewFields = $state<AnkiFieldPreview[]>([]);
   let ankiActionKey = $state("");
   let ankiActionState = $state<"idle" | "adding" | "added" | "duplicate" | "error">("idle");
   let ankiActionMessage = $state("");
@@ -111,7 +110,6 @@
     if (lookupState !== "ready") {
       dictionaryStyleCss = "";
       ankiPreviewKey = "";
-      ankiPreviewFields = [];
       ankiActionKey = "";
       ankiActionState = "idle";
       ankiActionMessage = "";
@@ -289,29 +287,14 @@
     return invoke<DictionaryStyleResource>("dictionary_styles", { dictionary });
   }
 
-  function previewAnki(result: DictResult, resultIndex: number) {
-    if (!buildAnkiPayload || !canPreviewAnki) return;
-    const key = `${resultIndex}:${result.expression}:${result.reading}`;
-    if (ankiPreviewKey === key) {
-      ankiPreviewKey = "";
-      ankiPreviewFields = [];
-      ankiAudioHint = "";
-      return;
-    }
-    ankiPreviewKey = key;
-    const payload = buildAnkiPayload(result, resultIndex);
-    ankiPreviewFields = renderAnkiFieldPreview(payload, ankiSettings);
-    ankiAudioHint = audioBoundaryHint(payload, ankiPreviewFields);
-  }
-
   async function addAnki(result: DictResult, resultIndex: number) {
     if (!buildAnkiPayload || !canPreviewAnki || !onAddAnkiNote || ankiActionState === "adding") return;
     const key = `${resultIndex}:${result.expression}:${result.reading}`;
     const payload = buildAnkiPayload(result, resultIndex);
 
     ankiPreviewKey = key;
-    ankiPreviewFields = renderAnkiFieldPreview(payload, ankiSettings);
-    ankiAudioHint = audioBoundaryHint(payload, ankiPreviewFields);
+    const previewFields = renderAnkiFieldPreview(payload, ankiSettings);
+    ankiAudioHint = audioBoundaryHint(payload, previewFields);
     ankiActionKey = key;
     ankiActionState = "adding";
     ankiActionMessage = "Adding note...";
@@ -323,8 +306,8 @@
         ? payloadWithStoredDictionaryMedia(payload, storeResult.stored)
         : payload;
       ankiMediaWarnings = storeResult?.warnings ?? [];
-      ankiPreviewFields = renderAnkiFieldPreview(notePayload, ankiSettings);
-      ankiAudioHint = audioBoundaryHint(notePayload, ankiPreviewFields);
+      const notePreviewFields = renderAnkiFieldPreview(notePayload, ankiSettings);
+      ankiAudioHint = audioBoundaryHint(notePayload, notePreviewFields);
       const note = buildAnkiNoteRequest(notePayload, ankiSettings);
       if (!note) return;
       const result = await onAddAnkiNote(note);
@@ -353,12 +336,51 @@
 
   function ankiButtonLabel(result: DictResult, resultIndex: number): string {
     const key = `${resultIndex}:${result.expression}:${result.reading}`;
-    if (ankiActionKey !== key) return canPreviewAnki ? "Add Anki" : "Anki not configured";
+    if (ankiActionKey !== key) return canPreviewAnki ? "Add to Anki" : "Anki not configured";
     if (ankiActionState === "adding") return "Adding...";
     if (ankiActionState === "added") return "Added";
     if (ankiActionState === "duplicate") return "Duplicate";
     if (ankiActionState === "error") return "Anki error";
-    return canPreviewAnki ? "Add Anki" : "Anki not configured";
+    return canPreviewAnki ? "Add to Anki" : "Anki not configured";
+  }
+
+  function ankiButtonIcon(result: DictResult, resultIndex: number): string {
+    const key = `${resultIndex}:${result.expression}:${result.reading}`;
+    if (ankiActionKey !== key) return canPreviewAnki ? "+" : "-";
+    if (ankiActionState === "adding") return "...";
+    if (ankiActionState === "added" || ankiActionState === "duplicate") return "ok";
+    if (ankiActionState === "error") return "!";
+    return canPreviewAnki ? "+" : "-";
+  }
+
+  function resultKey(result: DictResult, resultIndex: number): string {
+    return `${resultIndex}:${result.expression}:${result.reading}`;
+  }
+
+  function pitchMoras(reading: string): string[] {
+    const trimmed = reading.trim();
+    if (!trimmed) return [];
+    return Array.from(trimmed).slice(0, 18);
+  }
+
+  function pitchLevel(position: number, index: number, total: number): "high" | "low" {
+    if (total <= 1) return position === 0 ? "low" : "high";
+    if (position === 0) return index === 0 ? "low" : "high";
+    if (position === 1) return index === 0 ? "high" : "low";
+    return index > 0 && index < position ? "high" : "low";
+  }
+
+  function nextPitchLevel(position: number, index: number, total: number): "high" | "low" | "none" {
+    if (index >= total - 1) return "none";
+    return pitchLevel(position, index + 1, total);
+  }
+
+  function pitchPositionLabel(position: number): string {
+    return `pitch ${position}`;
+  }
+
+  function hasPitchVisual(group: LookupPitchGroup, reading: string): boolean {
+    return pitchMoras(reading).length > 0 && group.positions.length > 0;
   }
 </script>
 
@@ -394,22 +416,95 @@
       {#each results.slice(0, 3) as result, resultIndex}
         <section class="lookup-result">
           <div class="lookup-result-head">
-            <span>{result.expression}</span>
-            {#if result.reading && result.reading !== result.expression}
-              <span class="lookup-reading">{result.reading}</span>
-            {/if}
+            <div class="lookup-expression-wrap">
+              <span class="lookup-expression">{result.expression}</span>
+              {#if result.reading && result.reading !== result.expression}
+                <span class="lookup-reading">{result.reading}</span>
+              {/if}
+            </div>
+            <div class="lookup-header-actions" aria-label="Lookup actions">
+              <button class="lookup-action-slot lookup-audio" disabled title="Word audio playback is not implemented yet." aria-label="Play audio">
+                <span aria-hidden="true">A</span>
+              </button>
+              <button
+                class:ready={canPreviewAnki}
+                class:added={ankiActionKey === resultKey(result, resultIndex) && ankiActionState === "added"}
+                class:duplicate={ankiActionKey === resultKey(result, resultIndex) && ankiActionState === "duplicate"}
+                class:error={ankiActionKey === resultKey(result, resultIndex) && ankiActionState === "error"}
+                class="lookup-action-slot lookup-anki"
+                disabled={!canPreviewAnki || ankiActionState === "adding"}
+                title={canPreviewAnki ? ankiButtonLabel(result, resultIndex) : ankiTitle(result, resultIndex)}
+                aria-label={ankiButtonLabel(result, resultIndex)}
+                onclick={() => addAnki(result, resultIndex)}
+              >
+                <span aria-hidden="true">{ankiButtonIcon(result, resultIndex)}</span>
+              </button>
+            </div>
           </div>
           {#if resultDictionaryLabel(result)}
             <p class="lookup-meta">{resultDictionaryLabel(result)}</p>
           {/if}
-          {#if formatLookupMatch(result) || result.rules}
-            <div class="lookup-tags">
-              {#if formatLookupMatch(result)}
-                <span class="lookup-tag">{formatLookupMatch(result)}</span>
+          {#if formatLookupMatch(result) || result.rules || frequencyGroups(result).length > 0 || pitchGroups(result).length > 0}
+            <div class="entry-tags">
+              {#if formatLookupMatch(result) || result.rules}
+                <div class="lookup-tags">
+                  {#if formatLookupMatch(result)}
+                    <span class="lookup-tag">{formatLookupMatch(result)}</span>
+                  {/if}
+                  {#each ruleTags(result) as rule}
+                    <span class="lookup-tag">{rule}</span>
+                  {/each}
+                </div>
               {/if}
-              {#each ruleTags(result) as rule}
-                <span class="lookup-tag">{rule}</span>
-              {/each}
+              {#if frequencyGroups(result).length > 0}
+                <div class="frequency-row" aria-label="Frequency dictionaries">
+                  {#each frequencyGroups(result) as frequency}
+                    <span class="frequency-group">
+                      <span class="frequency-dict-label">{frequency.dictionary}</span>
+                      <span class="frequency-values">{frequency.values.join(", ")}</span>
+                    </span>
+                  {/each}
+                </div>
+              {/if}
+              {#if pitchGroups(result).length > 0}
+                <div class="pitch-list" aria-label="Pitch dictionaries">
+                  {#each pitchGroups(result) as pitch}
+                    <div class="pitch-group">
+                      <span class="pitch-dict-label">{pitch.dictionary}</span>
+                      {#if hasPitchVisual(pitch, result.reading)}
+                        <ul class="pitch-entries">
+                          {#each pitch.positions as position}
+                            <li>
+                              <span class="pitch-visual" aria-label={pitchPositionLabel(position)}>
+                                {#each pitchMoras(result.reading) as mora, moraIndex}
+                                  <span class="pronunciation-mora" data-pitch={pitchLevel(position, moraIndex, pitchMoras(result.reading).length)} data-next-pitch={nextPitchLevel(position, moraIndex, pitchMoras(result.reading).length)}>
+                                    <span class="pronunciation-mora-line"></span>
+                                    <span>{mora}</span>
+                                  </span>
+                                {/each}
+                              </span>
+                              <span class="pitch-position">[{position}]</span>
+                            </li>
+                          {/each}
+                        </ul>
+                      {:else if pitch.positions.length > 0}
+                        <ul class="pitch-entries">
+                          {#each pitch.positions as position}
+                            <li><span class="pitch-position">{pitchPositionLabel(position)}</span></li>
+                          {/each}
+                        </ul>
+                      {/if}
+                      {#if pitch.transcriptions.length > 0}
+                        <ul class="pitch-entries transcription-entries">
+                          {#each pitch.transcriptions as transcription}
+                            <li>{transcription}</li>
+                          {/each}
+                        </ul>
+                      {/if}
+                    </div>
+                  {/each}
+                </div>
+              {/if}
             </div>
           {/if}
           {#each glossaryGroups(result) as group, groupIndex}
@@ -444,39 +539,8 @@
               </ol>
             </details>
           {/each}
-          {#if frequencyLabel(result)}
-            <p class="lookup-detail"><span>Freq</span>{frequencyLabel(result)}</p>
-          {/if}
-          {#if pitchLabel(result)}
-            <p class="lookup-detail"><span>Pitch</span>{pitchLabel(result)}</p>
-          {/if}
-          <button
-            class:ready={canPreviewAnki}
-            class:added={ankiActionKey === `${resultIndex}:${result.expression}:${result.reading}` && ankiActionState === "added"}
-            class:duplicate={ankiActionKey === `${resultIndex}:${result.expression}:${result.reading}` && ankiActionState === "duplicate"}
-            class:error={ankiActionKey === `${resultIndex}:${result.expression}:${result.reading}` && ankiActionState === "error"}
-            class="lookup-anki"
-            disabled={!canPreviewAnki || ankiActionState === "adding"}
-            title={canPreviewAnki ? "Create an Anki note after duplicate check" : ankiTitle(result, resultIndex)}
-            onclick={() => addAnki(result, resultIndex)}
-          >
-            {ankiButtonLabel(result, resultIndex)}
-          </button>
-          {#if canPreviewAnki}
-            <button class="lookup-anki-preview" onclick={() => previewAnki(result, resultIndex)}>Preview fields</button>
-          {/if}
-          {#if ankiPreviewKey === `${resultIndex}:${result.expression}:${result.reading}`}
+          {#if ankiPreviewKey === resultKey(result, resultIndex)}
             <section class="anki-preview" aria-label="Anki field preview">
-              <div class="anki-preview-head">
-                <span>{ankiSettings?.selectedDeck}</span>
-                <span>{ankiSettings?.selectedNoteType}</span>
-              </div>
-              {#each ankiPreviewFields as field (field.field)}
-                <div class="anki-preview-row">
-                  <span>{field.field}</span>
-                  <pre>{field.value}</pre>
-                </div>
-              {/each}
               {#if ankiAudioHint}
                 <p class="anki-action-message warn">{ankiAudioHint}</p>
               {/if}
@@ -511,11 +575,56 @@
   .lookup-action:hover { background: var(--app-primary-hover, #c1a9fb); }
   .lookup-results { display: flex; flex-direction: column; gap: 8px; max-height: min(360px, calc(100vh - 220px)); overflow-y: auto; padding-right: 2px; }
   .lookup-result { display: flex; flex-direction: column; gap: 5px; padding-top: 8px; border-top: 1px solid var(--app-border, #333333); min-width: 0; }
-  .lookup-result-head { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; color: var(--app-text, #fff); font-size: 16px; line-height: 1.25; overflow-wrap: anywhere; }
+  .lookup-result-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 8px; min-width: 0; padding-top: 2px; }
+  .lookup-expression-wrap { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 8px; min-width: 0; color: var(--app-text, #fff); line-height: 1.25; overflow-wrap: anywhere; }
+  .lookup-expression { min-width: 0; font-size: 20px; line-height: 1.22; overflow-wrap: anywhere; }
   .lookup-reading { color: var(--app-muted, #999999); font-size: 12px; overflow-wrap: anywhere; }
+  .lookup-header-actions { display: flex; flex-shrink: 0; align-items: center; gap: 6px; margin-left: auto; }
+  .lookup-action-slot { display: inline-flex; align-items: center; justify-content: center; width: 28px; height: 28px; padding: 0; background: transparent; color: var(--app-text, #fff); border: 0; border-radius: 14px; cursor: pointer; font-size: 16px; line-height: 1; user-select: none; }
+  .lookup-action-slot:disabled { color: var(--app-muted, #999999); cursor: not-allowed; opacity: 0.5; }
+  .lookup-action-slot.ready { color: #d8eadf; background: #24352f; }
+  .lookup-action-slot.ready:hover { background: #2c4038; }
+  .lookup-action-slot.added { color: #9ad5b5; background: #22352d; }
+  .lookup-action-slot.duplicate { color: #ffd89b; background: #3a3021; }
+  .lookup-action-slot.error { color: #ffb4ac; background: #3b2626; }
+  .lookup-action-slot span { transform: translateY(-1px); }
   .lookup-meta { color: var(--app-status, #cce8d5); font-size: 11px; line-height: 1.3; overflow-wrap: anywhere; }
+  .entry-tags { display: flex; flex-direction: column; gap: 3px; margin-top: -2px; user-select: none; }
   .lookup-tags { display: flex; flex-wrap: wrap; gap: 4px; }
   .lookup-tag { max-width: 100%; padding: 2px 6px; background: var(--app-control, #1b1b1b); color: var(--app-primary, #d0bcff); border: 1px solid var(--app-border, #333333); border-radius: 4px; font-size: 11px; line-height: 1.25; overflow-wrap: anywhere; }
+  .frequency-row { display: flex; flex-wrap: wrap; gap: 3px; margin-top: 1px; }
+  .frequency-group { display: inline-flex; max-width: 100%; overflow: hidden; border: 1px solid #77aaeb; border-radius: 4px; font-size: 11px; line-height: 1; }
+  .frequency-dict-label { flex-shrink: 0; max-width: 120px; padding: 4px; overflow: hidden; background: #4f78bd; color: #fff; text-overflow: ellipsis; white-space: nowrap; }
+  .frequency-values { min-width: 0; padding: 4px; color: var(--app-text, #fff); overflow-wrap: anywhere; }
+  .pitch-list { display: flex; flex-direction: column; gap: 5px; margin-top: 2px; color: var(--app-text, #fff); font-size: 12px; line-height: 1.35; }
+  .pitch-group { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; min-width: 0; }
+  .pitch-dict-label { max-width: 100%; padding: 2px 4px; background: #6f7fca; color: #fff; border-radius: 4px; font-size: 11px; line-height: 1.15; overflow-wrap: anywhere; }
+  .pitch-entries { margin: 0; padding: 0; list-style: circle inside; }
+  .pitch-entries li { margin-top: 2px; }
+  .transcription-entries { color: var(--app-muted, #999999); }
+  .pitch-visual { display: inline-flex; align-items: flex-end; margin-right: 4px; vertical-align: bottom; }
+  .pronunciation-mora { position: relative; display: inline-flex; flex-direction: column; align-items: center; min-width: 1.05em; padding-top: 6px; color: var(--app-text, #fff); font-size: 12px; line-height: 1.1; }
+  .pronunciation-mora-line { position: absolute; top: 2px; left: 0; right: 0; height: 1px; background: transparent; }
+  .pronunciation-mora[data-pitch="high"] .pronunciation-mora-line { background: var(--app-muted, #999999); }
+  .pronunciation-mora[data-pitch="high"][data-next-pitch="low"] .pronunciation-mora-line::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 1px;
+    height: 9px;
+    background: var(--app-muted, #999999);
+  }
+  .pronunciation-mora[data-pitch="low"][data-next-pitch="high"] .pronunciation-mora-line::after {
+    content: "";
+    position: absolute;
+    right: 0;
+    top: 0;
+    width: 1px;
+    height: 9px;
+    background: var(--app-muted, #999999);
+  }
+  .pitch-position { color: var(--app-muted, #999999); font-size: 11px; }
   .lookup-glossary { display: flex; flex-direction: column; gap: 2px; color: var(--app-text, #fff); font-size: 12px; line-height: 1.38; overflow-wrap: anywhere; }
   .lookup-glossary-group { display: flex; flex-direction: column; gap: 4px; }
   .lookup-glossary-group[open] { display: flex; }
@@ -540,20 +649,7 @@
   .lookup-glossary-content :global(.gloss-media-placeholder-loaded) { display: block; padding: 2px; border-style: solid; }
   .lookup-glossary-content :global(.gloss-media-placeholder-error) { color: var(--app-error, #ffb4ab); border-color: var(--app-error, #ffb4ab); }
   .lookup-glossary-content :global(.gloss-media-image) { display: block; max-width: 100%; max-height: 180px; object-fit: contain; }
-  .lookup-detail { color: var(--app-muted, #999999); font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
-  .lookup-detail span { margin-right: 6px; color: var(--app-primary, #d0bcff); }
-  .lookup-anki { align-self: flex-start; margin-top: 2px; padding: 3px 7px; background: var(--app-control, #1b1b1b); color: var(--app-muted, #999999); border: 1px solid var(--app-border, #333333); border-radius: 4px; cursor: not-allowed; font-size: 11px; }
-  .lookup-anki.ready { color: #d8eadf; background: #24352f; border-color: #3b6956; cursor: pointer; }
-  .lookup-anki.ready:hover { background: #2c4038; }
-  .lookup-anki.added { color: #d8eadf; border-color: #4d8f6b; }
-  .lookup-anki.duplicate { color: #ffd89b; border-color: #8d6a33; }
-  .lookup-anki.error { color: #ffb4ac; border-color: #7d4f4b; }
-  .lookup-anki-preview { align-self: flex-start; margin-top: -2px; padding: 0; color: var(--app-primary, #d0bcff); background: transparent; border: none; cursor: pointer; font-size: 11px; text-decoration: underline; }
-  .anki-preview { display: flex; flex-direction: column; gap: 6px; padding: 8px; background: var(--app-bg, #000); border: 1px solid var(--app-border, #333333); border-radius: 4px; }
-  .anki-preview-head { display: flex; flex-wrap: wrap; gap: 6px; color: var(--app-status, #cce8d5); font-size: 11px; line-height: 1.3; }
-  .anki-preview-row { display: grid; grid-template-columns: minmax(72px, 0.35fr) minmax(0, 1fr); gap: 7px; align-items: start; min-width: 0; }
-  .anki-preview-row > span { min-width: 0; overflow-wrap: anywhere; color: var(--app-primary, #d0bcff); font-size: 11px; line-height: 1.35; }
-  .anki-preview-row pre { min-width: 0; margin: 0; white-space: pre-wrap; overflow-wrap: anywhere; color: var(--app-text, #fff); font-family: inherit; font-size: 11px; line-height: 1.35; }
+  .anki-preview { display: flex; flex-direction: column; gap: 4px; padding: 6px 8px; background: var(--app-bg, #000); border: 1px solid var(--app-border, #333333); border-radius: 4px; }
   .anki-action-message { margin: 0; font-size: 11px; line-height: 1.35; overflow-wrap: anywhere; }
   .anki-action-message.ok { color: #9ad5b5; }
   .anki-action-message.warn { color: #ffd89b; }

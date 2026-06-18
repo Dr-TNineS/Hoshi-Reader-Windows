@@ -55,8 +55,18 @@ async function panelMetrics(page) {
     const state = document.querySelector(".probe-state");
     if (!(panel instanceof HTMLElement)) throw new Error("Anki panel not found.");
     const rect = panel.getBoundingClientRect();
+    const fieldTemplates = Object.fromEntries(
+      Array.from(panel.querySelectorAll(".field-template-row")).map((row) => {
+        const label = row.querySelector("span")?.textContent ?? "";
+        const input = row.querySelector("input");
+        return [label, input instanceof HTMLInputElement ? input.value : ""];
+      }),
+    );
     return {
       text: panel.textContent ?? "",
+      fieldTemplates,
+      handlebarButtonCount: panel.querySelectorAll(".handlebar-trigger").length,
+      handlebarMenuText: panel.querySelector(".handlebar-menu")?.textContent ?? "",
       endpoint: state?.getAttribute("data-endpoint") ?? "",
       pingClicks: Number(state?.getAttribute("data-ping-clicks") ?? 0),
       fetchClicks: Number(state?.getAttribute("data-fetch-clicks") ?? 0),
@@ -73,7 +83,17 @@ async function panelMetrics(page) {
       audioUrl: state?.getAttribute("data-audio-url") ?? "",
       audioTimeout: Number(state?.getAttribute("data-audio-timeout") ?? 0),
       horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
-      panel: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom },
+      panel: {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width,
+        height: rect.height,
+        right: rect.right,
+        bottom: rect.bottom,
+        clientHeight: panel.clientHeight,
+        scrollHeight: panel.scrollHeight,
+        scrollTop: panel.scrollTop,
+      },
       viewport: { width: window.innerWidth, height: window.innerHeight },
     };
   });
@@ -115,7 +135,58 @@ async function main() {
     assert(metrics.text.includes("Front") && metrics.text.includes("Back"), "Ready panel should show note fields.", metrics);
     assert(metrics.text.includes("Word Audio") && metrics.text.includes("Audio export disabled"), "Ready panel should expose word audio settings boundary.", metrics);
     assert(metrics.fieldMappings.includes("Front:{expression}") && metrics.fieldMappings.includes("Back:{glossary-first}"), "Ready panel should expose saved field templates.", metrics);
+    assert(metrics.handlebarButtonCount === 3, "Ready panel should show a handlebar picker for each field template.", metrics);
+    await page.locator(".field-template-row").filter({ hasText: "Front" }).locator(".handlebar-trigger").click();
+    metrics = await panelMetrics(page);
+    assert(metrics.handlebarMenuText.includes("-"), "Handlebar picker should include the blank option.", metrics);
+    assert(metrics.handlebarMenuText.includes("{expression}") && metrics.handlebarMenuText.includes("{reading}"), "Handlebar picker should include core expression and reading options.", metrics);
+    assert(metrics.handlebarMenuText.includes("{pitch-accent-positions}"), "Handlebar picker should include pitch accent positions.", metrics);
+    assert(metrics.handlebarMenuText.includes("{single-glossary-JMdict}"), "Handlebar picker should include imported dictionary-specific glossary options.", metrics);
+    assert(!metrics.handlebarMenuText.includes("{furigana-plain}"), "Handlebar picker should not expose unavailable HSA-only tokens.", metrics);
+    await page.getByRole("menuitem", { name: "{reading}", exact: true }).click();
+    metrics = await panelMetrics(page);
+    assert(metrics.fieldTemplates.Front === "{reading}", "Choosing a handlebar option should replace the full field template.", metrics);
+    assert(metrics.fieldTemplateEvents.includes("Front:{reading}"), "Choosing a handlebar option should emit a field template event.", metrics);
+    await page.locator(".field-template-row").filter({ hasText: "Back" }).locator(".handlebar-trigger").click();
+    await page.getByRole("menuitem", { name: "-", exact: true }).click();
+    metrics = await panelMetrics(page);
+    assert(metrics.fieldTemplates.Back === "", "Choosing '-' should clear the full field template.", metrics);
+    assert(metrics.fieldTemplateEvents.includes("Back:"), "Choosing '-' should emit an empty field template event.", metrics);
 
+    await openProbe(page, "lapis");
+    metrics = await panelMetrics(page);
+    assert(metrics.text.includes("Lapis"), "Lapis panel should show the selected note type.", metrics);
+    assert(metrics.fieldTemplates.Expression === "{expression}", "Lapis Expression should use the HSA default.", metrics);
+    assert(metrics.fieldTemplates.ExpressionFurigana === "{furigana-plain}", "Lapis ExpressionFurigana should use the HSA default.", metrics);
+    assert(metrics.fieldTemplates.MainDefinition === "{glossary-first}", "Lapis MainDefinition should use the HSA default.", metrics);
+    assert(metrics.fieldTemplates.PitchPosition === "{pitch-accent-positions}", "Lapis PitchPosition should use the HSA default.", metrics);
+    assert(metrics.fieldTemplates.FreqSort === "{frequency-harmonic-rank}", "Lapis FreqSort should use the HSA default.", metrics);
+    assert(metrics.fieldTemplates.IsWordAndSentenceCard === "x", "Lapis IsWordAndSentenceCard should use the HSA default.", metrics);
+    assert(metrics.fieldTemplates.DefinitionPicture === "", "Lapis fields not covered by HSA defaults should stay empty.", metrics);
+    assert(metrics.fieldTemplates.IsClickCard === "", "Uncovered Lapis boolean fields should stay empty.", metrics);
+
+    await openProbe(page, "lapisMapped");
+    metrics = await panelMetrics(page);
+    assert(metrics.fieldTemplates.MainDefinition === "{single-glossary-JMdict}", "Existing Lapis field mappings should not be overwritten.", metrics);
+    assert(metrics.fieldTemplates.Expression === "{expression}", "Unmapped Lapis fields should still preview known defaults.", metrics);
+
+    await openProbe(page, "customLapis");
+    metrics = await panelMetrics(page);
+    assert(metrics.text.includes("Custom Lapis"), "Custom Lapis panel should show the selected note type.", metrics);
+    assert(metrics.fieldTemplates.Expression === "{expression}", "Custom Lapis should still use generic field inference where it matches.", metrics);
+    assert(metrics.fieldTemplates.ExpressionFurigana === "", "Custom Lapis should not receive exact Lapis defaults.", metrics);
+    assert(metrics.fieldTemplates.MainDefinition === "", "Custom Lapis should not receive exact Lapis MainDefinition default.", metrics);
+
+    await openProbe(page, "large");
+    metrics = await panelMetrics(page);
+    assert(metrics.text.includes("Large Vocabulary"), "Large panel should show the selected note type.", metrics);
+    assert(metrics.panel.height <= metrics.viewport.height - 40, "Large Anki panel should stay inside the viewport.", metrics);
+    assert(metrics.panel.scrollHeight > metrics.panel.clientHeight, "Large Anki panel should scroll internally.", metrics);
+    await page.locator(".anki-panel").evaluate((panel) => { panel.scrollTop = panel.scrollHeight; });
+    metrics = await panelMetrics(page);
+    assert(metrics.panel.scrollTop > 0, "Large Anki panel should allow access to offscreen controls by scrolling.", metrics);
+
+    await openProbe(page, "ready");
     await page.getByLabel("Endpoint").fill("http://localhost:8765");
     await page.getByRole("button", { name: "Test" }).click();
     await page.getByRole("button", { name: "Fetch" }).click();

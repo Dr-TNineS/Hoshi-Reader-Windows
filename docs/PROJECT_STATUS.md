@@ -65,11 +65,11 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Plain mouse text selection does not open the lookup popup; lookup selection is a deliberate Shift-hover path.
   - Popup prefers left/right side placement beside the selected text, with top/bottom fallback.
   - Popup distinguishes loading, no dictionary, engine unavailable, empty, error, and ready states.
-  - Popup renders the current lookup result shape: expression, reading, source dictionary, matched/deinflected text, rules, grouped glossary content, dictionary media, scoped dictionary `styles.css`, frequency, and pitch.
+  - Popup renders the current lookup result shape: expression, reading, source dictionary, matched/deinflected text, rules, HSA-style frequency/pitch metadata groups, grouped glossary content, dictionary media, and scoped dictionary `styles.css`.
   - Dictionary media loads lazily inside popup glossary content; loaded, unavailable, and non-Tauri fallback states are covered by the lookup popup probe.
   - Popup glossary text supports Shift hover nested lookup as a popup stack: root lookup stays open, child popups anchor to glossary text, closing a child preserves the parent, and parent scroll closes children.
   - Popup has a disabled Anki boundary affordance and can build a typed lookup-to-Anki payload from the selected result and current book/chapter context.
-  - Lookup popup probe and `npm run check:lookup-popup` cover popup states, glossary Shift hover nested lookup stack behavior, child close parent preservation, parent-scroll child dismissal, redirect history, scoped dictionary CSS behavior, long-result internal scrolling, frequency/pitch display, disabled Anki boundary, import/close actions, and narrow-window overflow.
+  - Lookup popup probe and `npm run check:lookup-popup` cover popup states, glossary Shift hover nested lookup stack behavior, child close parent preservation, parent-scroll child dismissal, redirect history, scoped dictionary CSS behavior, long-result internal scrolling, HSA-style header action/frequency/pitch layout, disabled Anki/audio boundaries, import/close actions, and narrow-window overflow.
   - Popup clears on page/chapter changes, TOC jumps, shelf return, close, and Escape.
 - Dictionary backend:
   - `dict_status` returns structured dictionary status: ready, no dictionaries, engine unavailable, or error.
@@ -100,12 +100,16 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Anki:
   - Lookup popup keeps the Anki affordance disabled until endpoint, deck, note type, and fields are configured.
   - Bookshelf now has a minimal AnkiConnect readiness/configuration panel for endpoint editing, connection testing, deck/note-type fetch, deck selection, note-type selection, field template editing, and note field preview.
-  - Configured lookup popup results can render an Anki field preview from the current `LookupAnkiPayload`.
+  - Anki field templates include HSA-aligned exact-name defaults for Lapis, Kiku, and Senren; unmapped known-model fields keep HSA's blank behavior, and custom model names do not inherit these presets.
+  - Field template rows include a HSA-style `{}` picker for supported template tokens, including imported dictionary-specific `{single-glossary-...}` options; choosing `-` clears the field.
+  - Anki glossary field rendering normalizes Yomitan structured-content JSON through the same safe HTML renderer used by the popup, so note fields do not expose raw structured JSON.
+  - Reader-origin Anki payloads now keep lookup text and sentence context separate: lookup still uses the hovered token, while `{sentence}` receives the source paragraph text.
+  - Configured lookup popup results expose a HSA-style compact Anki add button; note creation still renders fields from the current `LookupAnkiPayload`.
   - Configured lookup popup results can call Rust `anki_add_note`; Rust performs `canAddNotesWithErrorDetail` before `addNote` and returns added/duplicate/error states.
   - Real desktop Anki runtime validation passed on 2026-06-18 with AnkiConnect v6 on `127.0.0.1:8765`: the ignored Rust validation test created a throwaway deck/model, added one note through HSW `anki_add_note`, verified duplicate handling on the second add, and attempted cleanup.
   - Rust/Tauri stores Anki settings in app data `anki/settings.json` and restricts AnkiConnect endpoints to localhost/127.0.0.1 HTTP.
-  - `npm run check:anki-connect` covers Anki panel empty/error/connected/ready states, action wiring, selections, field template edits, and narrow-window overflow.
-  - `npm run check:lookup-popup` covers configured Anki field preview, unknown handlebars rendering empty, added/duplicate/error UI states, rendered note shape, and the unconfigured disabled Anki boundary.
+  - `npm run check:anki-connect` covers Anki panel empty/error/connected/ready states, action wiring, selections, field template edits, HSA-aligned Lapis defaults, exact-name preset matching, handlebar picker choices, and narrow-window overflow.
+  - `npm run check:lookup-popup` covers configured compact Anki add action, sentence-context rendering, dictionary-specific glossary handlebars, unknown handlebars rendering empty, added/duplicate/error UI states, rendered note shape, and the unconfigured disabled Anki boundary.
   - First Anki media-export scope is tracked in `docs/ANKI_MEDIA_EXPORT_PLAN.md`; dictionary image media references are extracted from lookup glossary content, `{dictionary-media}` previews render deterministic HTML, and add-note flow stores dictionary media before note creation.
   - Rust `anki_store_dictionary_media` stores imported dictionary image media through AnkiConnect `storeMediaFile`; missing media returns warnings, while unsafe paths and unsupported types are blocked.
   - `npm run check:lookup-popup` covers Anki media store success, missing-media warnings with text-card creation, and hard media-store failure without note creation.

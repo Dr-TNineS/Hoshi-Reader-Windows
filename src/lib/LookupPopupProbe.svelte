@@ -18,6 +18,7 @@
 
   const rootSelection: ReaderSelection = {
     text: "school",
+    sentence: "The academy school sentence contains the selected lookup term in a longer source paragraph.",
     chapterIndex: 0,
     rect: { x: 460, y: bottomEdge ? Math.max(120, window.innerHeight - 118) : 180, width: 36, height: 120 },
   };
@@ -86,10 +87,13 @@
       selectedDeck: "Mining",
       selectedNoteType: "Hoshi Vocabulary",
       decks: [{ name: "Mining" }],
-      noteTypes: [{ name: "Hoshi Vocabulary", fields: ["Expression", "Meaning", "Media", "Audio", "Frequency", "Pitch", "Unknown"] }],
+      noteTypes: [{ name: "Hoshi Vocabulary", fields: ["Expression", "Meaning", "Sentence", "JmOnly", "MissingDict", "Media", "Audio", "Frequency", "Pitch", "Unknown"] }],
       fieldMappings: [
         { field: "Expression", template: "{expression} / {reading}" },
         { field: "Meaning", template: "{glossary-first}" },
+        { field: "Sentence", template: "{sentence}" },
+        { field: "JmOnly", template: "{single-glossary-JMdict [probe]}" },
+        { field: "MissingDict", template: "{single-glossary-Missing Probe}" },
         { field: "Media", template: "{dictionary-media}" },
         { field: "Audio", template: "{audio}" },
         { field: "Frequency", template: "{frequencies}" },
@@ -299,6 +303,7 @@
   function buildAnkiPayload(selection: ReaderSelection, result: DictResult, resultIndex: number): LookupAnkiPayload {
     return {
       selectedText: selection.text,
+      sentence: selection.sentence ?? selection.text,
       resultIndex,
       expression: result.expression,
       reading: result.reading,
