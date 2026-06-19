@@ -998,7 +998,7 @@
 
 </script>
 
-<main class="app" data-theme={settings.readerAppearance.theme} style={settings.appearanceVars}>
+<main class="app" data-ui-portal-root data-theme={settings.readerAppearance.theme} style={settings.appearanceVars}>
   {#if view === "bookshelf"}
     <BookshelfView
       {books}

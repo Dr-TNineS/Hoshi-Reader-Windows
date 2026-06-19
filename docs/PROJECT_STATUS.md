@@ -107,6 +107,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - MK3 compatibility import performance validation on 2026-06-18 with local `MK3Fix0213.zip` completed in about 24 seconds in the linked ignored Rust test; before switching the lookup-safe temp zip to stored entries, the safe-zip creation step alone took about 187 seconds.
   - Lookup responses map compatibility-import internal ASCII titles back to manifest titles for result, glossary, frequency, and pitch source labels.
 - Anki:
+  - Deck and note-type controls use the shared Bits UI Select primitive; field-template token pickers use the shared Bits UI DropdownMenu primitive with themed portal content kept inside the application overlay root.
   - Lookup popup keeps the Anki affordance disabled until endpoint, deck, note type, and fields are configured.
   - Bookshelf now has a minimal AnkiConnect readiness/configuration panel for endpoint editing, connection testing, deck/note-type fetch, deck selection, note-type selection, field template editing, and note field preview.
   - Anki field templates include HSA-aligned exact-name defaults for Lapis, Kiku, and Senren; unmapped known-model fields keep HSA's blank behavior, and custom model names do not inherit these presets.
@@ -117,7 +118,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Configured lookup popup results can call Rust `anki_add_note`; Rust performs `canAddNotesWithErrorDetail` before `addNote` and returns added/duplicate/error states.
   - Real desktop Anki runtime validation passed on 2026-06-18 with AnkiConnect v6 on `127.0.0.1:8765`: the ignored Rust validation test created a throwaway deck/model, added one note through HSW `anki_add_note`, verified duplicate handling on the second add, and attempted cleanup.
   - Rust/Tauri stores Anki settings in app data `anki/settings.json` and restricts AnkiConnect endpoints to localhost/127.0.0.1 HTTP.
-  - `npm run check:anki-connect` covers Anki panel empty/error/connected/ready states, action wiring, selections, field template edits, HSA-aligned Lapis defaults, exact-name preset matching, handlebar picker choices, and narrow-window overflow.
+  - `npm run check:anki-connect` covers Anki panel empty/error/connected/ready states, action wiring, pointer/keyboard selections, field template edits, HSA-aligned Lapis defaults, exact-name preset matching, token menu choices, and Select/Menu viewport boundaries without narrow-window overflow.
   - `npm run check:lookup-popup` covers configured compact Anki add action, sentence-context rendering, dictionary-specific glossary handlebars, unknown handlebars rendering empty, added/duplicate/error UI states, rendered note shape, and the unconfigured disabled Anki boundary.
   - First Anki media-export scope is tracked in `docs/ANKI_MEDIA_EXPORT_PLAN.md`; dictionary image media references are extracted from lookup glossary content, `{dictionary-media}` previews render deterministic HTML, and add-note flow stores dictionary media before note creation.
   - Rust `anki_store_dictionary_media` stores imported dictionary image media through AnkiConnect `storeMediaFile`; missing media returns warnings, while unsafe paths and unsupported types are blocked.
