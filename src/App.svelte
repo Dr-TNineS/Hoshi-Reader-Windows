@@ -1,6 +1,7 @@
 <script lang="ts">
   import { invoke, isTauri as isTauriRuntime } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-dialog";
+  import { loadAdvancedSettings, saveAdvancedSettings, type AdvancedSettings } from "./lib/advanced-settings";
   import { ankiHandlebarOptions, applyKnownNoteTypeDefaultsIfUnmapped, extractDictionaryMediaReferences, upsertFieldTemplate } from "./lib/anki-field-renderer";
   import BookshelfView from "./lib/BookshelfView.svelte";
   import {
@@ -69,6 +70,7 @@
   let readerLookupHighlightText = $state("");
   let lookupPopups = $state<LookupPopupItem[]>([]);
   let readerAppearance = $state<ReaderAppearance>(loadReaderAppearance());
+  let advancedSettings = $state<AdvancedSettings>(loadAdvancedSettings());
   let showAppearancePanel = $state(false);
   let lookupRequestId = 0;
   let showToc = $state(false);
@@ -105,6 +107,7 @@
     if (triedStartup) return;
     triedStartup = true;
     if (!isTauriRuntime()) return;
+    const shouldReopenLastBook = advancedSettings.reopenLastBookOnStartup;
 
     (async () => {
       try {
@@ -114,7 +117,7 @@
         books = mergeLibraryBooks(books, libraryBooks);
 
         const session = readingState.session;
-        if (session && view === "bookshelf") {
+        if (shouldReopenLastBook && session && view === "bookshelf") {
           try {
             await openBookLocator(session, session.chapter, "Restoring...", session.chapterProgress ?? 0);
             debug = "Restored";
@@ -151,6 +154,11 @@
 
   function setReaderTheme(theme: ReaderTheme) {
     readerAppearance = { ...readerAppearance, theme };
+  }
+
+  function setReopenLastBookOnStartup(enabled: boolean) {
+    advancedSettings = { ...advancedSettings, reopenLastBookOnStartup: enabled };
+    saveAdvancedSettings(advancedSettings);
   }
 
   function saveProgress(
@@ -1023,6 +1031,7 @@
       {showAppearancePanel}
       {readerAppearance}
       {readerThemeLabels}
+      {advancedSettings}
       {showDictionaryManager}
       {dictionaryList}
       {dictionaryListStatus}
@@ -1041,6 +1050,7 @@
       onContinueBook={continueBook}
       onForgetBook={forgetBook}
       onSetReaderTheme={setReaderTheme}
+      onSetReopenLastBookOnStartup={setReopenLastBookOnStartup}
       onRefreshDictionaries={refreshDictionaries}
       onImportDictionary={importDictionary}
       onImportDictionaryFolder={importDictionaryFolder}

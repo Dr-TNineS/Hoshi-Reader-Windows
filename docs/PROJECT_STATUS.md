@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Project Status
 
-Last updated: 2026-06-18
+Last updated: 2026-06-20
 
 This file records current implementation facts for `hoshi-reader-windows`. It is not an agent rule file, product roadmap, or substitute for checking the current code.
 
@@ -43,9 +43,11 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Recent books render as a cover grid with EPUB cover, progress bar, percent, and title when cover data is available.
   - EPUB import entry.
   - Minimal Appearance panel with HSA-aligned Light and Dark reader themes.
+  - Advanced panel with a default-on option to reopen the last reading session at startup.
+  - The Advanced startup preference is stored locally in browser `localStorage`.
   - Read-only Shortcuts panel listing the currently implemented Reader keyboard and mouse shortcuts by feature group.
   - Resume from saved progress.
-  - Tauri startup attempts to restore the last reader session.
+  - Tauri startup attempts to restore the last reader session when the Advanced startup option is enabled; disabling it leaves startup on the bookshelf without clearing the saved session.
   - Tauri reading state stores recent books, progress, and session in `reading/state.json`.
   - Existing `localStorage` recent books/session are merged into reading state once on startup.
   - Legacy path-only records remain compatible when the original file still exists.
@@ -127,7 +129,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - No durable database; app-owned library metadata and reading state are still JSON.
 - Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; sync and audio export remain unimplemented. Follow-up slices are documented in `docs/ANKI_MEDIA_EXPORT_PLAN.md`.
 - No sync implementation.
-- No full settings surface; only the minimal bookshelf Appearance panel for HSA-aligned Light/Dark reader themes is implemented.
+- No full settings surface; only the minimal bookshelf Appearance and Advanced startup-behavior panels are implemented.
 - No verified app-owned cover thumbnail cache.
 - Runtime validation with a normal media-bearing Yomitan dictionary is not verified; on 2026-06-16, `HSW_MEDIA_YOMITAN_ZIP` was unset, `OALDPE10.zip` had `mediaCount=0`, and `MK3Fix0213.zip` remained unsuitable because compatibility import intentionally skips media.
 - No verified release packaging flow.

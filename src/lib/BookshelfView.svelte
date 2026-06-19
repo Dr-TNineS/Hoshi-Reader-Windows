@@ -6,6 +6,8 @@
   import type { ReaderAppearance, ReaderTheme } from "./appearance";
   import DictionaryManagementPanel from "./DictionaryManagementPanel.svelte";
   import ShortcutsPanel from "./ShortcutsPanel.svelte";
+  import AdvancedPanel from "./AdvancedPanel.svelte";
+  import type { AdvancedSettings } from "./advanced-settings";
   import { bookRecordKey, type BookRecord } from "./storage";
 
   let {
@@ -17,6 +19,7 @@
     showAppearancePanel = false,
     readerAppearance,
     readerThemeLabels,
+    advancedSettings,
     showDictionaryManager = false,
     dictionaryList = [],
     dictionaryListStatus = null,
@@ -35,6 +38,7 @@
     onContinueBook,
     onForgetBook,
     onSetReaderTheme,
+    onSetReopenLastBookOnStartup,
     onRefreshDictionaries,
     onImportDictionary,
     onImportDictionaryFolder,
@@ -58,6 +62,7 @@
     showAppearancePanel?: boolean;
     readerAppearance: ReaderAppearance;
     readerThemeLabels: Record<ReaderTheme, string>;
+    advancedSettings: AdvancedSettings;
     showDictionaryManager?: boolean;
     dictionaryList?: DictionaryManifestEntry[];
     dictionaryListStatus?: DictionaryStatus | null;
@@ -76,6 +81,7 @@
     onContinueBook: (book: BookRecord) => void;
     onForgetBook: (book: BookRecord) => void;
     onSetReaderTheme: (theme: ReaderTheme) => void;
+    onSetReopenLastBookOnStartup: (enabled: boolean) => void;
     onRefreshDictionaries: () => void;
     onImportDictionary: () => void;
     onImportDictionaryFolder: () => void;
@@ -92,7 +98,7 @@
     onSetAnkiAudioConfig: (audioEnabled: boolean, audioSources: AnkiAudioSource[], audioDownloadTimeoutMs: number) => void;
   } = $props();
 
-  type ShelfPanel = "library" | "dictionaries" | "anki" | "appearance" | "shortcuts";
+  type ShelfPanel = "library" | "dictionaries" | "anki" | "appearance" | "advanced" | "shortcuts";
 
   let activePanel = $state<ShelfPanel>("library");
   let failedCoverKeys = $state<Set<string>>(new Set());
@@ -102,6 +108,7 @@
     { id: "dictionaries", label: "Dictionaries", detail: "Lookup imports", marker: "DI" },
     { id: "anki", label: "Anki", detail: "AnkiConnect", marker: "AN" },
     { id: "appearance", label: "Appearance", detail: "Reader theme", marker: "AP" },
+    { id: "advanced", label: "Advanced", detail: "Startup behavior", marker: "AD" },
     { id: "shortcuts", label: "Shortcuts", detail: "Keyboard and mouse", marker: "SC" },
   ];
 
@@ -268,7 +275,12 @@
         themeLabels={readerThemeLabels}
         onThemeChange={onSetReaderTheme}
       />
-    {:else}
+    {:else if activePanel === "advanced"}
+      <AdvancedPanel
+        settings={advancedSettings}
+        onReopenLastBookOnStartupChange={onSetReopenLastBookOnStartup}
+      />
+    {:else if activePanel === "shortcuts"}
       <ShortcutsPanel />
     {/if}
   </main>
