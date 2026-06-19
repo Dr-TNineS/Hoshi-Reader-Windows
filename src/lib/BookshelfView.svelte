@@ -107,13 +107,6 @@
     return navItems.find((item) => item.id === panel)?.label ?? "Library";
   }
 
-  function panelSubtitle(panel: ShelfPanel): string {
-    if (panel === "library") return "Open an EPUB or continue from your recent reading list.";
-    if (panel === "dictionaries") return "Manage imported dictionaries used by reader lookup.";
-    if (panel === "anki") return "Configure AnkiConnect for note creation from lookup results.";
-    return "Choose the reader theme used when books are open.";
-  }
-
   function coverUrl(book: BookRecord): string {
     return book.coverPath ? convertFileSrc(book.coverPath) : "";
   }
@@ -179,19 +172,13 @@
     </nav>
 
     <div class="side-footer">
-      <button class="open-epub" disabled={bookImportBusy} onclick={onOpenBook}>
-        {bookImportBusy ? "Importing..." : "Open EPUB"}
-      </button>
-      <p>{books.length} recent {books.length === 1 ? "book" : "books"}</p>
     </div>
   </aside>
 
   <main class="panel-shell">
     <header class="panel-head">
       <div>
-        <p class="eyebrow">{panelTitle(activePanel)}</p>
         <h2>{panelTitle(activePanel)}</h2>
-        <p class="subtitle">{panelSubtitle(activePanel)}</p>
       </div>
       {#if activePanel === "library"}
         <button class="open-epub head-open" disabled={bookImportBusy} onclick={onOpenBook}>
@@ -207,21 +194,9 @@
 
     {#if activePanel === "library"}
       <section class="library-panel">
-        <div class="library-summary">
-          <div>
-            <p class="summary-label">Recent Books</p>
-            <p class="summary-value">{books.length}</p>
-          </div>
-          <div>
-            <p class="summary-label">Import</p>
-            <p class="summary-note">EPUB files open through the existing library flow.</p>
-          </div>
-        </div>
-
         <div class="recent">
           <div class="section-head">
             <h3>Recent Books</h3>
-            <p>Continue reading or remove records from the local shelf.</p>
           </div>
           {#if books.length === 0}
             <div class="empty-state">
@@ -315,31 +290,22 @@
   .nav-copy span, .nav-copy small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .nav-copy span { font-size: 14px; font-weight: 600; }
   .nav-copy small { color: var(--app-muted); font-size: 11px; }
-  .side-footer { margin-top: auto; display: flex; flex-direction: column; gap: 10px; padding-top: 16px; border-top: 1px solid var(--app-border); }
-  .side-footer p { color: var(--app-muted); font-size: 12px; }
+  .side-footer { margin-top: auto; }
   .open-epub { min-height: 40px; padding: 0 16px; background: var(--app-primary); color: var(--app-bg); border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 650; }
   .open-epub:hover:not(:disabled) { background: var(--app-primary-hover); }
   .open-epub:disabled { cursor: default; opacity: 0.7; }
   .panel-shell { min-width: 0; height: 100vh; display: flex; flex-direction: column; gap: 18px; padding: 30px clamp(24px, 4vw, 56px); overflow-y: auto; }
   .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
-  .eyebrow { margin-bottom: 5px; color: var(--app-primary); font-size: 11px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
   h2 { color: var(--app-text); font-size: 30px; font-weight: 650; letter-spacing: 0; line-height: 1.15; }
-  .subtitle { margin-top: 7px; color: var(--app-muted); font-size: 14px; line-height: 1.4; }
   .head-open { flex-shrink: 0; min-width: 132px; }
   .status-stack { display: flex; flex-direction: column; gap: 8px; }
   .message { padding: 10px 12px; border: 1px solid var(--app-border); border-radius: 8px; font-size: 13px; line-height: 1.4; white-space: pre-wrap; }
   .error-message { color: var(--app-error); background: color-mix(in srgb, var(--app-error) 10%, var(--app-bg)); }
   .status-message { color: var(--app-status); background: color-mix(in srgb, var(--app-status) 10%, var(--app-bg)); }
   .library-panel { min-width: 0; display: flex; flex-direction: column; gap: 20px; }
-  .library-summary { display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr); gap: 12px; }
-  .library-summary > div { min-width: 0; padding: 14px 16px; background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 8px; }
-  .summary-label { color: var(--app-muted); font-size: 12px; font-weight: 650; text-transform: uppercase; }
-  .summary-value { margin-top: 7px; color: var(--app-text); font-size: 30px; font-weight: 650; line-height: 1; }
-  .summary-note { margin-top: 7px; color: var(--app-muted); font-size: 13px; line-height: 1.4; }
   .recent { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
   .section-head { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
   h3 { color: var(--app-text); font-size: 16px; font-weight: 650; letter-spacing: 0; }
-  .section-head p { color: var(--app-muted); font-size: 12px; }
   .empty-state { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 16px; align-items: center; min-height: 148px; padding: 22px; background: var(--app-surface); border: 1px dashed var(--app-border); border-radius: 8px; }
   .empty-mark { width: 80px; height: 112px; display: flex; align-items: center; justify-content: center; background: linear-gradient(160deg, var(--app-control), var(--app-bg)); color: var(--app-muted); border: 1px solid var(--app-border); border-radius: 6px; font-size: 12px; font-weight: 700; }
   .empty-state p { color: var(--app-text); font-size: 15px; font-weight: 650; }
@@ -363,15 +329,12 @@
     .bookshelf { grid-template-columns: 74px minmax(0, 1fr); }
     .sidebar { padding: 14px 8px; gap: 18px; align-items: center; }
     .brand { padding: 0; }
-    .brand div:not(.brand-mark), .nav-copy, .side-footer p { display: none; }
+    .brand div:not(.brand-mark), .nav-copy { display: none; }
     .side-nav button { grid-template-columns: 1fr; padding: 8px; }
     .nav-marker { margin: 0 auto; }
-    .side-footer { width: 100%; }
-    .side-footer .open-epub { min-width: 0; padding: 0; font-size: 11px; }
     .panel-shell { padding: 22px 16px; }
     .panel-head { flex-direction: column; }
     .head-open { width: 100%; }
-    .library-summary { grid-template-columns: 1fr; }
     .section-head { align-items: start; flex-direction: column; gap: 4px; }
     .book-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 14px; }
     .book-forget { opacity: 1; }
