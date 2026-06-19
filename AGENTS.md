@@ -101,6 +101,7 @@
   cargo check
 - Reader layout 改动还需要 runtime visual check，覆盖 pagination、final-page alignment、image/cover behavior、keyboard navigation。
 - Commit message 使用 Conventional Commits。
+- 每完成一个可独立交付的功能并通过相应验证后，自动创建一次 commit；除非用户明确要求暂不提交。
 - 不要把无关的既有 worktree 改动混进 commit。
 - 用户要求 commit 时，只 stage 本次完成任务相关文件。
 - build + zip：npm run package

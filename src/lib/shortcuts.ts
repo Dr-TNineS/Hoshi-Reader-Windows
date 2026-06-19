@@ -1,0 +1,63 @@
+export type ShortcutBinding = {
+  tokens: readonly string[];
+};
+
+export type ShortcutAction = {
+  id: string;
+  label: string;
+  detail?: string;
+  bindings: readonly ShortcutBinding[];
+};
+
+export type ShortcutGroup = {
+  id: string;
+  label: string;
+  actions: readonly ShortcutAction[];
+};
+
+export const shortcutGroups: readonly ShortcutGroup[] = [
+  {
+    id: "reader",
+    label: "Reader",
+    actions: [
+      {
+        id: "next-page",
+        label: "Next page",
+        bindings: [{ tokens: ["←"] }, { tokens: ["Wheel down"] }],
+      },
+      {
+        id: "previous-page",
+        label: "Previous page",
+        bindings: [{ tokens: ["→"] }, { tokens: ["Wheel up"] }],
+      },
+      {
+        id: "next-chapter",
+        label: "Next chapter",
+        bindings: [{ tokens: ["Ctrl", "←"] }, { tokens: ["Ctrl", "Wheel down"] }],
+      },
+      {
+        id: "previous-chapter",
+        label: "Previous chapter",
+        bindings: [{ tokens: ["Ctrl", "→"] }, { tokens: ["Ctrl", "Wheel up"] }],
+      },
+      {
+        id: "lookup-at-pointer",
+        label: "Look up text at pointer",
+        detail: "Hold Shift while hovering over reader text.",
+        bindings: [{ tokens: ["Shift", "Hover"] }],
+      },
+      {
+        id: "clear-selection",
+        label: "Clear selection and lookup",
+        detail: "When a reader selection is active.",
+        bindings: [{ tokens: ["Esc"] }],
+      },
+      {
+        id: "return-to-library",
+        label: "Return to Library",
+        detail: "When no reader selection is active.",
+        bindings: [{ tokens: ["Esc"] }],
+      },
+    ],
+  },
+];

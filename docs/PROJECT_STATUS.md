@@ -43,6 +43,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Recent books render as a cover grid with EPUB cover, progress bar, percent, and title when cover data is available.
   - EPUB import entry.
   - Minimal Appearance panel with HSA-aligned Light and Dark reader themes.
+  - Read-only Shortcuts panel listing the currently implemented Reader keyboard and mouse shortcuts by feature group.
   - Resume from saved progress.
   - Tauri startup attempts to restore the last reader session.
   - Tauri reading state stores recent books, progress, and session in `reading/state.json`.

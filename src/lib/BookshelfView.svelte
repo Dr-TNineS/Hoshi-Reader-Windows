@@ -5,6 +5,7 @@
   import AppearancePanel from "./AppearancePanel.svelte";
   import type { ReaderAppearance, ReaderTheme } from "./appearance";
   import DictionaryManagementPanel from "./DictionaryManagementPanel.svelte";
+  import ShortcutsPanel from "./ShortcutsPanel.svelte";
   import { bookRecordKey, type BookRecord } from "./storage";
 
   let {
@@ -91,7 +92,7 @@
     onSetAnkiAudioConfig: (audioEnabled: boolean, audioSources: AnkiAudioSource[], audioDownloadTimeoutMs: number) => void;
   } = $props();
 
-  type ShelfPanel = "library" | "dictionaries" | "anki" | "appearance";
+  type ShelfPanel = "library" | "dictionaries" | "anki" | "appearance" | "shortcuts";
 
   let activePanel = $state<ShelfPanel>("library");
   let failedCoverKeys = $state<Set<string>>(new Set());
@@ -101,6 +102,7 @@
     { id: "dictionaries", label: "Dictionaries", detail: "Lookup imports", marker: "DI" },
     { id: "anki", label: "Anki", detail: "AnkiConnect", marker: "AN" },
     { id: "appearance", label: "Appearance", detail: "Reader theme", marker: "AP" },
+    { id: "shortcuts", label: "Shortcuts", detail: "Keyboard and mouse", marker: "SC" },
   ];
 
   function panelTitle(panel: ShelfPanel): string {
@@ -260,12 +262,14 @@
         onSetFieldTemplate={onSetAnkiFieldTemplate}
         onSetAudioConfig={onSetAnkiAudioConfig}
       />
-    {:else}
+    {:else if activePanel === "appearance"}
       <AppearancePanel
         appearance={readerAppearance}
         themeLabels={readerThemeLabels}
         onThemeChange={onSetReaderTheme}
       />
+    {:else}
+      <ShortcutsPanel />
     {/if}
   </main>
 </section>
