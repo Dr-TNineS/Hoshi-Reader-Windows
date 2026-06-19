@@ -19,6 +19,8 @@ pub struct BookRecord {
     pub source_path: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub library_path: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_path: Option<String>,
     pub title: String,
     pub chapter: u32,
     pub total_chapters: u32,
@@ -297,6 +299,7 @@ mod tests {
             path: key.strip_prefix("path:").map(|value| value.to_string()),
             source_path: None,
             library_path: None,
+            cover_path: None,
             title: key.to_string(),
             chapter: 0,
             total_chapters: 1,

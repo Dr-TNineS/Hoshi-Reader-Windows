@@ -18,6 +18,8 @@ pub struct LibraryBookRecord {
     pub title: Option<String>,
     pub source_path: String,
     pub library_path: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cover_path: Option<String>,
     pub content_hash: String,
     pub size_bytes: u64,
     pub imported_at: u64,
@@ -59,18 +61,28 @@ fn import_epub_into_library(root: &Path, source: &Path) -> Result<LibraryBookRec
     let library_file = book_dir.join("book.epub");
 
     let mut manifest = read_manifest(root)?;
-    if let Some(existing) = manifest
+    if let Some(existing_index) = manifest
         .books
         .iter()
-        .find(|book| book.book_id == book_id && Path::new(&book.library_path).is_file())
+        .position(|book| book.book_id == book_id && Path::new(&book.library_path).is_file())
     {
-        return Ok(existing.clone());
+        let mut existing = manifest.books[existing_index].clone();
+        let changed = ensure_record_cover_path(&mut existing);
+        if changed {
+            manifest.books[existing_index] = existing.clone();
+            write_manifest(root, &manifest)?;
+        }
+        return Ok(existing);
     }
 
     import_epub_file_staged(source, &book_dir, &library_file, &book_id)?;
-    let title = EpubBook::open(&library_file.to_string_lossy())
-        .ok()
-        .and_then(|book| book.title());
+    let (title, cover_path) = EpubBook::open(&library_file.to_string_lossy())
+        .map(|book| {
+            let title = book.title();
+            let cover_path = copy_cover_image(&book, &book_dir).ok().flatten();
+            (title, cover_path)
+        })
+        .unwrap_or((None, None));
     let size_bytes = fs::metadata(&library_file)
         .map_err(|e| format!("Cannot read imported EPUB metadata: {e}"))?
         .len();
@@ -80,6 +92,7 @@ fn import_epub_into_library(root: &Path, source: &Path) -> Result<LibraryBookRec
         title,
         source_path: source.to_string_lossy().into_owned(),
         library_path: library_file.to_string_lossy().to_string(),
+        cover_path,
         content_hash,
         size_bytes,
         imported_at: now_secs()?,
@@ -99,10 +112,32 @@ fn import_epub_into_library(root: &Path, source: &Path) -> Result<LibraryBookRec
     Ok(record)
 }
 
+fn copy_cover_image(book: &EpubBook, book_dir: &Path) -> Result<Option<String>, String> {
+    let Some(source) = book.cover_absolute_path() else {
+        return Ok(None);
+    };
+    if !source.is_file() {
+        return Ok(None);
+    }
+
+    let extension = source
+        .extension()
+        .and_then(|value| value.to_str())
+        .filter(|value| !value.trim().is_empty())
+        .unwrap_or("img");
+    let destination = book_dir.join(format!("cover.{extension}"));
+    fs::copy(&source, &destination).map_err(|e| format!("Cannot copy EPUB cover image: {e}"))?;
+    Ok(Some(destination.to_string_lossy().into_owned()))
+}
+
 #[tauri::command]
 pub fn library_list_books(app: AppHandle) -> Result<Vec<LibraryBookRecord>, String> {
     let root = library_root(&app)?;
-    Ok(read_manifest(&root)?.books)
+    let mut manifest = read_manifest(&root)?;
+    if ensure_manifest_cover_paths(&mut manifest) {
+        write_manifest(&root, &manifest)?;
+    }
+    Ok(manifest.books)
 }
 
 #[tauri::command]
@@ -173,6 +208,37 @@ fn forget_library_book(root: &Path, book_id: &str) -> Result<Vec<LibraryBookReco
     }
     write_manifest(root, &manifest)?;
     Ok(manifest.books)
+}
+
+fn ensure_manifest_cover_paths(manifest: &mut LibraryManifest) -> bool {
+    manifest
+        .books
+        .iter_mut()
+        .map(ensure_record_cover_path)
+        .any(|changed| changed)
+}
+
+fn ensure_record_cover_path(record: &mut LibraryBookRecord) -> bool {
+    if record
+        .cover_path
+        .as_ref()
+        .is_some_and(|cover_path| Path::new(cover_path).is_file())
+    {
+        return false;
+    }
+
+    let Some(book_dir) = Path::new(&record.library_path).parent() else {
+        return false;
+    };
+    let cover_path = EpubBook::open(&record.library_path)
+        .ok()
+        .and_then(|book| copy_cover_image(&book, book_dir).ok().flatten());
+
+    if record.cover_path == cover_path {
+        return false;
+    }
+    record.cover_path = cover_path;
+    true
 }
 
 fn library_root(app: &AppHandle) -> Result<PathBuf, String> {
@@ -413,6 +479,66 @@ mod tests {
         zip.finish().unwrap();
     }
 
+    fn write_test_epub_with_cover(path: &Path, title: &str) {
+        let file = fs::File::create(path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = FileOptions::default();
+
+        zip.start_file("mimetype", options).unwrap();
+        zip.write_all(b"application/epub+zip").unwrap();
+        zip.start_file("META-INF/container.xml", options).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles>
+    <rootfile full-path="content.opf" media-type="application/oebps-package+xml"/>
+  </rootfiles>
+</container>"#,
+        )
+        .unwrap();
+        zip.start_file("content.opf", options).unwrap();
+        zip.write_all(
+            format!(
+                r#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0" unique-identifier="bookid">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/">
+    <dc:identifier id="bookid">test-book</dc:identifier>
+    <dc:title>{title}</dc:title>
+    <dc:language>en</dc:language>
+  </metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="cover" href="images/cover.jpg" media-type="image/jpeg" properties="cover-image"/>
+    <item id="chapter1" href="text/chapter1.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="chapter1"/>
+  </spine>
+</package>"#
+            )
+            .as_bytes(),
+        )
+        .unwrap();
+        zip.start_file("nav.xhtml", options).unwrap();
+        zip.write_all(br#"<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head><title>Nav</title></head>
+  <body><nav epub:type="toc" xmlns:epub="http://www.idpf.org/2007/ops"><ol><li><a href="text/chapter1.xhtml">Chapter</a></li></ol></nav></body>
+</html>"#).unwrap();
+        zip.start_file("text/chapter1.xhtml", options).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<html xmlns="http://www.w3.org/1999/xhtml">
+  <head><title>Chapter</title></head>
+  <body><p>Chapter one text.</p></body>
+</html>"#,
+        )
+        .unwrap();
+        zip.start_file("images/cover.jpg", options).unwrap();
+        zip.write_all(b"cover-bytes").unwrap();
+        zip.finish().unwrap();
+    }
+
     #[test]
     fn missing_manifest_lists_empty_books() {
         let root = temp_root("missing_manifest");
@@ -459,6 +585,69 @@ mod tests {
     }
 
     #[test]
+    fn import_epub_copies_cover_image_to_library_dir() {
+        let root = temp_root("cover");
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("covered.epub");
+        write_test_epub_with_cover(&source, "Covered Book");
+
+        let imported = import_epub_into_library(&root, &source).unwrap();
+        let cover_path = imported.cover_path.expect("cover path");
+
+        assert!(cover_path.ends_with("cover.jpg"));
+        assert_eq!(fs::read(&cover_path).unwrap(), b"cover-bytes");
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn duplicate_import_backfills_missing_cover_path() {
+        let root = temp_root("duplicate_cover_backfill");
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("covered.epub");
+        write_test_epub_with_cover(&source, "Covered Book");
+
+        let mut imported = import_epub_into_library(&root, &source).unwrap();
+        imported.cover_path = None;
+        write_manifest(&root, &LibraryManifest {
+            version: MANIFEST_VERSION,
+            books: vec![imported],
+        })
+        .unwrap();
+
+        let backfilled = import_epub_into_library(&root, &source).unwrap();
+
+        assert!(backfilled.cover_path.as_deref().is_some_and(|path| Path::new(path).is_file()));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn listing_books_backfills_missing_cover_path() {
+        let root = temp_root("list_cover_backfill");
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("covered.epub");
+        write_test_epub_with_cover(&source, "Covered Book");
+
+        let mut imported = import_epub_into_library(&root, &source).unwrap();
+        imported.cover_path = None;
+        write_manifest(&root, &LibraryManifest {
+            version: MANIFEST_VERSION,
+            books: vec![imported],
+        })
+        .unwrap();
+
+        let mut manifest = read_manifest(&root).unwrap();
+        assert!(ensure_manifest_cover_paths(&mut manifest));
+        write_manifest(&root, &manifest).unwrap();
+
+        let listed = read_manifest(&root).unwrap().books;
+        assert!(listed[0].cover_path.as_deref().is_some_and(|path| Path::new(path).is_file()));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn failed_import_cleans_staging_and_does_not_write_manifest() {
         let root = temp_root("failed_import");
         fs::create_dir_all(&root).unwrap();
@@ -497,6 +686,7 @@ mod tests {
                 title: Some("Missing Book".into()),
                 source_path: "source.epub".into(),
                 library_path: missing_path.to_string_lossy().into_owned(),
+                cover_path: None,
                 content_hash: "abc".into(),
                 size_bytes: 123,
                 imported_at: 1,
@@ -525,6 +715,7 @@ mod tests {
                     title: Some("Forget Me".into()),
                     source_path: "source.epub".into(),
                     library_path: book_dir.join("book.epub").to_string_lossy().into_owned(),
+                    cover_path: None,
                     content_hash: "abc".into(),
                     size_bytes: 123,
                     imported_at: 1,
@@ -539,6 +730,7 @@ mod tests {
                         .join("book.epub")
                         .to_string_lossy()
                         .into_owned(),
+                    cover_path: None,
                     content_hash: "keep".into(),
                     size_bytes: 456,
                     imported_at: 2,

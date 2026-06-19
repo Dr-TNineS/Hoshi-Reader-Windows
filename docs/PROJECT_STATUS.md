@@ -33,13 +33,14 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - `library_import_epub` copies EPUBs to `library/books/<book_id>/book.epub`.
   - `library/manifest.json` records app-owned books.
   - `book_id` is based on EPUB content hash.
+  - EPUB import copies the detected cover image to `library/books/<book_id>/cover.<ext>` when available and records `coverPath`.
   - EPUB import uses a staging directory and verifies the copied EPUB before writing the manifest.
   - Re-importing identical EPUB content reuses the same app-owned record when the library file still exists.
   - New records open by `book_id` rather than original source path.
   - Opening an app-owned record with a missing `book.epub` returns a scoped re-import error for that book.
   - Bookshelf records can be forgotten; app-owned records also remove the imported EPUB copy and manifest entry without touching the original source EPUB.
 - Bookshelf:
-  - Minimal recent-books list.
+  - Recent books render as a cover grid with EPUB cover, progress bar, percent, and title when cover data is available.
   - EPUB import entry.
   - Minimal Appearance panel with HSA-aligned Light and Dark reader themes.
   - Resume from saved progress.

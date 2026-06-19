@@ -2,7 +2,7 @@ use crate::epub::sanitizer::sanitize_css_files;
 use crate::epub::types::*;
 use regex::Regex;
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::LazyLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -76,6 +76,12 @@ impl EpubBook {
             .manifest()
             .cover_image()
             .map(|e| e.href_raw().to_string())
+    }
+
+    pub fn cover_absolute_path(&self) -> Option<PathBuf> {
+        let cover = self.epub.manifest().cover_image()?;
+        let href = cover.href().decode();
+        contained_cover_path(&self.root_dir, &self.root_dir.join(href.trim_start_matches('/')))
     }
 
     pub fn manifest(&self) -> Vec<ManifestItem> {
@@ -176,6 +182,16 @@ impl EpubBook {
             href: entry.href_raw().map(|h| h.to_string()),
             children: entry.iter().map(|e| Self::convert_toc_entry(&e)).collect(),
         }
+    }
+}
+
+fn contained_cover_path(root: &Path, candidate: &Path) -> Option<PathBuf> {
+    let root = fs::canonicalize(root).ok()?;
+    let candidate = fs::canonicalize(candidate).ok()?;
+    if candidate.is_file() && candidate.starts_with(root) {
+        Some(candidate)
+    } else {
+        None
     }
 }
 
@@ -320,6 +336,24 @@ mod tests {
         drop(second);
         assert!(!second_root.exists());
         let _ = fs::remove_file(epub_path);
+    }
+
+    #[test]
+    fn contained_cover_path_rejects_missing_and_escaped_files() {
+        let root = std::env::temp_dir().join(format!("hoshi_cover_guard_{}", test_stamp()));
+        let images = root.join("images");
+        fs::create_dir_all(&images).unwrap();
+        let inside = images.join("cover.jpg");
+        fs::write(&inside, b"cover").unwrap();
+        let outside = root.with_extension("outside.jpg");
+        fs::write(&outside, b"outside").unwrap();
+
+        assert_eq!(contained_cover_path(&root, &inside), Some(inside.canonicalize().unwrap()));
+        assert_eq!(contained_cover_path(&root, &images.join("missing.jpg")), None);
+        assert_eq!(contained_cover_path(&root, &outside), None);
+
+        let _ = fs::remove_dir_all(&root);
+        let _ = fs::remove_file(&outside);
     }
 
     #[test]

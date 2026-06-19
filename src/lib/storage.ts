@@ -10,6 +10,7 @@ export type LibraryBookRecord = {
   title: string | null;
   sourcePath: string;
   libraryPath: string;
+  coverPath?: string | null;
   contentHash: string;
   sizeBytes: number;
   importedAt: number;
@@ -20,6 +21,7 @@ export type BookLocator = {
   path?: string;
   sourcePath?: string;
   libraryPath?: string;
+  coverPath?: string | null;
 };
 
 export type SavedSession = {
@@ -39,6 +41,7 @@ export type BookRecord = {
   path?: string;
   sourcePath?: string;
   libraryPath?: string;
+  coverPath?: string | null;
   title: string;
   chapter: number;
   totalChapters: number;
@@ -170,24 +173,37 @@ export function locatorFromLibraryBook(book: LibraryBookRecord): BookLocator {
     bookId: book.bookId,
     sourcePath: book.sourcePath,
     libraryPath: book.libraryPath,
+    coverPath: book.coverPath,
   };
 }
 
 export function mergeLibraryBooks(books: BookRecord[], libraryBooks: LibraryBookRecord[]): BookRecord[] {
-  const existingKeys = new Set(books.map(bookRecordKey));
+  const libraryByKey = new Map(libraryBooks.map((book) => [locatorKey(locatorFromLibraryBook(book)), book]));
+  const mergedExisting = books.map((book) => {
+    const libraryBook = libraryByKey.get(bookRecordKey(book));
+    if (!libraryBook) return book;
+    return {
+      ...book,
+      sourcePath: book.sourcePath ?? libraryBook.sourcePath,
+      libraryPath: book.libraryPath ?? libraryBook.libraryPath,
+      coverPath: book.coverPath ?? libraryBook.coverPath,
+    };
+  });
+  const existingKeys = new Set(mergedExisting.map(bookRecordKey));
   const importedRecords = libraryBooks
     .filter((book) => !existingKeys.has(locatorKey(locatorFromLibraryBook(book))))
     .map((book) => ({
       bookId: book.bookId,
       sourcePath: book.sourcePath,
       libraryPath: book.libraryPath,
+      coverPath: book.coverPath,
       title: book.title || fileName(book.sourcePath || book.libraryPath),
       chapter: 0,
       totalChapters: 0,
       lastOpened: book.importedAt * 1000,
     }));
 
-  return [...books, ...importedRecords].slice(0, MAX_BOOKS);
+  return [...mergedExisting, ...importedRecords].slice(0, MAX_BOOKS);
 }
 
 export function buildReadingProgressUpdate(
@@ -226,6 +242,7 @@ export function buildReadingProgressUpdate(
     path: locator.path,
     sourcePath: locator.sourcePath,
     libraryPath: locator.libraryPath,
+    coverPath: locator.coverPath,
     title: bookMeta.title || fileName(displayPath(locator)),
     chapter: safeChapter,
     totalChapters,
