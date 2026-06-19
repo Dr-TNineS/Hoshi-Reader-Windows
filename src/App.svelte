@@ -1,17 +1,10 @@
 <script lang="ts">
   import { invoke, isTauri as isTauriRuntime } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { loadAdvancedSettings, saveAdvancedSettings, type AdvancedSettings } from "./lib/advanced-settings";
   import { ankiHandlebarOptions, applyKnownNoteTypeDefaultsIfUnmapped, extractDictionaryMediaReferences, upsertFieldTemplate } from "./lib/anki-field-renderer";
   import BookshelfView from "./lib/BookshelfView.svelte";
   import {
-    loadReaderAppearance,
-    readerAppearanceCssVars,
-    readerAppearancePalette,
     readerThemeLabels,
-    saveReaderAppearance,
-    type ReaderAppearance,
-    type ReaderTheme,
   } from "./lib/appearance";
   import { clearDictionaryStyleCache } from "./lib/dictionary-style-cache";
   import { dictionaryBatchStatusLabel } from "./lib/dictionary-import-status";
@@ -21,6 +14,7 @@
   import { clearLookupHighlight, READER_LOOKUP_HIGHLIGHT } from "./lib/lookup-highlight";
   import Reader from "./lib/reader/Reader.svelte";
   import ReaderControls from "./lib/ReaderControls.svelte";
+  import { createSettingsState } from "./lib/state/settings.svelte";
   import {
     buildReadingProgressUpdate,
     clampUnit,
@@ -69,8 +63,7 @@
   let readerSelection = $state<ReaderSelection | null>(null);
   let readerLookupHighlightText = $state("");
   let lookupPopups = $state<LookupPopupItem[]>([]);
-  let readerAppearance = $state<ReaderAppearance>(loadReaderAppearance());
-  let advancedSettings = $state<AdvancedSettings>(loadAdvancedSettings());
+  const settings = createSettingsState();
   let showAppearancePanel = $state(false);
   let lookupRequestId = 0;
   let showToc = $state(false);
@@ -97,8 +90,6 @@
 
   let tocEntries = $derived(meta ? flattenToc(meta.toc, meta) : []);
   let chapterBookInfo = $derived(meta?.book_info.chapter_info[chapterIndex] ?? null);
-  let appearancePalette = $derived(readerAppearancePalette(readerAppearance));
-  let appearanceVars = $derived(readerAppearanceCssVars(appearancePalette));
   let ankiTemplateOptions = $derived(ankiHandlebarOptions(dictionaryList.map((dictionary) => dictionary.title)));
 
   // Initialize persisted reading state once. Returning to the shelf should stay
@@ -107,7 +98,7 @@
     if (triedStartup) return;
     triedStartup = true;
     if (!isTauriRuntime()) return;
-    const shouldReopenLastBook = advancedSettings.reopenLastBookOnStartup;
+    const shouldReopenLastBook = settings.advancedSettings.reopenLastBookOnStartup;
 
     (async () => {
       try {
@@ -147,19 +138,6 @@
     if (!isTauriRuntime()) return;
     void loadAnkiSettings();
   });
-
-  $effect(() => {
-    saveReaderAppearance(readerAppearance);
-  });
-
-  function setReaderTheme(theme: ReaderTheme) {
-    readerAppearance = { ...readerAppearance, theme };
-  }
-
-  function setReopenLastBookOnStartup(enabled: boolean) {
-    advancedSettings = { ...advancedSettings, reopenLastBookOnStartup: enabled };
-    saveAdvancedSettings(advancedSettings);
-  }
 
   function saveProgress(
     locator: BookLocator,
@@ -1020,7 +998,7 @@
 
 </script>
 
-<main class="app" data-theme={readerAppearance.theme} style={appearanceVars}>
+<main class="app" data-theme={settings.readerAppearance.theme} style={settings.appearanceVars}>
   {#if view === "bookshelf"}
     <BookshelfView
       {books}
@@ -1029,9 +1007,9 @@
       {dictionaryBusy}
       {bookImportBusy}
       {showAppearancePanel}
-      {readerAppearance}
+      readerAppearance={settings.readerAppearance}
       {readerThemeLabels}
-      {advancedSettings}
+      advancedSettings={settings.advancedSettings}
       {showDictionaryManager}
       {dictionaryList}
       {dictionaryListStatus}
@@ -1049,8 +1027,8 @@
       onOpenBook={openBook}
       onContinueBook={continueBook}
       onForgetBook={forgetBook}
-      onSetReaderTheme={setReaderTheme}
-      onSetReopenLastBookOnStartup={setReopenLastBookOnStartup}
+      onSetReaderTheme={settings.setReaderTheme}
+      onSetReopenLastBookOnStartup={settings.setReopenLastBookOnStartup}
       onRefreshDictionaries={refreshDictionaries}
       onImportDictionary={importDictionary}
       onImportDictionaryFolder={importDictionaryFolder}
@@ -1079,7 +1057,7 @@
       initialProgress={readerInitialProgress}
       chapterStartChars={chapterBookInfo?.current_total ?? 0}
       totalBookChars={meta?.book_info.character_count ?? 0}
-      {appearancePalette}
+      appearancePalette={settings.appearancePalette}
       lookupHighlightText={readerLookupHighlightText}
       onProgressChange={handleReaderProgress}
       onSelectionChange={handleReaderSelection}

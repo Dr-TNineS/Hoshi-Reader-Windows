@@ -45,6 +45,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Minimal Appearance panel with HSA-aligned Light and Dark reader themes.
   - Advanced panel with a default-on option to reopen the last reading session at startup.
   - Bits UI provides the first headless UI primitives for the Advanced switch and dictionary Tabs, enabled switches, and delete confirmation dialog; shared CSS variables define non-invasive control tokens without changing Reader layout styles.
+  - Appearance and Advanced settings state is coordinated by a Svelte 5 runes controller in `src/lib/state/settings.svelte.ts`; persistence remains delegated to the existing appearance and Advanced storage modules.
   - The Advanced startup preference is stored locally in browser `localStorage`.
   - Read-only Shortcuts panel listing the currently implemented Reader keyboard and mouse shortcuts by feature group.
   - Resume from saved progress.
@@ -180,6 +181,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Frontend production build: `npm run build`
 - AnkiConnect panel regression probe: `npm run check:anki-connect`
 - Dictionary management regression probe: `npm run check:dictionary-management`
+- Appearance/Advanced settings controller probe: `npm run check:settings-state`
 - Lookup popup regression probe: `npm run check:lookup-popup`
 - Reader visual regression probe: `npm run check:reader-visual`
 - Rust command/backend changes: `cd src-tauri; cargo check`

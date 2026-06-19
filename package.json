@@ -11,6 +11,7 @@
     "check:dictionary-management": "node scripts/dictionary-management-check.mjs",
     "check:lookup-popup": "node scripts/lookup-popup-check.mjs",
     "check:reader-visual": "node scripts/reader-visual-check.mjs",
+    "check:settings-state": "node scripts/settings-state-check.mjs",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
     "package": "powershell -ExecutionPolicy Bypass -File scripts/package-portable.ps1"
   },
