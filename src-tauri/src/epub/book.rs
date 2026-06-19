@@ -78,6 +78,12 @@ impl EpubBook {
             .map(|e| e.href_raw().to_string())
     }
 
+    pub fn cover_absolute_path(&self) -> Option<PathBuf> {
+        let cover = self.epub.manifest().cover_image()?;
+        let href = cover.href().decode();
+        Some(self.root_dir.join(href.trim_start_matches('/')))
+    }
+
     pub fn manifest(&self) -> Vec<ManifestItem> {
         self.epub
             .manifest()

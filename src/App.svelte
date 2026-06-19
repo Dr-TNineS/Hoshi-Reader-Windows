@@ -160,7 +160,18 @@
     progress: ReaderProgress | null = currentReaderProgress,
     chapterProgressFallback = 0,
   ) {
-    const update = buildReadingProgressUpdate(locator, bookMeta, chapter, progress, chapterProgressFallback);
+    const existingBook = books.find((book) => (
+      locator.bookId
+        ? book.bookId === locator.bookId
+        : book.path === locator.path
+    ));
+    const update = buildReadingProgressUpdate(
+      { ...locator, coverPath: locator.coverPath ?? existingBook?.coverPath },
+      bookMeta,
+      chapter,
+      progress,
+      chapterProgressFallback,
+    );
     books = upsertReadingProgressBook(books, update.record);
     const saveVersion = ++progressSaveVersion;
     void persistReadingProgress(update.record, update.session, isTauriRuntime())

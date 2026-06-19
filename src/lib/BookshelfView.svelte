@@ -1,10 +1,11 @@
 <script lang="ts">
+  import { convertFileSrc } from "@tauri-apps/api/core";
   import AnkiConnectPanel from "./AnkiConnectPanel.svelte";
   import type { AnkiAudioSource, AnkiSettings, DictionaryManifestEntry, DictionaryStatus } from "./types";
   import AppearancePanel from "./AppearancePanel.svelte";
   import type { ReaderAppearance, ReaderTheme } from "./appearance";
   import DictionaryManagementPanel from "./DictionaryManagementPanel.svelte";
-  import { bookRecordKey, bookRecordPath, type BookRecord } from "./storage";
+  import { bookRecordKey, type BookRecord } from "./storage";
 
   let {
     books,
@@ -93,6 +94,7 @@
   type ShelfPanel = "library" | "dictionaries" | "anki" | "appearance";
 
   let activePanel = $state<ShelfPanel>("library");
+  let failedCoverKeys = $state<Set<string>>(new Set());
 
   const navItems: { id: ShelfPanel; label: string; detail: string; marker: string }[] = [
     { id: "library", label: "Library", detail: "Recent EPUBs", marker: "LI" },
@@ -112,11 +114,26 @@
     return "Choose the reader theme used when books are open.";
   }
 
-  function bookInitials(book: BookRecord): string {
-    const normalized = book.title.trim();
-    if (!normalized) return "EPUB";
-    const letters = Array.from(normalized).filter((char) => /\S/.test(char)).slice(0, 2).join("");
-    return letters || "EPUB";
+  function coverUrl(book: BookRecord): string {
+    return book.coverPath ? convertFileSrc(book.coverPath) : "";
+  }
+
+  function coverFailed(book: BookRecord): boolean {
+    return failedCoverKeys.has(bookRecordKey(book));
+  }
+
+  function markCoverFailed(book: BookRecord) {
+    failedCoverKeys = new Set([...failedCoverKeys, bookRecordKey(book)]);
+  }
+
+  function progressPercent(book: BookRecord): number {
+    const percent = book.percent ?? 0;
+    if (!Number.isFinite(percent)) return 0;
+    return Math.max(0, Math.min(percent, 100));
+  }
+
+  function progressLabel(book: BookRecord): string {
+    return `${progressPercent(book).toFixed(1)}%`;
   }
 
   function ensurePanel(panel: ShelfPanel) {
@@ -133,17 +150,6 @@
     if (panel === "appearance" && !showAppearancePanel) onToggleAppearancePanel();
   }
 
-  function progressLabel(book: BookRecord): string {
-    if (book.totalChapters <= 0) return "No chapters";
-    if ((book.totalCharacters ?? 0) > 0) {
-      return `Ch.${book.chapter + 1}/${book.totalChapters} | ${book.bookReadChars ?? 0}/${book.totalCharacters}c | ${(book.percent ?? 0).toFixed(2)}%`;
-    }
-    return `Ch.${book.chapter + 1}/${book.totalChapters}`;
-  }
-
-  function openedLabel(timestamp: number): string {
-    return new Date(timestamp).toLocaleString();
-  }
 </script>
 
 <section class="bookshelf">
@@ -230,13 +236,20 @@
               {#each books as book (bookRecordKey(book))}
                 <article class="book-card">
                   <button class="book-open" onclick={() => onContinueBook(book)}>
-                    <span class="book-cover" aria-hidden="true">{bookInitials(book)}</span>
-                    <span class="book-info">
-                      <span class="book-title">{book.title}</span>
-                      <span class="book-meta">{progressLabel(book)}</span>
-                      <span class="book-opened">Opened {openedLabel(book.lastOpened)}</span>
-                      <span class="book-path">{bookRecordPath(book)}</span>
+                    <span class="book-cover" aria-hidden="true">
+                      {#if book.coverPath && !coverFailed(book)}
+                        <img src={coverUrl(book)} alt="" loading="lazy" onerror={() => markCoverFailed(book)} />
+                      {:else}
+                        <span>EPUB</span>
+                      {/if}
                     </span>
+                    <span class="book-progress-row">
+                      <span class="book-progress" style={`--progress: ${progressPercent(book)}%`}>
+                        <span></span>
+                      </span>
+                      <span class="book-percent">{progressLabel(book)}</span>
+                    </span>
+                    <span class="book-title">{book.title}</span>
                   </button>
                   <button class="book-forget" title="Forget book" onclick={() => onForgetBook(book)}>Forget</button>
                 </article>
@@ -331,16 +344,20 @@
   .empty-mark { width: 80px; height: 112px; display: flex; align-items: center; justify-content: center; background: linear-gradient(160deg, var(--app-control), var(--app-bg)); color: var(--app-muted); border: 1px solid var(--app-border); border-radius: 6px; font-size: 12px; font-weight: 700; }
   .empty-state p { color: var(--app-text); font-size: 15px; font-weight: 650; }
   .empty-state span { display: block; margin-top: 5px; color: var(--app-muted); font-size: 13px; line-height: 1.4; }
-  .book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; padding-bottom: 20px; }
-  .book-card { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 8px; padding: 10px; background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 8px; }
-  .book-card:hover { background: var(--app-surface-hover); border-color: var(--app-muted); }
-  .book-open { min-width: 0; display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 12px; align-items: center; padding: 0; text-align: left; background: transparent; color: inherit; border: none; cursor: pointer; }
-  .book-cover { width: 58px; height: 82px; display: flex; align-items: center; justify-content: center; padding: 6px; overflow: hidden; overflow-wrap: anywhere; text-align: center; background: linear-gradient(155deg, var(--app-control), var(--app-bg)); color: var(--app-muted); border: 1px solid var(--app-border); border-radius: 6px; font-size: 13px; font-weight: 700; line-height: 1.2; }
-  .book-info { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-  .book-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-text); font-size: 15px; font-weight: 650; }
-  .book-meta, .book-opened, .book-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-muted); font-size: 12px; line-height: 1.35; }
-  .book-path { font-size: 11px; }
-  .book-forget { align-self: start; min-height: 30px; padding: 0 10px; background: var(--app-control); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 184px)); gap: 22px 18px; align-items: start; padding-bottom: 24px; }
+  .book-card { position: relative; min-width: 0; }
+  .book-open { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 0; text-align: left; background: transparent; color: inherit; border: none; cursor: pointer; }
+  .book-open:hover .book-cover { border-color: var(--app-muted); background: var(--app-surface-hover); }
+  .book-cover { position: relative; width: 100%; aspect-ratio: 0.7; display: flex; align-items: center; justify-content: center; overflow: hidden; background: linear-gradient(155deg, var(--app-control), var(--app-bg)); color: var(--app-muted); border: 1px solid var(--app-border); border-radius: 8px; box-shadow: 0 8px 22px color-mix(in srgb, #000 20%, transparent); font-size: 13px; font-weight: 700; line-height: 1.2; transition: border-color 120ms ease, background 120ms ease; }
+  .book-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .book-cover span { padding: 8px; overflow-wrap: anywhere; text-align: center; }
+  .book-progress-row { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
+  .book-progress { height: 5px; min-width: 0; overflow: hidden; background: var(--app-border); border-radius: 999px; }
+  .book-progress span { display: block; width: var(--progress); height: 100%; background: var(--app-primary); border-radius: inherit; }
+  .book-percent { color: var(--app-muted); font-size: 13px; font-weight: 650; line-height: 1; }
+  .book-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-text); font-size: 15px; line-height: 1.35; }
+  .book-forget { position: absolute; top: 8px; right: 8px; min-height: 28px; padding: 0 8px; background: color-mix(in srgb, var(--app-bg) 82%, transparent); color: var(--app-text); border: 1px solid color-mix(in srgb, var(--app-border) 80%, transparent); border-radius: 6px; cursor: pointer; font-size: 11px; opacity: 0; transition: opacity 120ms ease, background 120ms ease; }
+  .book-card:hover .book-forget, .book-forget:focus-visible { opacity: 1; }
   .book-forget:hover { background: var(--app-control-hover); }
   @media (max-width: 760px) {
     .bookshelf { grid-template-columns: 74px minmax(0, 1fr); }
@@ -356,9 +373,8 @@
     .head-open { width: 100%; }
     .library-summary { grid-template-columns: 1fr; }
     .section-head { align-items: start; flex-direction: column; gap: 4px; }
-    .book-grid { grid-template-columns: 1fr; }
-    .book-card { grid-template-columns: minmax(0, 1fr); }
-    .book-forget { justify-self: end; }
+    .book-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 14px; }
+    .book-forget { opacity: 1; }
     .empty-state { grid-template-columns: 1fr; }
   }
 </style>
