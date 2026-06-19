@@ -170,9 +170,6 @@
         </button>
       {/each}
     </nav>
-
-    <div class="side-footer">
-    </div>
   </aside>
 
   <main class="panel-shell">
@@ -290,7 +287,6 @@
   .nav-copy span, .nav-copy small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .nav-copy span { font-size: 14px; font-weight: 600; }
   .nav-copy small { color: var(--app-muted); font-size: 11px; }
-  .side-footer { margin-top: auto; }
   .open-epub { min-height: 40px; padding: 0 16px; background: var(--app-primary); color: var(--app-bg); border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 650; }
   .open-epub:hover:not(:disabled) { background: var(--app-primary-hover); }
   .open-epub:disabled { cursor: default; opacity: 0.7; }
