@@ -90,6 +90,49 @@
     onSetAnkiAudioConfig: (audioEnabled: boolean, audioSources: AnkiAudioSource[], audioDownloadTimeoutMs: number) => void;
   } = $props();
 
+  type ShelfPanel = "library" | "dictionaries" | "anki" | "appearance";
+
+  let activePanel = $state<ShelfPanel>("library");
+
+  const navItems: { id: ShelfPanel; label: string; detail: string; marker: string }[] = [
+    { id: "library", label: "Library", detail: "Recent EPUBs", marker: "LI" },
+    { id: "dictionaries", label: "Dictionaries", detail: "Lookup imports", marker: "DI" },
+    { id: "anki", label: "Anki", detail: "AnkiConnect", marker: "AN" },
+    { id: "appearance", label: "Appearance", detail: "Reader theme", marker: "AP" },
+  ];
+
+  function panelTitle(panel: ShelfPanel): string {
+    return navItems.find((item) => item.id === panel)?.label ?? "Library";
+  }
+
+  function panelSubtitle(panel: ShelfPanel): string {
+    if (panel === "library") return "Open an EPUB or continue from your recent reading list.";
+    if (panel === "dictionaries") return "Manage imported dictionaries used by reader lookup.";
+    if (panel === "anki") return "Configure AnkiConnect for note creation from lookup results.";
+    return "Choose the reader theme used when books are open.";
+  }
+
+  function bookInitials(book: BookRecord): string {
+    const normalized = book.title.trim();
+    if (!normalized) return "EPUB";
+    const letters = Array.from(normalized).filter((char) => /\S/.test(char)).slice(0, 2).join("");
+    return letters || "EPUB";
+  }
+
+  function ensurePanel(panel: ShelfPanel) {
+    if (activePanel === panel) return;
+
+    if (activePanel === "dictionaries" && showDictionaryManager) onToggleDictionaryManager();
+    if (activePanel === "anki" && showAnkiPanel) onToggleAnkiPanel();
+    if (activePanel === "appearance" && showAppearancePanel) onToggleAppearancePanel();
+
+    activePanel = panel;
+
+    if (panel === "dictionaries" && !showDictionaryManager) onToggleDictionaryManager();
+    if (panel === "anki" && !showAnkiPanel) onToggleAnkiPanel();
+    if (panel === "appearance" && !showAppearancePanel) onToggleAppearancePanel();
+  }
+
   function progressLabel(book: BookRecord): string {
     if (book.totalChapters <= 0) return "No chapters";
     if ((book.totalCharacters ?? 0) > 0) {
@@ -104,128 +147,218 @@
 </script>
 
 <section class="bookshelf">
-  <div class="shelf-head">
-    <div>
-      <h1>Hoshi Reader</h1>
-      <p class="subtitle">Lightweight Japanese EPUB Reader</p>
+  <aside class="sidebar" aria-label="Bookshelf navigation">
+    <div class="brand">
+      <div class="brand-mark">HR</div>
+      <div>
+        <h1>Hoshi Reader</h1>
+        <p>Windows</p>
+      </div>
     </div>
-    <div class="head-actions">
-      <button class="secondary-action" onclick={onToggleAnkiPanel}>
-        Anki
-      </button>
-      <button class="secondary-action" onclick={onToggleAppearancePanel}>
-        Appearance
-      </button>
-      <button class="secondary-action" onclick={onToggleDictionaryManager}>
-        Dictionaries
-      </button>
-      <button class="ob" disabled={bookImportBusy} onclick={onOpenBook}>
+
+    <nav class="side-nav">
+      {#each navItems as item}
+        <button
+          class:active={activePanel === item.id}
+          aria-current={activePanel === item.id ? "page" : undefined}
+          onclick={() => ensurePanel(item.id)}
+        >
+          <span class="nav-marker" aria-hidden="true">{item.marker}</span>
+          <span class="nav-copy">
+            <span>{item.label}</span>
+            <small>{item.detail}</small>
+          </span>
+        </button>
+      {/each}
+    </nav>
+
+    <div class="side-footer">
+      <button class="open-epub" disabled={bookImportBusy} onclick={onOpenBook}>
         {bookImportBusy ? "Importing..." : "Open EPUB"}
       </button>
+      <p>{books.length} recent {books.length === 1 ? "book" : "books"}</p>
     </div>
-  </div>
+  </aside>
 
-  {#if error}<p class="err">{error}</p>{/if}
-  {#if dictionaryStatus}<p class="dict-status">{dictionaryStatus}</p>{/if}
-
-  {#if showAppearancePanel}
-    <AppearancePanel
-      appearance={readerAppearance}
-      themeLabels={readerThemeLabels}
-      onThemeChange={onSetReaderTheme}
-    />
-  {/if}
-
-  {#if showDictionaryManager}
-    <DictionaryManagementPanel
-      dictionaries={dictionaryList}
-      status={dictionaryListStatus}
-      error={dictionaryListError}
-      busy={dictionaryBusy}
-      onRefresh={onRefreshDictionaries}
-      onImport={onImportDictionary}
-      onImportFolder={onImportDictionaryFolder}
-      onSetEnabled={onSetDictionaryEnabled}
-      onMove={onMoveDictionary}
-      onRemove={onRemoveDictionaryImport}
-    />
-  {/if}
-
-  {#if showAnkiPanel}
-    <AnkiConnectPanel
-      settings={ankiSettings}
-      endpoint={ankiEndpointDraft}
-      status={ankiStatus}
-      error={ankiError}
-      busy={ankiBusy}
-      handlebarOptions={ankiTemplateOptions}
-      onEndpointChange={onAnkiEndpointChange}
-      onPing={onPingAnkiConnect}
-      onFetch={onFetchAnkiConfig}
-      onSave={onSaveAnkiSettings}
-      onSelectDeck={onSelectAnkiDeck}
-      onSelectNoteType={onSelectAnkiNoteType}
-      onSetFieldTemplate={onSetAnkiFieldTemplate}
-      onSetAudioConfig={onSetAnkiAudioConfig}
-    />
-  {/if}
-
-  <div class="recent">
-    <h2>Recent Books</h2>
-    {#if books.length === 0}
-      <p class="empty">No recent books yet.</p>
-    {:else}
-      <div class="book-list">
-        {#each books as book (bookRecordKey(book))}
-          <div class="book-row">
-            <button class="book-open" onclick={() => onContinueBook(book)}>
-              <span class="book-title">{book.title}</span>
-              <span class="book-meta">{progressLabel(book)} | {openedLabel(book.lastOpened)}</span>
-              <span class="book-path">{bookRecordPath(book)}</span>
-            </button>
-            <button class="book-forget" title="Forget book" onclick={() => onForgetBook(book)}>Forget</button>
-          </div>
-        {/each}
+  <main class="panel-shell">
+    <header class="panel-head">
+      <div>
+        <p class="eyebrow">{panelTitle(activePanel)}</p>
+        <h2>{panelTitle(activePanel)}</h2>
+        <p class="subtitle">{panelSubtitle(activePanel)}</p>
       </div>
-    {/if}
-  </div>
+      {#if activePanel === "library"}
+        <button class="open-epub head-open" disabled={bookImportBusy} onclick={onOpenBook}>
+          {bookImportBusy ? "Importing..." : "Open EPUB"}
+        </button>
+      {/if}
+    </header>
 
-  <p class="keys">arrow:page | Ctrl+arrow:chapter | Esc:shelf</p>
+    <div class="status-stack" aria-live="polite">
+      {#if error}<p class="message error-message">{error}</p>{/if}
+      {#if dictionaryStatus}<p class="message status-message">{dictionaryStatus}</p>{/if}
+    </div>
+
+    {#if activePanel === "library"}
+      <section class="library-panel">
+        <div class="library-summary">
+          <div>
+            <p class="summary-label">Recent Books</p>
+            <p class="summary-value">{books.length}</p>
+          </div>
+          <div>
+            <p class="summary-label">Import</p>
+            <p class="summary-note">EPUB files open through the existing library flow.</p>
+          </div>
+        </div>
+
+        <div class="recent">
+          <div class="section-head">
+            <h3>Recent Books</h3>
+            <p>Continue reading or remove records from the local shelf.</p>
+          </div>
+          {#if books.length === 0}
+            <div class="empty-state">
+              <div class="empty-mark">EPUB</div>
+              <div>
+                <p>No recent books yet.</p>
+                <span>Use Open EPUB to import a book and start the reading flow.</span>
+              </div>
+            </div>
+          {:else}
+            <div class="book-grid">
+              {#each books as book (bookRecordKey(book))}
+                <article class="book-card">
+                  <button class="book-open" onclick={() => onContinueBook(book)}>
+                    <span class="book-cover" aria-hidden="true">{bookInitials(book)}</span>
+                    <span class="book-info">
+                      <span class="book-title">{book.title}</span>
+                      <span class="book-meta">{progressLabel(book)}</span>
+                      <span class="book-opened">Opened {openedLabel(book.lastOpened)}</span>
+                      <span class="book-path">{bookRecordPath(book)}</span>
+                    </span>
+                  </button>
+                  <button class="book-forget" title="Forget book" onclick={() => onForgetBook(book)}>Forget</button>
+                </article>
+              {/each}
+            </div>
+          {/if}
+        </div>
+      </section>
+    {:else if activePanel === "dictionaries"}
+      <DictionaryManagementPanel
+        dictionaries={dictionaryList}
+        status={dictionaryListStatus}
+        error={dictionaryListError}
+        busy={dictionaryBusy}
+        onRefresh={onRefreshDictionaries}
+        onImport={onImportDictionary}
+        onImportFolder={onImportDictionaryFolder}
+        onSetEnabled={onSetDictionaryEnabled}
+        onMove={onMoveDictionary}
+        onRemove={onRemoveDictionaryImport}
+      />
+    {:else if activePanel === "anki"}
+      <AnkiConnectPanel
+        settings={ankiSettings}
+        endpoint={ankiEndpointDraft}
+        status={ankiStatus}
+        error={ankiError}
+        busy={ankiBusy}
+        handlebarOptions={ankiTemplateOptions}
+        onEndpointChange={onAnkiEndpointChange}
+        onPing={onPingAnkiConnect}
+        onFetch={onFetchAnkiConfig}
+        onSave={onSaveAnkiSettings}
+        onSelectDeck={onSelectAnkiDeck}
+        onSelectNoteType={onSelectAnkiNoteType}
+        onSetFieldTemplate={onSetAnkiFieldTemplate}
+        onSetAudioConfig={onSetAnkiAudioConfig}
+      />
+    {:else}
+      <AppearancePanel
+        appearance={readerAppearance}
+        themeLabels={readerThemeLabels}
+        onThemeChange={onSetReaderTheme}
+      />
+    {/if}
+  </main>
 </section>
 
 <style>
-  .bookshelf { width: min(920px, calc(100vw - 48px)); height: 100vh; margin: 0 auto; display: flex; flex-direction: column; justify-content: center; gap: 22px; }
-  .shelf-head { display: flex; align-items: end; justify-content: space-between; gap: 24px; }
-  h1 { font-size: 32px; font-weight: 300; letter-spacing: 4px; color: var(--app-text); }
-  h2 { font-size: 13px; font-weight: 600; color: var(--app-muted); text-transform: uppercase; }
-  .subtitle { margin-top: 6px; color: var(--app-muted); font-size: 14px; }
-  .head-actions { flex-shrink: 0; display: flex; align-items: center; gap: 10px; }
-  .ob { flex-shrink: 0; padding: 10px 22px; font-size: 14px; background: var(--app-primary); color: var(--app-bg); border: none; border-radius: 4px; cursor: pointer; }
-  .ob:hover { background: var(--app-primary-hover); }
-  .secondary-action { flex-shrink: 0; padding: 10px 16px; font-size: 14px; background: var(--app-control); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 4px; cursor: pointer; }
-  .secondary-action:hover { background: var(--app-control-hover); }
-  .ob:disabled,
-  .secondary-action:disabled { color: #858b91; cursor: default; opacity: 0.72; }
-  .ob:disabled:hover { background: var(--app-primary); }
-  .secondary-action:disabled:hover { background: var(--app-control); }
-  .err { color: var(--app-error); font-size: 13px; white-space: pre-wrap; }
-  .dict-status { color: var(--app-status); font-size: 13px; white-space: pre-wrap; }
-  .recent { display: flex; flex-direction: column; gap: 10px; min-height: 240px; }
-  .empty { padding: 28px 0; color: var(--app-muted); font-size: 13px; }
-  .book-list { display: flex; flex-direction: column; gap: 8px; max-height: 54vh; overflow-y: auto; padding-right: 4px; }
-  .book-row { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 8px; background: var(--app-surface); color: inherit; border: 1px solid var(--app-border); border-radius: 6px; }
-  .book-row:hover { background: var(--app-surface-hover); border-color: var(--app-muted); }
-  .book-open { min-width: 0; display: grid; grid-template-columns: 1fr auto; gap: 4px 16px; padding: 12px 14px; text-align: left; background: transparent; color: inherit; border: none; cursor: pointer; }
-  .book-forget { align-self: center; margin-right: 8px; padding: 5px 9px; background: var(--app-control); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 4px; cursor: pointer; font-size: 12px; }
-  .book-forget:hover { background: var(--app-control-hover); color: var(--app-text); }
-  .book-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 15px; color: var(--app-text); }
-  .book-meta { white-space: nowrap; font-size: 12px; color: var(--app-muted); }
-  .book-path { grid-column: 1 / -1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 11px; color: var(--app-muted); }
-  .keys { margin-top: 2px; font-size: 12px; color: var(--app-muted); }
-  @media (max-width: 640px) {
-    .bookshelf { width: min(100vw - 32px, 920px); }
-    .shelf-head { align-items: stretch; flex-direction: column; gap: 14px; }
-    .head-actions { flex-wrap: wrap; }
-    .head-actions button { flex: 1 1 148px; }
+  .bookshelf { width: 100vw; height: 100vh; display: grid; grid-template-columns: 248px minmax(0, 1fr); background: var(--app-bg); color: var(--app-text); overflow: hidden; }
+  .sidebar { min-width: 0; display: flex; flex-direction: column; gap: 24px; padding: 22px 16px; background: color-mix(in srgb, var(--app-surface) 76%, var(--app-bg)); border-right: 1px solid var(--app-border); }
+  .brand { min-width: 0; display: flex; align-items: center; gap: 12px; padding: 2px 4px 8px; }
+  .brand-mark { width: 42px; height: 42px; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; background: var(--app-primary); color: var(--app-bg); border-radius: 8px; font-size: 13px; font-weight: 700; letter-spacing: 0; }
+  h1 { font-size: 18px; font-weight: 650; color: var(--app-text); letter-spacing: 0; line-height: 1.2; }
+  .brand p { margin-top: 2px; color: var(--app-muted); font-size: 12px; }
+  .side-nav { display: flex; flex-direction: column; gap: 6px; }
+  .side-nav button { width: 100%; min-width: 0; display: grid; grid-template-columns: 34px minmax(0, 1fr); gap: 10px; align-items: center; padding: 9px 10px; text-align: left; background: transparent; color: var(--app-text); border: 1px solid transparent; border-radius: 8px; cursor: pointer; }
+  .side-nav button:hover { background: var(--app-control); border-color: var(--app-border); }
+  .side-nav button.active { background: var(--app-control-hover); border-color: var(--app-primary); }
+  .nav-marker { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; background: var(--app-bg); color: var(--app-muted); border: 1px solid var(--app-border); border-radius: 8px; font-size: 11px; font-weight: 700; letter-spacing: 0; }
+  .side-nav button.active .nav-marker { background: var(--app-primary); color: var(--app-bg); border-color: var(--app-primary); }
+  .nav-copy { min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+  .nav-copy span, .nav-copy small { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .nav-copy span { font-size: 14px; font-weight: 600; }
+  .nav-copy small { color: var(--app-muted); font-size: 11px; }
+  .side-footer { margin-top: auto; display: flex; flex-direction: column; gap: 10px; padding-top: 16px; border-top: 1px solid var(--app-border); }
+  .side-footer p { color: var(--app-muted); font-size: 12px; }
+  .open-epub { min-height: 40px; padding: 0 16px; background: var(--app-primary); color: var(--app-bg); border: none; border-radius: 8px; cursor: pointer; font-size: 14px; font-weight: 650; }
+  .open-epub:hover:not(:disabled) { background: var(--app-primary-hover); }
+  .open-epub:disabled { cursor: default; opacity: 0.7; }
+  .panel-shell { min-width: 0; height: 100vh; display: flex; flex-direction: column; gap: 18px; padding: 30px clamp(24px, 4vw, 56px); overflow-y: auto; }
+  .panel-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 18px; }
+  .eyebrow { margin-bottom: 5px; color: var(--app-primary); font-size: 11px; font-weight: 700; letter-spacing: 0; text-transform: uppercase; }
+  h2 { color: var(--app-text); font-size: 30px; font-weight: 650; letter-spacing: 0; line-height: 1.15; }
+  .subtitle { margin-top: 7px; color: var(--app-muted); font-size: 14px; line-height: 1.4; }
+  .head-open { flex-shrink: 0; min-width: 132px; }
+  .status-stack { display: flex; flex-direction: column; gap: 8px; }
+  .message { padding: 10px 12px; border: 1px solid var(--app-border); border-radius: 8px; font-size: 13px; line-height: 1.4; white-space: pre-wrap; }
+  .error-message { color: var(--app-error); background: color-mix(in srgb, var(--app-error) 10%, var(--app-bg)); }
+  .status-message { color: var(--app-status); background: color-mix(in srgb, var(--app-status) 10%, var(--app-bg)); }
+  .library-panel { min-width: 0; display: flex; flex-direction: column; gap: 20px; }
+  .library-summary { display: grid; grid-template-columns: minmax(180px, 240px) minmax(0, 1fr); gap: 12px; }
+  .library-summary > div { min-width: 0; padding: 14px 16px; background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 8px; }
+  .summary-label { color: var(--app-muted); font-size: 12px; font-weight: 650; text-transform: uppercase; }
+  .summary-value { margin-top: 7px; color: var(--app-text); font-size: 30px; font-weight: 650; line-height: 1; }
+  .summary-note { margin-top: 7px; color: var(--app-muted); font-size: 13px; line-height: 1.4; }
+  .recent { display: flex; flex-direction: column; gap: 12px; min-width: 0; }
+  .section-head { display: flex; align-items: end; justify-content: space-between; gap: 18px; }
+  h3 { color: var(--app-text); font-size: 16px; font-weight: 650; letter-spacing: 0; }
+  .section-head p { color: var(--app-muted); font-size: 12px; }
+  .empty-state { display: grid; grid-template-columns: 80px minmax(0, 1fr); gap: 16px; align-items: center; min-height: 148px; padding: 22px; background: var(--app-surface); border: 1px dashed var(--app-border); border-radius: 8px; }
+  .empty-mark { width: 80px; height: 112px; display: flex; align-items: center; justify-content: center; background: linear-gradient(160deg, var(--app-control), var(--app-bg)); color: var(--app-muted); border: 1px solid var(--app-border); border-radius: 6px; font-size: 12px; font-weight: 700; }
+  .empty-state p { color: var(--app-text); font-size: 15px; font-weight: 650; }
+  .empty-state span { display: block; margin-top: 5px; color: var(--app-muted); font-size: 13px; line-height: 1.4; }
+  .book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 12px; padding-bottom: 20px; }
+  .book-card { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: stretch; gap: 8px; padding: 10px; background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 8px; }
+  .book-card:hover { background: var(--app-surface-hover); border-color: var(--app-muted); }
+  .book-open { min-width: 0; display: grid; grid-template-columns: 58px minmax(0, 1fr); gap: 12px; align-items: center; padding: 0; text-align: left; background: transparent; color: inherit; border: none; cursor: pointer; }
+  .book-cover { width: 58px; height: 82px; display: flex; align-items: center; justify-content: center; padding: 6px; overflow: hidden; overflow-wrap: anywhere; text-align: center; background: linear-gradient(155deg, var(--app-control), var(--app-bg)); color: var(--app-muted); border: 1px solid var(--app-border); border-radius: 6px; font-size: 13px; font-weight: 700; line-height: 1.2; }
+  .book-info { min-width: 0; display: flex; flex-direction: column; gap: 4px; }
+  .book-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-text); font-size: 15px; font-weight: 650; }
+  .book-meta, .book-opened, .book-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-muted); font-size: 12px; line-height: 1.35; }
+  .book-path { font-size: 11px; }
+  .book-forget { align-self: start; min-height: 30px; padding: 0 10px; background: var(--app-control); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 6px; cursor: pointer; font-size: 12px; }
+  .book-forget:hover { background: var(--app-control-hover); }
+  @media (max-width: 760px) {
+    .bookshelf { grid-template-columns: 74px minmax(0, 1fr); }
+    .sidebar { padding: 14px 8px; gap: 18px; align-items: center; }
+    .brand { padding: 0; }
+    .brand div:not(.brand-mark), .nav-copy, .side-footer p { display: none; }
+    .side-nav button { grid-template-columns: 1fr; padding: 8px; }
+    .nav-marker { margin: 0 auto; }
+    .side-footer { width: 100%; }
+    .side-footer .open-epub { min-width: 0; padding: 0; font-size: 11px; }
+    .panel-shell { padding: 22px 16px; }
+    .panel-head { flex-direction: column; }
+    .head-open { width: 100%; }
+    .library-summary { grid-template-columns: 1fr; }
+    .section-head { align-items: start; flex-direction: column; gap: 4px; }
+    .book-grid { grid-template-columns: 1fr; }
+    .book-card { grid-template-columns: minmax(0, 1fr); }
+    .book-forget { justify-self: end; }
+    .empty-state { grid-template-columns: 1fr; }
   }
 </style>
