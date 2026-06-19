@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Tabs } from "bits-ui";
   import {
     dictionaryCountsLabel,
     dictionaryRole,
@@ -8,6 +9,8 @@
     importedLabel,
   } from "./dictionary-management";
   import type { DictionaryManifestEntry, DictionaryRole, DictionaryStatus } from "./types";
+  import ConfirmDialog from "./ui/ConfirmDialog.svelte";
+  import UiSwitch from "./ui/Switch.svelte";
 
   let {
     dictionaries = [],
@@ -34,7 +37,10 @@
   } = $props();
 
   let selectedRole = $state<DictionaryRole>("term");
-  let visibleDictionaries = $derived(dictionaries.filter((dictionary) => dictionaryRole(dictionary) === selectedRole));
+
+  function dictionariesForRole(role: DictionaryRole): DictionaryManifestEntry[] {
+    return dictionaries.filter((dictionary) => dictionaryRole(dictionary) === role);
+  }
 </script>
 
 <section class="dictionary-panel">
@@ -58,94 +64,99 @@
   {:else if dictionaries.length === 0}
     <p class="empty">No dictionaries imported.</p>
   {:else}
-    <div class="dictionary-tabs" role="tablist" aria-label="Dictionary type">
+    <Tabs.Root bind:value={selectedRole} orientation="horizontal" class="dictionary-tab-root">
+      <Tabs.List class="dictionary-tabs" aria-label="Dictionary type">
+        {#each dictionaryRoles as role}
+          <Tabs.Trigger value={role} disabled={busy}>
+            {dictionaryRoleLabels[role]}
+          </Tabs.Trigger>
+        {/each}
+      </Tabs.List>
       {#each dictionaryRoles as role}
-        <button
-          role="tab"
-          aria-selected={selectedRole === role}
-          class:active={selectedRole === role}
-          disabled={busy}
-          onclick={() => selectedRole = role}
-        >
-          {dictionaryRoleLabels[role]}
-        </button>
+        <Tabs.Content value={role} class="dictionary-tab-content">
+          {#if selectedRole === role}
+            {@const visibleDictionaries = dictionariesForRole(role)}
+            <div class="dictionary-list" aria-busy={busy}>
+              {#if visibleDictionaries.length === 0}
+                <p class="empty">No {dictionaryRoleLabels[role]} dictionaries.</p>
+              {/if}
+              {#each visibleDictionaries as dictionary, index (dictionary.dictId)}
+                <div class="dictionary-row">
+                  <div class="dictionary-toggle">
+                    <UiSwitch
+                      checked={dictionary.enabled}
+                      disabled={busy}
+                      ariaLabel={`${dictionary.enabled ? "Disable" : "Enable"} ${dictionary.title}`}
+                      onCheckedChange={(enabled) => onSetEnabled(dictionary, enabled)}
+                    />
+                    <span>{dictionary.enabled ? "Enabled" : "Disabled"}</span>
+                  </div>
+                  <div class="dictionary-main">
+                    <p class="dictionary-title">{dictionary.title}</p>
+                    <p class="dictionary-meta">
+                      {dictionaryRoleLabels[dictionaryRole(dictionary)]} | {dictionaryCountsLabel(dictionary)} | {importedLabel(dictionary.lastImported)}
+                    </p>
+                    <p class="dictionary-path">{dictionary.internalPath}</p>
+                  </div>
+                  <div class="dictionary-row-actions">
+                    <button
+                      class="icon-action"
+                      aria-label={`Move ${dictionary.title} up`}
+                      title="Move up"
+                      disabled={busy || index === 0}
+                      onclick={() => onMove(dictionary, -1)}
+                    >
+                      ^
+                    </button>
+                    <button
+                      class="icon-action"
+                      aria-label={`Move ${dictionary.title} down`}
+                      title="Move down"
+                      disabled={busy || index === visibleDictionaries.length - 1}
+                      onclick={() => onMove(dictionary, 1)}
+                    >
+                      v
+                    </button>
+                    <ConfirmDialog
+                      title={`Delete ${dictionary.title}?`}
+                      description="This removes the imported dictionary and all of its Term, Frequency, and Pitch entries. This action cannot be undone."
+                      confirmLabel="Delete"
+                      triggerAriaLabel={`Delete ${dictionary.title}`}
+                      disabled={busy}
+                      onConfirm={() => onRemove(dictionary)}
+                    >
+                      {#snippet trigger()}Delete{/snippet}
+                    </ConfirmDialog>
+                  </div>
+                </div>
+              {/each}
+            </div>
+          {/if}
+        </Tabs.Content>
       {/each}
-    </div>
-    <div class="dictionary-list" aria-busy={busy}>
-      {#if visibleDictionaries.length === 0}
-        <p class="empty">No {dictionaryRoleLabels[selectedRole]} dictionaries.</p>
-      {/if}
-      {#each visibleDictionaries as dictionary, index (dictionary.dictId)}
-        <div class="dictionary-row">
-          <label class="dictionary-toggle">
-            <input
-              type="checkbox"
-              checked={dictionary.enabled}
-              disabled={busy}
-              onchange={(event) => onSetEnabled(dictionary, event.currentTarget.checked)}
-            />
-            <span>{dictionary.enabled ? "Enabled" : "Disabled"}</span>
-          </label>
-          <div class="dictionary-main">
-            <p class="dictionary-title">{dictionary.title}</p>
-            <p class="dictionary-meta">
-              {dictionaryRoleLabels[dictionaryRole(dictionary)]} | {dictionaryCountsLabel(dictionary)} | {importedLabel(dictionary.lastImported)}
-            </p>
-            <p class="dictionary-path">{dictionary.internalPath}</p>
-          </div>
-          <div class="dictionary-row-actions">
-            <button
-              class="icon-action"
-              aria-label={`Move ${dictionary.title} up`}
-              title="Move up"
-              disabled={busy || index === 0}
-              onclick={() => onMove(dictionary, -1)}
-            >
-              ^
-            </button>
-            <button
-              class="icon-action"
-              aria-label={`Move ${dictionary.title} down`}
-              title="Move down"
-              disabled={busy || index === visibleDictionaries.length - 1}
-              onclick={() => onMove(dictionary, 1)}
-            >
-              v
-            </button>
-            <button
-              class="delete-action"
-              aria-label={`Delete ${dictionary.title}`}
-              title="Delete dictionary"
-              disabled={busy}
-              onclick={() => onRemove(dictionary)}
-            >
-              Delete
-            </button>
-          </div>
-        </div>
-      {/each}
-    </div>
+    </Tabs.Root>
   {/if}
 </section>
 
 <style>
-  .dictionary-panel { display: flex; flex-direction: column; gap: 10px; padding: 12px; background: var(--app-surface, #121212); border: 1px solid var(--app-border, #333333); border-radius: 6px; }
+  .dictionary-panel { min-width: 0; display: flex; flex-direction: column; gap: 10px; padding: 12px; background: var(--app-surface, #121212); border: 1px solid var(--app-border, #333333); border-radius: 6px; }
   .dictionary-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 16px; }
   .dictionary-summary { margin-top: 4px; color: var(--app-muted, #999999); font-size: 12px; line-height: 1.35; }
   .dictionary-actions { flex-shrink: 0; display: flex; align-items: center; gap: 8px; }
   .compact-action { padding: 5px 10px; background: var(--app-control, #1b1b1b); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 4px; cursor: pointer; font-size: 12px; }
   .compact-action:hover:not(:disabled) { background: var(--app-control-hover, #262626); }
   .compact-action:disabled { color: var(--app-muted, #999999); cursor: default; }
-  .dictionary-tabs { display: flex; align-items: center; gap: 4px; padding: 3px; background: var(--app-control, #1b1b1b); border: 1px solid var(--app-border, #333333); border-radius: 6px; }
-  .dictionary-tabs button { flex: 1 1 0; min-width: 0; padding: 6px 10px; background: transparent; color: var(--app-text, #fff); border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
-  .dictionary-tabs button:hover:not(:disabled) { background: var(--app-control-hover, #262626); }
-  .dictionary-tabs button.active { background: var(--app-primary, #d0bcff); color: var(--app-bg, #000); }
-  .dictionary-tabs button:disabled { color: var(--app-muted, #999999); cursor: default; }
+  .dictionary-panel :global(.dictionary-tabs) { display: flex; align-items: center; gap: 4px; padding: 3px; background: var(--app-control, #1b1b1b); border: 1px solid var(--app-border, #333333); border-radius: 6px; }
+  .dictionary-panel :global(.dictionary-tabs button) { flex: 1 1 0; min-width: 0; padding: 6px 10px; background: transparent; color: var(--app-text, #fff); border: none; border-radius: 4px; cursor: pointer; font-size: 13px; }
+  .dictionary-panel :global(.dictionary-tabs button:hover:not(:disabled)) { background: var(--app-control-hover, #262626); }
+  .dictionary-panel :global(.dictionary-tabs button[data-state="active"]) { background: var(--app-primary, #d0bcff); color: var(--app-bg, #000); }
+  .dictionary-panel :global(.dictionary-tabs button:disabled) { color: var(--app-muted, #999999); cursor: default; }
+  .dictionary-panel :global(.dictionary-tabs button:focus-visible) { outline: var(--ui-focus-ring-width) solid var(--ui-focus-ring-color); outline-offset: var(--ui-focus-ring-offset); }
+  .dictionary-panel :global(.dictionary-tab-content) { margin-top: 8px; outline: none; }
   .dictionary-list { display: flex; flex-direction: column; gap: 8px; max-height: 28vh; overflow-y: auto; padding-right: 2px; }
   .dictionary-list[aria-busy="true"] { opacity: 0.72; }
   .dictionary-row { display: grid; grid-template-columns: 96px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 12px; background: var(--app-bg, #000); border: 1px solid var(--app-border, #333333); border-radius: 6px; }
   .dictionary-toggle { display: flex; align-items: center; gap: 7px; color: var(--app-text, #fff); font-size: 12px; user-select: none; }
-  .dictionary-toggle input { width: 14px; height: 14px; accent-color: var(--app-primary, #d0bcff); }
   .dictionary-main { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .dictionary-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-text, #fff); font-size: 14px; }
   .dictionary-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-muted, #999999); font-size: 11px; }
@@ -154,12 +165,12 @@
   .icon-action { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; background: var(--app-control, #1b1b1b); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 4px; cursor: pointer; font-size: 13px; line-height: 1; }
   .icon-action:hover:not(:disabled) { background: var(--app-control-hover, #262626); }
   .icon-action:disabled { color: var(--app-muted, #999999); cursor: default; }
-  .delete-action { min-width: 58px; padding: 5px 8px; background: transparent; color: var(--app-error, #ffb4ab); border: 1px solid var(--app-border, #333333); border-radius: 4px; cursor: pointer; font-size: 12px; }
-  .delete-action:hover:not(:disabled) { background: var(--app-control-hover, #262626); }
-  .delete-action:disabled { color: var(--app-muted, #999999); cursor: default; }
   .err { color: var(--app-error, #ffb4ab); font-size: 13px; white-space: pre-wrap; }
   .empty { padding: 28px 0; color: var(--app-muted, #999999); font-size: 13px; }
   @media (max-width: 640px) {
+    .dictionary-head { flex-direction: column; }
+    .dictionary-actions { width: 100%; }
+    .dictionary-actions button { flex: 1 1 0; min-width: 0; }
     .dictionary-row { grid-template-columns: 1fr; align-items: start; }
     .dictionary-toggle { grid-column: 1 / -1; }
     .dictionary-main { grid-column: 1; }

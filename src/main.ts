@@ -4,6 +4,7 @@ import App from "./App.svelte";
 import DictionaryManagementProbe from "./lib/DictionaryManagementProbe.svelte";
 import LookupPopupProbe from "./lib/LookupPopupProbe.svelte";
 import ReaderVisualProbe from "./lib/reader/ReaderVisualProbe.svelte";
+import "./lib/styles/tokens.css";
 
 const params = new URLSearchParams(window.location.search);
 const Component = params.has("readerVisualProbe")

@@ -58,7 +58,7 @@ async function panelMetrics(page) {
     return {
       text: panel.textContent ?? "",
       rows: document.querySelectorAll(".dictionary-row").length,
-      enabledLabels: Array.from(document.querySelectorAll(".dictionary-toggle span")).map((item) => item.textContent ?? ""),
+      enabledLabels: Array.from(document.querySelectorAll(".dictionary-toggle > span")).map((item) => item.textContent ?? ""),
       refreshClicks: Number(state?.getAttribute("data-refresh-clicks") ?? 0),
       importClicks: Number(state?.getAttribute("data-import-clicks") ?? 0),
       enableEvents: state?.getAttribute("data-enable-events") ?? "",
@@ -110,7 +110,11 @@ async function main() {
     assert(metrics.text.includes("dictionaries/imported/jitendex"), "Ready panel should show internal path.", metrics);
     assert(metrics.enabledLabels.join("|") === "Enabled|Disabled", "Ready panel should show enabled labels.", metrics);
 
-    await page.getByRole("tab", { name: "Frequency" }).click();
+    const termTab = page.getByRole("tab", { name: "Term" });
+    const frequencyTab = page.getByRole("tab", { name: "Frequency" });
+    await termTab.focus();
+    await page.keyboard.press("ArrowRight");
+    assert(await frequencyTab.getAttribute("aria-selected") === "true", "ArrowRight should activate the next dictionary tab.");
     metrics = await panelMetrics(page);
     assert(metrics.rows === 1, "Frequency tab should show frequency dictionaries.", metrics);
     assert(metrics.text.includes("1200 freq"), "Frequency tab should show frequency counts.", metrics);
@@ -123,11 +127,11 @@ async function main() {
     await page.getByRole("tab", { name: "Term" }).click();
 
     await page.getByRole("button", { name: "Refresh" }).click();
-    await page.getByRole("button", { name: "Import" }).click();
+    await page.getByRole("button", { name: "Import Files", exact: true }).click();
     metrics = await panelMetrics(page);
     assert(metrics.refreshClicks === 1 && metrics.importClicks === 1, "Refresh and import actions should be wired.", metrics);
 
-    await page.getByRole("checkbox").nth(1).check();
+    await page.getByRole("switch").nth(1).click();
     metrics = await panelMetrics(page);
     assert(metrics.enableEvents.includes("mk3:term:true"), "Enable toggle should emit the dictionary id and state.", metrics);
     assert(metrics.enabledLabels.join("|") === "Enabled|Enabled", "Enable toggle should update visible state.", metrics);
@@ -137,7 +141,18 @@ async function main() {
     assert(metrics.moveEvents.includes("mk3:term:-1"), "Move up should emit the dictionary id and direction.", metrics);
     assert(metrics.order === "mk3:term,jitendex:term", "Move up should reorder the visible dictionary list.", metrics);
 
-    await page.getByRole("button", { name: "Delete MK3 Compatibility Probe Dictionary With A Very Long Visible Title" }).click();
+    const deleteTrigger = page.getByRole("button", { name: "Delete MK3 Compatibility Probe Dictionary With A Very Long Visible Title" });
+    await deleteTrigger.click();
+    const dialog = page.getByRole("alertdialog");
+    await dialog.waitFor();
+    assert((await dialog.textContent())?.includes("This action cannot be undone."), "Delete should open a descriptive confirmation dialog.");
+    await dialog.getByRole("button", { name: "Cancel" }).click();
+    metrics = await panelMetrics(page);
+    assert(metrics.removeEvents === "" && metrics.rows === 2, "Cancel should not remove a dictionary.", metrics);
+    assert(await deleteTrigger.evaluate((element) => element === document.activeElement), "Cancel should restore focus to the delete trigger.");
+
+    await deleteTrigger.click();
+    await dialog.getByRole("button", { name: "Delete" }).click();
     metrics = await panelMetrics(page);
     assert(metrics.removeEvents.includes("mk3"), "Delete should emit the import id.", metrics);
     assert(metrics.rows === 1 && !metrics.text.includes("MK3 Compatibility"), "Delete should remove all rows for that import.", metrics);
@@ -147,6 +162,16 @@ async function main() {
     metrics = await panelMetrics(page);
     assert(!metrics.horizontalOverflow, "Dictionary panel should not create horizontal overflow in a narrow window.", metrics);
     assert(metrics.panel.right <= metrics.viewport.width, "Dictionary panel should stay within the narrow viewport.", metrics);
+
+    await page.getByRole("button", { name: "Delete Jitendex.org [probe]" }).click();
+    const dialogBox = await page.getByRole("alertdialog").boundingBox();
+    assert(
+      dialogBox && dialogBox.x >= 0 && dialogBox.x + dialogBox.width <= metrics.viewport.width,
+      "Confirmation dialog should stay within the narrow viewport.",
+      { dialogBox, viewport: metrics.viewport },
+    );
+    await page.keyboard.press("Escape");
+    await page.getByRole("alertdialog").waitFor({ state: "hidden" });
 
     console.log(JSON.stringify(metrics, null, 2));
   } finally {

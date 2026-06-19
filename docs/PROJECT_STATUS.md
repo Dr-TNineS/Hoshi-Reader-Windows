@@ -44,6 +44,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - EPUB import entry.
   - Minimal Appearance panel with HSA-aligned Light and Dark reader themes.
   - Advanced panel with a default-on option to reopen the last reading session at startup.
+  - Bits UI provides the first headless UI primitives for the Advanced switch and dictionary Tabs, enabled switches, and delete confirmation dialog; shared CSS variables define non-invasive control tokens without changing Reader layout styles.
   - The Advanced startup preference is stored locally in browser `localStorage`.
   - Read-only Shortcuts panel listing the currently implemented Reader keyboard and mouse shortcuts by feature group.
   - Resume from saved progress.
@@ -90,7 +91,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - `HSW_HOSHIDICTS_DIR` can override the default local hoshidicts path.
   - Bookshelf has a minimal `Import Dictionary` entry for Yomitan `.zip` files.
   - Bookshelf has a minimal dictionary management panel for Term/Frequency/Pitch categories, refreshing status, enabling/disabling role entries, changing per-category order, and deleting an imported dictionary from all categories.
-  - Dictionary management probe and `npm run check:dictionary-management` cover empty/loading/error/ready states, category tabs, visible counts, enable toggles, order controls, delete/import/refresh actions, and narrow-window overflow.
+  - Dictionary management probe and `npm run check:dictionary-management` cover empty/loading/error/ready states, category tab click/keyboard navigation, visible counts, enable switches, order controls, delete confirmation/cancel/focus restoration, import/refresh actions, Escape dismissal, and narrow-window overflow.
   - Dictionary import uses zip content hash as stable `dict_id` and records successful imports in the manifest.
   - Dictionary import uses staging directories and preserves an existing dictionary dir if replacement fails.
   - `DictResult` includes rules, source dictionary, frequency entries, and pitch entries.
