@@ -4,11 +4,13 @@
   import { loadCachedDictionaryStyles, type DictionaryStyleResource } from "./dictionary-style-cache";
   import { formatLookupMatch, frequencyGroups, glossaryGroups, pitchGroups, renderGlossaryContent, ruleTags, scopeDictionaryCss, type LookupPitchGroup, type LookupState } from "./lookup-popup";
   import { clearLookupHighlight, POPUP_LOOKUP_HIGHLIGHT } from "./lookup-highlight";
+  import { markLookupPerformance } from "./lookup-performance";
   import { selectPopupTextFromPoint } from "./popup-selection";
   import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, AnkiStoreMediaResult, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
   let {
     popupId,
+    requestId = 0,
     selection,
     state: lookupState,
     error = "",
@@ -33,6 +35,7 @@
     onAddAnkiNote,
   }: {
     popupId: string;
+    requestId?: number;
     selection: ReaderSelection;
     state: LookupState;
     error?: string;
@@ -72,6 +75,7 @@
   let ankiMediaWarnings = $state<string[]>([]);
   let ankiAudioHint = $state("");
   let styleRequestId = 0;
+  let firstPaintRequestId = 0;
   const styleTag = "style";
   const canPreviewAnki = $derived(isAnkiPreviewConfigured(ankiSettings) && Boolean(buildAnkiPayload));
 
@@ -116,7 +120,13 @@
   $effect(() => {
     if (lookupState !== "ready" || !contentRoot) return;
 
-    const frame = window.requestAnimationFrame(() => hydrateDictionaryMedia(contentRoot));
+    const frame = window.requestAnimationFrame(() => {
+      if (requestId > 0 && firstPaintRequestId !== requestId) {
+        firstPaintRequestId = requestId;
+        markLookupPerformance(requestId, "first-paint", { resultCount: results.length });
+      }
+      hydrateDictionaryMedia(contentRoot);
+    });
     return () => window.cancelAnimationFrame(frame);
   });
 
@@ -134,8 +144,8 @@
     }
 
     const dictionaries = resultDictionaries(results);
-    const requestId = ++styleRequestId;
-    void loadScopedDictionaryStyles(dictionaries, requestId);
+    const nextStyleRequestId = ++styleRequestId;
+    void loadScopedDictionaryStyles(dictionaries, nextStyleRequestId, requestId);
   });
 
   $effect(() => {
@@ -265,6 +275,7 @@
       placeholder.dataset.mediaStatus = "loaded";
       placeholder.classList.remove("gloss-media-placeholder-loading");
       placeholder.classList.add("gloss-media-placeholder-loaded");
+      if (requestId > 0) markLookupPerformance(requestId, "first-media-ready", { dictionary, path });
     } catch {
       if (!placeholder.isConnected) return;
       placeholder.textContent = "Media unavailable";
@@ -290,9 +301,10 @@
     return dictionaries;
   }
 
-  async function loadScopedDictionaryStyles(dictionaries: string[], requestId: number) {
+  async function loadScopedDictionaryStyles(dictionaries: string[], scopedStyleRequestId: number, lookupRequestId: number) {
     if (dictionaries.length === 0) {
       dictionaryStyleCss = "";
+      if (lookupRequestId > 0) markLookupPerformance(lookupRequestId, "styles-ready", { dictionaryCount: 0 });
       return;
     }
 
@@ -300,13 +312,16 @@
     for (const dictionary of dictionaries) {
       try {
         const resource = await loadDictionaryStyles?.(dictionary) ?? await loadCachedDictionaryStyles(dictionary);
-        if (requestId !== styleRequestId) return;
+        if (scopedStyleRequestId !== styleRequestId) return;
         if (resource.css.trim()) chunks.push(scopeDictionaryCss(resource.css, popupId));
       } catch {
-        if (requestId !== styleRequestId) return;
+        if (scopedStyleRequestId !== styleRequestId) return;
       }
     }
-    if (requestId === styleRequestId) dictionaryStyleCss = chunks.filter(Boolean).join("\n");
+    if (scopedStyleRequestId === styleRequestId) {
+      dictionaryStyleCss = chunks.filter(Boolean).join("\n");
+      if (lookupRequestId > 0) markLookupPerformance(lookupRequestId, "styles-ready", { dictionaryCount: dictionaries.length });
+    }
   }
 
   async function addAnki(result: DictResult, resultIndex: number) {

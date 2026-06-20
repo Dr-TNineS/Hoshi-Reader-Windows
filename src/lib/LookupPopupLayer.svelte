@@ -124,6 +124,7 @@
   >
     <LookupPopupContent
       popupId={popup.id}
+      requestId={popup.requestId}
       selection={popup.selection}
       state={popup.state}
       error={popup.error}

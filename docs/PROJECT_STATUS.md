@@ -69,6 +69,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Supports left-click lookup selection in reader text and popup glossary text; plain mouse drag selection does not open the lookup popup.
   - Lookup-triggered highlights use HSA-style CSS Highlight gray highlighting instead of the native blue browser selection; user-driven text selection remains separate.
   - Popup prefers left/right side placement beside the selected text, with top/bottom fallback.
+  - Debug lookup timing records cover frontend request/first-frame/style/media stages and Rust lock/native lookup stages; the current local baseline is recorded in `docs/LOOKUP_PERFORMANCE_BASELINE.md`.
   - Popup distinguishes loading, no dictionary, engine unavailable, empty, error, and ready states.
   - Popup renders the full backend lookup result set, up to the current backend max results, with expression, reading, source dictionary, matched/deinflected text, rules, HSA-style frequency/pitch metadata groups, grouped glossary content, dictionary media, and scoped dictionary `styles.css`.
   - Dictionary media loads lazily inside popup glossary content; loaded, unavailable, and non-Tauri fallback states are covered by the lookup popup probe.
