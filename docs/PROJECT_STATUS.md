@@ -40,6 +40,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Opening an app-owned record with a missing `book.epub` returns a scoped re-import error for that book.
   - Bookshelf records can be forgotten through an in-app confirmation; app-owned records also remove the imported EPUB copy and manifest entry without touching the original source EPUB, while legacy records remove only the bookshelf state.
 - Bookshelf:
+  - `BookshelfView.activePanel` is the single source of truth for Library, Dictionaries, Anki, Appearance, Advanced, and Shortcuts panel selection; App no longer mirrors panel visibility booleans.
   - Recent books render as a cover grid with EPUB cover, progress bar, percent, and title when cover data is available.
   - EPUB import entry.
   - Minimal Appearance panel with HSA-aligned Light and Dark reader themes using a single-select Bits UI ToggleGroup with roving keyboard focus.
@@ -182,7 +183,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Frontend/type changes: `npm run check`
 - Frontend production build: `npm run build`
 - AnkiConnect panel regression probe: `npm run check:anki-connect`
-- Bookshelf confirmation regression probe: `npm run check:bookshelf`
+- Bookshelf shell and confirmation regression probe: `npm run check:bookshelf`
 - Dictionary management regression probe: `npm run check:dictionary-management`
 - Appearance ToggleGroup and Advanced settings controller probe: `npm run check:settings-state`
 - Lookup popup regression probe: `npm run check:lookup-popup`

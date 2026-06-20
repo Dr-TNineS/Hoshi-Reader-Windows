@@ -64,17 +64,14 @@
   let readerLookupHighlightText = $state("");
   let lookupPopups = $state<LookupPopupItem[]>([]);
   const settings = createSettingsState();
-  let showAppearancePanel = $state(false);
   let lookupRequestId = 0;
   let showToc = $state(false);
   let error = $state("");
   let dictionaryStatus = $state("");
-  let showDictionaryManager = $state(false);
   let dictionaryList = $state<DictionaryManifestEntry[]>([]);
   let dictionaryListStatus = $state<DictionaryStatus | null>(null);
   let dictionaryListError = $state("");
   let dictionaryBusy = $state(false);
-  let showAnkiPanel = $state(false);
   let ankiSettings = $state<AnkiSettings | null>(null);
   let ankiEndpointDraft = $state("http://127.0.0.1:8765");
   let ankiStatus = $state("");
@@ -1016,24 +1013,18 @@
       {dictionaryStatus}
       {dictionaryBusy}
       {bookImportBusy}
-      {showAppearancePanel}
       readerAppearance={settings.readerAppearance}
       {readerThemeLabels}
       advancedSettings={settings.advancedSettings}
-      {showDictionaryManager}
       {dictionaryList}
       {dictionaryListStatus}
       {dictionaryListError}
-      {showAnkiPanel}
       {ankiSettings}
       {ankiEndpointDraft}
       {ankiStatus}
       {ankiError}
       {ankiBusy}
       {ankiTemplateOptions}
-      onToggleAnkiPanel={() => showAnkiPanel = !showAnkiPanel}
-      onToggleAppearancePanel={() => showAppearancePanel = !showAppearancePanel}
-      onToggleDictionaryManager={() => showDictionaryManager = !showDictionaryManager}
       onOpenBook={openBook}
       onContinueBook={continueBook}
       onForgetBook={forgetBook}

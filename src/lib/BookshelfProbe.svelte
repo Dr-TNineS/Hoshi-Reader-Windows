@@ -32,9 +32,6 @@
     readerAppearance={{ theme: "dark" }}
     readerThemeLabels={{ light: "Light", dark: "Dark" }}
     advancedSettings={{ reopenLastBookOnStartup: true }}
-    onToggleAnkiPanel={() => {}}
-    onToggleAppearancePanel={() => {}}
-    onToggleDictionaryManager={() => {}}
     onOpenBook={() => {}}
     onContinueBook={() => {}}
     onForgetBook={(book) => forgetEvents = [...forgetEvents, book.bookId ?? book.path ?? "unknown"]}

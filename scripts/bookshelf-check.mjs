@@ -60,6 +60,15 @@ async function main() {
     await page.goto(`${origin}/?bookshelfProbe=1`);
     await page.locator(".bookshelf").waitFor();
 
+    const navigation = page.locator(".sidebar");
+    for (const panel of ["Dictionaries", "Anki", "Appearance", "Advanced", "Shortcuts", "Library"]) {
+      const entry = navigation.getByRole("button").filter({ hasText: panel });
+      await entry.click();
+      await page.locator(".panel-head").getByRole("heading", { name: panel, exact: true }).waitFor();
+      assert(await entry.getAttribute("aria-current") === "page", `${panel} should become the single active panel.`);
+      assert(await navigation.locator('[aria-current="page"]').count() === 1, "Bookshelf should expose exactly one active panel.");
+    }
+
     const ownedCard = page.locator(".book-card").filter({ hasText: "Owned Book" });
     await ownedCard.hover();
     const ownedTrigger = ownedCard.getByRole("button", { name: "Forget Owned Book", exact: true });

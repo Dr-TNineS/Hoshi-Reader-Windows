@@ -17,24 +17,18 @@
     dictionaryStatus = "",
     dictionaryBusy = false,
     bookImportBusy = false,
-    showAppearancePanel = false,
     readerAppearance,
     readerThemeLabels,
     advancedSettings,
-    showDictionaryManager = false,
     dictionaryList = [],
     dictionaryListStatus = null,
     dictionaryListError = "",
-    showAnkiPanel = false,
     ankiSettings = null,
     ankiEndpointDraft = "http://127.0.0.1:8765",
     ankiStatus = "",
     ankiError = "",
     ankiBusy = false,
     ankiTemplateOptions = [],
-    onToggleAnkiPanel,
-    onToggleAppearancePanel,
-    onToggleDictionaryManager,
     onOpenBook,
     onContinueBook,
     onForgetBook,
@@ -60,24 +54,18 @@
     dictionaryStatus?: string;
     dictionaryBusy?: boolean;
     bookImportBusy?: boolean;
-    showAppearancePanel?: boolean;
     readerAppearance: ReaderAppearance;
     readerThemeLabels: Record<ReaderTheme, string>;
     advancedSettings: AdvancedSettings;
-    showDictionaryManager?: boolean;
     dictionaryList?: DictionaryManifestEntry[];
     dictionaryListStatus?: DictionaryStatus | null;
     dictionaryListError?: string;
-    showAnkiPanel?: boolean;
     ankiSettings?: AnkiSettings | null;
     ankiEndpointDraft?: string;
     ankiStatus?: string;
     ankiError?: string;
     ankiBusy?: boolean;
     ankiTemplateOptions?: string[];
-    onToggleAnkiPanel: () => void;
-    onToggleAppearancePanel: () => void;
-    onToggleDictionaryManager: () => void;
     onOpenBook: () => void;
     onContinueBook: (book: BookRecord) => void;
     onForgetBook: (book: BookRecord) => void;
@@ -146,17 +134,7 @@
   }
 
   function ensurePanel(panel: ShelfPanel) {
-    if (activePanel === panel) return;
-
-    if (activePanel === "dictionaries" && showDictionaryManager) onToggleDictionaryManager();
-    if (activePanel === "anki" && showAnkiPanel) onToggleAnkiPanel();
-    if (activePanel === "appearance" && showAppearancePanel) onToggleAppearancePanel();
-
     activePanel = panel;
-
-    if (panel === "dictionaries" && !showDictionaryManager) onToggleDictionaryManager();
-    if (panel === "anki" && !showAnkiPanel) onToggleAnkiPanel();
-    if (panel === "appearance" && !showAppearancePanel) onToggleAppearancePanel();
   }
 
 </script>
