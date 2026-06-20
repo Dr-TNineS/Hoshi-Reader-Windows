@@ -107,7 +107,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - MK3 compatibility import performance validation on 2026-06-18 with local `MK3Fix0213.zip` completed in about 24 seconds in the linked ignored Rust test; before switching the lookup-safe temp zip to stored entries, the safe-zip creation step alone took about 187 seconds.
   - Lookup responses map compatibility-import internal ASCII titles back to manifest titles for result, glossary, frequency, and pitch source labels.
 - Anki:
-  - Deck and note-type controls use the shared Bits UI Select primitive; field-template token pickers use the shared Bits UI DropdownMenu primitive with themed portal content kept inside the application overlay root.
+  - Deck and note-type controls use the shared Bits UI Select primitive; field-template token pickers use the shared Bits UI DropdownMenu primitive with themed portal content kept inside the application overlay root; Word Audio enablement uses the shared Bits UI Switch.
   - Lookup popup keeps the Anki affordance disabled until endpoint, deck, note type, and fields are configured.
   - Bookshelf now has a minimal AnkiConnect readiness/configuration panel for endpoint editing, connection testing, deck/note-type fetch, deck selection, note-type selection, field template editing, and note field preview.
   - Anki field templates include HSA-aligned exact-name defaults for Lapis, Kiku, and Senren; unmapped known-model fields keep HSA's blank behavior, and custom model names do not inherit these presets.

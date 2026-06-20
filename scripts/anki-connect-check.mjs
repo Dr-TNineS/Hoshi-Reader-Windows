@@ -193,7 +193,8 @@ async function main() {
     await page.getByRole("button", { name: "Save" }).click();
     await page.locator(".field-template-row").filter({ hasText: "Back" }).locator("input").fill("{glossary}");
     await page.locator(".field-template-row").filter({ hasText: "Back" }).locator("input").blur();
-    await page.getByLabel("Enable").check();
+    const audioSwitch = page.getByRole("switch", { name: "Enable", exact: true });
+    await audioSwitch.press("Space");
     await page.getByLabel("Source Name").fill("Probe Audio");
     await page.getByLabel("Source Name").blur();
     await page.getByLabel("Audio URL Template").fill("https://example.invalid/audio?term={term}&reading={reading}");
@@ -214,7 +215,7 @@ async function main() {
     assert(metrics.noteTypeEvents.includes("Hoshi Vocabulary"), "Note type select should emit selected note type.", metrics);
     assert(metrics.fieldTemplateEvents.includes("Back:{glossary}"), "Field template edits should emit the field and template.", metrics);
     assert(metrics.fieldMappings.includes("Back:{glossary}"), "Field template edits should update visible state.", metrics);
-    assert(metrics.audioEnabled === "true", "Audio enable checkbox should update visible state.", metrics);
+    assert(metrics.audioEnabled === "true", "Audio enable switch should update visible state from the keyboard.", metrics);
     assert(metrics.audioSource === "Probe Audio", "Audio source name should update visible state.", metrics);
     assert(metrics.audioUrl.includes("{term}") && metrics.audioTimeout === 7000, "Audio URL and timeout should update visible state.", metrics);
     assert(metrics.audioEvents.includes("true:"), "Audio settings edits should emit changes.", metrics);

@@ -3,6 +3,7 @@
   import type { AnkiAudioSource, AnkiSettings } from "./types";
   import UiDropdownMenu from "./ui/DropdownMenu.svelte";
   import UiSelect from "./ui/Select.svelte";
+  import UiSwitch from "./ui/Switch.svelte";
 
   let {
     settings = null,
@@ -171,15 +172,15 @@
           {settings?.audioEnabled ? "Audio token boundary enabled" : "Audio export disabled"}
         </p>
       </div>
-      <label class="audio-toggle">
-        <input
-          type="checkbox"
+      <div class="audio-toggle">
+        <UiSwitch
+          id="anki-audio-enabled"
           checked={settings?.audioEnabled ?? false}
           disabled={busy}
-          onchange={(event) => updateAudioEnabled(event.currentTarget.checked)}
+          onCheckedChange={updateAudioEnabled}
         />
-        <span>Enable</span>
-      </label>
+        <label for="anki-audio-enabled">Enable</label>
+      </div>
     </div>
     <div class="audio-grid">
       <label class="select-row">
@@ -238,7 +239,6 @@
   .audio-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
   .audio-summary { margin-top: 3px; color: var(--app-muted, #999999); font-size: 12px; line-height: 1.35; }
   .audio-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--app-text, #fff); font-size: 12px; }
-  .audio-toggle input { width: 14px; height: 14px; accent-color: var(--app-primary, #d0bcff); }
   .audio-grid { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 10px; }
   .field-template-list { display: flex; flex-direction: column; gap: 7px; }
   .field-template-row { min-width: 0; display: grid; grid-template-columns: minmax(90px, 0.32fr) minmax(0, 1fr); align-items: start; gap: 8px; }
