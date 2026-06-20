@@ -1,6 +1,7 @@
 <script lang="ts">
   import type { AdvancedSettings } from "./advanced-settings";
   import type { ReaderAppearance } from "./appearance";
+  import AppearancePanel from "./AppearancePanel.svelte";
   import { createSettingsState, type SettingsPersistence } from "./state/settings.svelte";
 
   let savedAppearances = $state<ReaderAppearance[]>([]);
@@ -17,8 +18,11 @@
 </script>
 
 <main>
-  <button onclick={() => settings.setReaderTheme("light")}>Light</button>
-  <button onclick={() => settings.setReaderTheme("dark")}>Dark</button>
+  <AppearancePanel
+    appearance={settings.readerAppearance}
+    themeLabels={{ light: "Light", dark: "Dark" }}
+    onThemeChange={settings.setReaderTheme}
+  />
   <button onclick={() => settings.setReopenLastBookOnStartup(!settings.advancedSettings.reopenLastBookOnStartup)}>
     Toggle startup
   </button>

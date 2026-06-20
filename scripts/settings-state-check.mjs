@@ -71,18 +71,28 @@ async function main() {
     assert(current.savedAppearances === "dark", "Controller should preserve appearance startup normalization.", current);
     assert(current.savedAdvanced === "", "Controller should not rewrite Advanced settings during startup.", current);
 
-    await page.getByRole("button", { name: "Light", exact: true }).click();
+    const lightTheme = page.getByRole("radio", { name: "Light", exact: true });
+    const darkTheme = page.getByRole("radio", { name: "Dark", exact: true });
+    assert(await darkTheme.getAttribute("aria-checked") === "true", "Loaded theme should be checked in the toggle group.");
+    await darkTheme.click();
     current = await state(page);
-    assert(current.theme === "light", "Theme setter should update reactive state.", current);
+    assert(current.savedAppearances === "dark", "Clicking the active theme should not deselect or persist it again.", current);
+
+    await darkTheme.focus();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("Space");
+    current = await state(page);
+    assert(current.theme === "light", "Arrow navigation plus Space should update the selected theme.", current);
     assert(current.savedAppearances === "dark,light", "Theme setter should persist the next appearance.", current);
     assert(current.appearanceVars?.includes("--app-bg:#fff"), "Theme setter should recompute appearance CSS variables.", current);
+    assert(await lightTheme.getAttribute("aria-checked") === "true", "Keyboard-selected theme should become checked.");
 
     await page.getByRole("button", { name: "Toggle startup", exact: true }).click();
     current = await state(page);
     assert(current.reopen === "false", "Advanced setter should update reactive state.", current);
     assert(current.savedAdvanced === "false", "Advanced setter should persist the next settings value.", current);
 
-    await page.getByRole("button", { name: "Dark", exact: true }).click();
+    await darkTheme.click();
     current = await state(page);
     assert(current.savedAppearances === "dark,light,dark", "Repeated theme changes should persist in order.", current);
 

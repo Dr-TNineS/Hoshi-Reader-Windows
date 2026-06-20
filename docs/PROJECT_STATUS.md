@@ -42,7 +42,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Bookshelf:
   - Recent books render as a cover grid with EPUB cover, progress bar, percent, and title when cover data is available.
   - EPUB import entry.
-  - Minimal Appearance panel with HSA-aligned Light and Dark reader themes.
+  - Minimal Appearance panel with HSA-aligned Light and Dark reader themes using a single-select Bits UI ToggleGroup with roving keyboard focus.
   - Advanced panel with a default-on option to reopen the last reading session at startup.
   - Bits UI provides the first headless UI primitives for the Advanced switch and dictionary Tabs, enabled switches, and delete confirmation dialog; shared CSS variables define non-invasive control tokens without changing Reader layout styles.
   - Appearance and Advanced settings state is coordinated by a Svelte 5 runes controller in `src/lib/state/settings.svelte.ts`; persistence remains delegated to the existing appearance and Advanced storage modules.
@@ -183,7 +183,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - AnkiConnect panel regression probe: `npm run check:anki-connect`
 - Bookshelf confirmation regression probe: `npm run check:bookshelf`
 - Dictionary management regression probe: `npm run check:dictionary-management`
-- Appearance/Advanced settings controller probe: `npm run check:settings-state`
+  - Appearance ToggleGroup and Advanced settings controller probe: `npm run check:settings-state`
 - Lookup popup regression probe: `npm run check:lookup-popup`
 - Reader visual regression probe: `npm run check:reader-visual`
 - Rust command/backend changes: `cd src-tauri; cargo check`
