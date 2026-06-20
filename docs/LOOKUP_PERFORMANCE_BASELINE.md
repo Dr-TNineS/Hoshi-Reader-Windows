@@ -33,4 +33,16 @@ Rust lock wait was at or below 0.001ms for these non-overlapping samples. Title 
 - Dictionary styles can finish after the result state is committed, creating a second visible layout/style update.
 - Media remains intentionally lazy and was not present in the representative timing samples.
 
-The first optimization slice therefore targets repeated-query caching, style prewarming, parallel style resolution, and one-pass popup view-model construction. Native result limits, hoshidicts, FFI JSON conversion, media transport, and mutex behavior remain unchanged.
+## After the low-risk optimization slice
+
+The same debug runtime and dictionary set were used after adding the 32-entry lookup cache, dictionary-style prewarming, parallel style resolution, and one-pass popup view models.
+
+| Sample | Results | Cache | Rust native lookup | IPC result ready | State committed | First frame ready | Styles ready |
+| --- | ---: | --- | ---: | ---: | ---: | ---: | ---: |
+| Common term after app reload | 7 | miss | 18.2 | 22.5 | 23.0 | 72.9 | 57.4 |
+| Same surface, first click | 8 | miss | 19.0 | 39.7 | 40.1 | 223.7 | 169.0 |
+| Same surface, repeated click | 8 | hit | not invoked | 1.2 | 1.3 | 42.5 | 24.4 |
+
+The first-click pair above was collected after a Vite hot reload, before the application startup path could rerun style prewarming; it is retained to make that limitation explicit. The app-reload sample was collected after startup prewarming completed. For the repeated pair, the Rust `lookup_perf` log count increased from 9 to 10 across both clicks, confirming that only the cache miss crossed IPC. Result count, order, frequency, pitch, and glossary rendering remained unchanged in the runtime check.
+
+The optimized path keeps all 16 possible results and does not change hoshidicts, FFI JSON conversion, media transport, the Rust mutex, selection, popup history, or nested lookup behavior. Remaining cold-query latency should be investigated as a separate measured slice rather than by reducing result fidelity.

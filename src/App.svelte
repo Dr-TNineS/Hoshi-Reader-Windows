@@ -13,8 +13,9 @@
     type ReaderAppearance,
     type ReaderTheme,
   } from "./lib/appearance";
-  import { clearDictionaryStyleCache } from "./lib/dictionary-style-cache";
+  import { clearDictionaryStyleCache, preloadCachedDictionaryStyles } from "./lib/dictionary-style-cache";
   import { beginLookupPerformance, discardLookupPerformance, markLookupPerformance } from "./lib/lookup-performance";
+  import { LookupResultCache } from "./lib/lookup-result-cache";
   import { dictionaryBatchStatusLabel } from "./lib/dictionary-import-status";
   import { resolveChapterAssets } from "./lib/epub-assets";
   import LookupPopupLayer, { type LookupPopupItem } from "./lib/LookupPopupLayer.svelte";
@@ -95,6 +96,7 @@
   let triedAnkiSettings = false;
   let progressSaveVersion = 0;
   let cachedReadyDictionaryStatus: DictionaryStatus | null = null;
+  const lookupResultCache = new LookupResultCache<DictResult>(32);
 
   let tocEntries = $derived(meta ? flattenToc(meta.toc, meta) : []);
   let chapterBookInfo = $derived(meta?.book_info.chapter_info[chapterIndex] ?? null);
@@ -378,6 +380,7 @@
       dictionaryList = entries;
       dictionaryListStatus = status;
       cacheReadyDictionaryStatus(status);
+      warmDictionaryStyles(entries, status);
     } catch (e) {
       dictionaryListError = String(e);
     } finally {
@@ -544,7 +547,16 @@
 
   function invalidateDictionaryLookupCaches() {
     cachedReadyDictionaryStatus = null;
+    lookupResultCache.clear();
     clearDictionaryStyleCache();
+  }
+
+  function warmDictionaryStyles(entries: DictionaryManifestEntry[], status: DictionaryStatus | null) {
+    if (status?.status !== "ready") return;
+    const dictionaries = entries
+      .filter((entry) => entry.enabled && entry.role === "term" && entry.termCount > 0)
+      .map((entry) => entry.title);
+    void preloadCachedDictionaryStyles(dictionaries);
   }
 
   function cacheReadyDictionaryStatus(status: DictionaryStatus) {
@@ -733,6 +745,7 @@
       });
       dictionaryListStatus = await invoke<DictionaryStatus>("dict_status");
       cacheReadyDictionaryStatus(dictionaryListStatus);
+      warmDictionaryStyles(dictionaryList, dictionaryListStatus);
       reloadLookupPopups();
     } catch (e) {
       dictionaryListError = String(e);
@@ -755,6 +768,7 @@
       });
       dictionaryListStatus = await invoke<DictionaryStatus>("dict_status");
       cacheReadyDictionaryStatus(dictionaryListStatus);
+      warmDictionaryStyles(dictionaryList, dictionaryListStatus);
       dictionaryStatus = `Deleted ${title}.`;
       reloadLookupPopups();
     } catch (e) {
@@ -988,9 +1002,13 @@
         return;
       }
 
-      markLookupPerformance(requestId, "invoke-start");
-      const results = await invoke<DictResult[]>("dict_lookup", { text: selection.text, requestId });
-      markLookupPerformance(requestId, "invoke-end", { resultCount: results.length });
+      const lookupRequest = lookupResultCache.get(
+        selection.text,
+        (text) => invoke<DictResult[]>("dict_lookup", { text, requestId }),
+      );
+      markLookupPerformance(requestId, "invoke-start", { cacheHit: lookupRequest.cacheHit });
+      const results = await lookupRequest.promise;
+      markLookupPerformance(requestId, "invoke-end", { resultCount: results.length, cacheHit: lookupRequest.cacheHit });
       if (!isCurrent()) return;
       if (popupId === "root" && results.length > 0) {
         const highlightText = longestLookupSurfacePrefix(selection, results);
