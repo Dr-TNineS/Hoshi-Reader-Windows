@@ -136,7 +136,18 @@ async function main() {
     assert(metrics.enableEvents.includes("mk3:term:true"), "Enable toggle should emit the dictionary id and state.", metrics);
     assert(metrics.enabledLabels.join("|") === "Enabled|Enabled", "Enable toggle should update visible state.", metrics);
 
-    await page.getByRole("button", { name: "Move MK3 Compatibility Probe Dictionary With A Very Long Visible Title up" }).click();
+    const moveJitendexDown = page.getByRole("button", { name: "Move Jitendex.org [probe] down" });
+    await moveJitendexDown.hover();
+    let tooltip = page.getByRole("tooltip", { name: "Move down", exact: true });
+    await tooltip.waitFor({ state: "visible" });
+    assert((await tooltip.textContent()) === "Move down", "Move button hover should show its tooltip.");
+
+    const moveMk3Up = page.getByRole("button", { name: "Move MK3 Compatibility Probe Dictionary With A Very Long Visible Title up" });
+    await moveMk3Up.focus();
+    tooltip = page.getByRole("tooltip", { name: "Move up", exact: true });
+    await tooltip.waitFor({ state: "visible" });
+    assert((await tooltip.textContent()) === "Move up", "Keyboard focus should show the move tooltip.");
+    await moveMk3Up.click();
     metrics = await panelMetrics(page);
     assert(metrics.moveEvents.includes("mk3:term:-1"), "Move up should emit the dictionary id and direction.", metrics);
     assert(metrics.order === "mk3:term,jitendex:term", "Move up should reorder the visible dictionary list.", metrics);
@@ -164,6 +175,19 @@ async function main() {
     metrics = await panelMetrics(page);
     assert(!metrics.horizontalOverflow, "Dictionary panel should not create horizontal overflow in a narrow window.", metrics);
     assert(metrics.panel.right <= metrics.viewport.width, "Dictionary panel should stay within the narrow viewport.", metrics);
+
+    await page.getByRole("button", { name: "Move Jitendex.org [probe] down" }).hover();
+    tooltip = page.getByRole("tooltip", { name: "Move down", exact: true });
+    await tooltip.waitFor({ state: "visible" });
+    const tooltipBounds = await tooltip.evaluate((layer) => {
+      const rect = layer.getBoundingClientRect();
+      return { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left };
+    });
+    assert(
+      tooltipBounds.top >= 0 && tooltipBounds.left >= 0 && tooltipBounds.right <= metrics.viewport.width && tooltipBounds.bottom <= metrics.viewport.height,
+      "Move tooltip should stay within the narrow viewport.",
+      { tooltipBounds, viewport: metrics.viewport },
+    );
 
     await page.getByRole("button", { name: "Delete Jitendex.org [probe]" }).click();
     const dialogBox = await page.getByRole("alertdialog").boundingBox();

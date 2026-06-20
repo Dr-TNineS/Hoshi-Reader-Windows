@@ -92,7 +92,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - `HSW_HOSHIDICTS_DIR` can override the default local hoshidicts path.
   - Bookshelf has a minimal `Import Dictionary` entry for Yomitan `.zip` files.
   - Bookshelf has a minimal dictionary management panel for Term/Frequency/Pitch categories, refreshing status, enabling/disabling role entries, changing per-category order, and deleting an imported dictionary from all categories.
-  - Dictionary management uses one in-app delete confirmation that describes app-owned cleanup without touching the original zip; the probe and `npm run check:dictionary-management` cover empty/loading/error/ready states, category tab click/keyboard navigation, visible counts, enable switches, order controls, delete confirmation/cancel/focus restoration, import/refresh actions, Escape dismissal, and narrow-window overflow.
+  - Dictionary management uses one in-app delete confirmation that describes app-owned cleanup without touching the original zip; ordering buttons expose themed hover/focus tooltips. The probe and `npm run check:dictionary-management` cover empty/loading/error/ready states, category tab click/keyboard navigation, visible counts, enable switches, order controls and tooltip boundaries, delete confirmation/cancel/focus restoration, import/refresh actions, Escape dismissal, and narrow-window overflow.
   - Dictionary import uses zip content hash as stable `dict_id` and records successful imports in the manifest.
   - Dictionary import uses staging directories and preserves an existing dictionary dir if replacement fails.
   - `DictResult` includes rules, source dictionary, frequency entries, and pitch entries.

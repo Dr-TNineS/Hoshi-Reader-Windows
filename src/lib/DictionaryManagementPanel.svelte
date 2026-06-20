@@ -10,6 +10,7 @@
   } from "./dictionary-management";
   import type { DictionaryManifestEntry, DictionaryRole, DictionaryStatus } from "./types";
   import ConfirmDialog from "./ui/ConfirmDialog.svelte";
+  import UiIconButton from "./ui/IconButton.svelte";
   import UiSwitch from "./ui/Switch.svelte";
 
   let {
@@ -99,24 +100,22 @@
                     <p class="dictionary-path">{dictionary.internalPath}</p>
                   </div>
                   <div class="dictionary-row-actions">
-                    <button
-                      class="icon-action"
-                      aria-label={`Move ${dictionary.title} up`}
-                      title="Move up"
+                    <UiIconButton
+                      label={`Move ${dictionary.title} up`}
+                      tooltip="Move up"
                       disabled={busy || index === 0}
-                      onclick={() => onMove(dictionary, -1)}
+                      onClick={() => onMove(dictionary, -1)}
                     >
-                      ^
-                    </button>
-                    <button
-                      class="icon-action"
-                      aria-label={`Move ${dictionary.title} down`}
-                      title="Move down"
+                      {#snippet children()}↑{/snippet}
+                    </UiIconButton>
+                    <UiIconButton
+                      label={`Move ${dictionary.title} down`}
+                      tooltip="Move down"
                       disabled={busy || index === visibleDictionaries.length - 1}
-                      onclick={() => onMove(dictionary, 1)}
+                      onClick={() => onMove(dictionary, 1)}
                     >
-                      v
-                    </button>
+                      {#snippet children()}↓{/snippet}
+                    </UiIconButton>
                     <ConfirmDialog
                       title={`Delete ${dictionary.title}?`}
                       description="This removes the imported dictionary, all of its Term, Frequency, and Pitch entries, and the app-owned dictionary copy. The original zip file is not touched."
@@ -162,9 +161,6 @@
   .dictionary-meta { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-muted, #999999); font-size: 11px; }
   .dictionary-path { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-muted, #999999); font-size: 11px; }
   .dictionary-row-actions { display: flex; align-items: center; gap: 5px; }
-  .icon-action { width: 28px; height: 28px; display: inline-flex; align-items: center; justify-content: center; background: var(--app-control, #1b1b1b); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 4px; cursor: pointer; font-size: 13px; line-height: 1; }
-  .icon-action:hover:not(:disabled) { background: var(--app-control-hover, #262626); }
-  .icon-action:disabled { color: var(--app-muted, #999999); cursor: default; }
   .err { color: var(--app-error, #ffb4ab); font-size: 13px; white-space: pre-wrap; }
   .empty { padding: 28px 0; color: var(--app-muted, #999999); font-size: 13px; }
   @media (max-width: 640px) {
