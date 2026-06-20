@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onMount } from "svelte";
   import type { TocEntry } from "./toc";
 
   let {
@@ -12,12 +13,16 @@
     onClose: () => void;
     onJumpToChapter: (chapterIndex: number) => void;
   } = $props();
+
+  let closeButton: HTMLButtonElement;
+
+  onMount(() => closeButton.focus());
 </script>
 
-<aside class="toc-panel">
+<aside id="reader-toc" class="toc-panel" aria-labelledby="reader-toc-title">
   <div class="toc-head">
-    <h2>Contents</h2>
-    <button onclick={onClose}>Close</button>
+    <h2 id="reader-toc-title">Contents</h2>
+    <button bind:this={closeButton} onclick={onClose}>Close</button>
   </div>
   {#if entries.length === 0}
     <p class="empty">No table of contents.</p>

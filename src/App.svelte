@@ -285,7 +285,7 @@
   async function jumpToChapter(idx: number) {
     startAtEnd = false;
     closeReaderSelection();
-    showToc = false;
+    closeToc();
     await loadChapter(idx, 0);
   }
 
@@ -300,7 +300,7 @@
 
     startAtEnd = false;
     closeReaderSelection();
-    showToc = false;
+    closeToc(false);
     await loadChapter(idx, 0);
   }
 
@@ -737,9 +737,28 @@
     view = "bookshelf";
   }
 
+  function restoreTocTriggerFocus() {
+    requestAnimationFrame(() => document.getElementById("reader-toc-trigger")?.focus());
+  }
+
+  function closeToc(restoreFocus = true) {
+    if (!showToc) return;
+    showToc = false;
+    if (restoreFocus) restoreTocTriggerFocus();
+  }
+
+  function handleReaderEscape() {
+    if (showToc) {
+      closeToc();
+      return;
+    }
+    backToShelf();
+  }
+
   function toggleToc() {
     closeReaderSelection();
-    showToc = !showToc;
+    if (showToc) closeToc();
+    else showToc = true;
   }
 
   function updateLookupPopup(id: string, update: Partial<LookupPopupItem>) {
@@ -1044,7 +1063,7 @@
       onPrevChapterDirect={prevChapterDirect}
       onNextChapter={nextChapter}
       onNavigateHref={navigateReaderHref}
-      onBackToShelf={backToShelf}
+      onBackToShelf={handleReaderEscape}
       initialProgress={readerInitialProgress}
       chapterStartChars={chapterBookInfo?.current_total ?? 0}
       totalBookChars={meta?.book_info.character_count ?? 0}
@@ -1073,7 +1092,7 @@
       <TocPanel
         entries={tocEntries}
         {chapterIndex}
-        onClose={() => showToc = false}
+        onClose={closeToc}
         onJumpToChapter={jumpToChapter}
       />
     {/if}
@@ -1084,6 +1103,7 @@
       onNextChapter={nextChapter}
       onToggleToc={toggleToc}
       onBackToShelf={backToShelf}
+      tocOpen={showToc}
     />
   {/if}
 </main>

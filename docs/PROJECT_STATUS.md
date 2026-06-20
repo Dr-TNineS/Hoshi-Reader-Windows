@@ -58,12 +58,13 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - CSS column-based pagination using `.rv.clientHeight`, `.rct.scrollHeight`, and `scrollTop`.
   - Previous/next page and chapter navigation.
   - Keyboard arrow navigation and Ctrl/Meta chapter navigation.
-  - Escape returns to shelf.
-  - TOC overlay and internal chapter-link navigation.
+  - Escape clears an active selection first, then closes the TOC, then returns to shelf.
+  - Nonmodal TOC drawer keeps reader controls available, restores trigger focus on close/jump, and supports internal chapter-link navigation.
   - EPUB asset URL rewriting.
   - Basic image load/reflow handling, SVG cover replacement, gaiji image handling, and block image handling.
   - Reader progress based on visible text position.
 - Reader visual probe fixture and `npm run check:reader-visual` cover baseline pagination geometry, final-page alignment, block image rendering, Shift-hover and left-click lookup selection, Shift-hover tiny-movement dedupe, plain mouse drag selection not opening lookup, narrow-window overflow, Ctrl chapter navigation, and page-boundary chapter navigation.
+- Reader TOC probe fixture and `npm run check:reader-toc` cover trigger semantics, initial/restored focus, nonmodal interaction, Escape priority, chapter jumps, and narrow-window bounds.
 - Reader selection and popup:
   - Captures selected reader text with rect and chapter index.
   - Supports Shift hover lookup trigger.
@@ -183,8 +184,9 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - AnkiConnect panel regression probe: `npm run check:anki-connect`
 - Bookshelf confirmation regression probe: `npm run check:bookshelf`
 - Dictionary management regression probe: `npm run check:dictionary-management`
-  - Appearance ToggleGroup and Advanced settings controller probe: `npm run check:settings-state`
+- Appearance ToggleGroup and Advanced settings controller probe: `npm run check:settings-state`
 - Lookup popup regression probe: `npm run check:lookup-popup`
+- Reader TOC regression probe: `npm run check:reader-toc`
 - Reader visual regression probe: `npm run check:reader-visual`
 - Rust command/backend changes: `cd src-tauri; cargo check`
 - Rust tests: `cd src-tauri; cargo test --lib`

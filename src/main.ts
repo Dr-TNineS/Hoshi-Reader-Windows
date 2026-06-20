@@ -5,12 +5,15 @@ import BookshelfProbe from "./lib/BookshelfProbe.svelte";
 import DictionaryManagementProbe from "./lib/DictionaryManagementProbe.svelte";
 import LookupPopupProbe from "./lib/LookupPopupProbe.svelte";
 import ReaderVisualProbe from "./lib/reader/ReaderVisualProbe.svelte";
+import ReaderTocProbe from "./lib/ReaderTocProbe.svelte";
 import SettingsStateProbe from "./lib/SettingsStateProbe.svelte";
 import "./lib/styles/tokens.css";
 
 const params = new URLSearchParams(window.location.search);
 const Component = params.has("readerVisualProbe")
   ? ReaderVisualProbe
+  : params.has("readerTocProbe")
+    ? ReaderTocProbe
   : params.has("bookshelfProbe")
     ? BookshelfProbe
   : params.has("settingsStateProbe")

@@ -47,6 +47,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
 - AnkiConnect panel probe changes: `npm run check:anki-connect`
 - Dictionary management probe changes: `npm run check:dictionary-management`
 - Lookup popup probe changes: `npm run check:lookup-popup`
+- Reader TOC probe changes: `npm run check:reader-toc`
 - Reader visual probe changes: `npm run check:reader-visual`
 - Rust/backend changes: `cd src-tauri; cargo check`
 - Rust library tests when touching storage, EPUB, sanitizer, or dictionary logic: `cd src-tauri; cargo test --lib`
