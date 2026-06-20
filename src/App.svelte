@@ -248,12 +248,6 @@
   }
 
   async function forgetBook(book: BookRecord) {
-    const title = book.title || "this book";
-    const message = book.bookId
-      ? `Forget "${title}" from the bookshelf?\n\nThe app-owned EPUB copy will be removed. The original EPUB file is not touched.`
-      : `Forget "${title}" from the bookshelf?`;
-    if (!window.confirm(message)) return;
-
     try {
       if (book.bookId && isTauriRuntime()) {
         await invoke<LibraryBookRecord[]>("library_forget_book", { bookId: book.bookId });
@@ -720,9 +714,6 @@
 
   async function removeDictionaryImport(dictionary: DictionaryManifestEntry) {
     const title = dictionary.title || "this dictionary";
-    const message = `Delete "${title}" from imported dictionaries?\n\nThis removes this import from Term, Frequency, and Pitch categories and deletes the app-owned dictionary copy. The original zip file is not touched.`;
-    if (!window.confirm(message)) return;
-
     invalidateDictionaryLookupCaches();
     dictionaryBusy = true;
     dictionaryListError = "";

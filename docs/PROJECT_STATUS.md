@@ -38,7 +38,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Re-importing identical EPUB content reuses the same app-owned record when the library file still exists.
   - New records open by `book_id` rather than original source path.
   - Opening an app-owned record with a missing `book.epub` returns a scoped re-import error for that book.
-  - Bookshelf records can be forgotten; app-owned records also remove the imported EPUB copy and manifest entry without touching the original source EPUB.
+  - Bookshelf records can be forgotten through an in-app confirmation; app-owned records also remove the imported EPUB copy and manifest entry without touching the original source EPUB, while legacy records remove only the bookshelf state.
 - Bookshelf:
   - Recent books render as a cover grid with EPUB cover, progress bar, percent, and title when cover data is available.
   - EPUB import entry.
@@ -92,7 +92,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - `HSW_HOSHIDICTS_DIR` can override the default local hoshidicts path.
   - Bookshelf has a minimal `Import Dictionary` entry for Yomitan `.zip` files.
   - Bookshelf has a minimal dictionary management panel for Term/Frequency/Pitch categories, refreshing status, enabling/disabling role entries, changing per-category order, and deleting an imported dictionary from all categories.
-  - Dictionary management probe and `npm run check:dictionary-management` cover empty/loading/error/ready states, category tab click/keyboard navigation, visible counts, enable switches, order controls, delete confirmation/cancel/focus restoration, import/refresh actions, Escape dismissal, and narrow-window overflow.
+  - Dictionary management uses one in-app delete confirmation that describes app-owned cleanup without touching the original zip; the probe and `npm run check:dictionary-management` cover empty/loading/error/ready states, category tab click/keyboard navigation, visible counts, enable switches, order controls, delete confirmation/cancel/focus restoration, import/refresh actions, Escape dismissal, and narrow-window overflow.
   - Dictionary import uses zip content hash as stable `dict_id` and records successful imports in the manifest.
   - Dictionary import uses staging directories and preserves an existing dictionary dir if replacement fails.
   - `DictResult` includes rules, source dictionary, frequency entries, and pitch entries.
@@ -181,6 +181,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Frontend/type changes: `npm run check`
 - Frontend production build: `npm run build`
 - AnkiConnect panel regression probe: `npm run check:anki-connect`
+- Bookshelf confirmation regression probe: `npm run check:bookshelf`
 - Dictionary management regression probe: `npm run check:dictionary-management`
 - Appearance/Advanced settings controller probe: `npm run check:settings-state`
 - Lookup popup regression probe: `npm run check:lookup-popup`

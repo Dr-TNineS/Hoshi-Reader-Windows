@@ -9,6 +9,7 @@
     confirmLabel = "Confirm",
     cancelLabel = "Cancel",
     triggerAriaLabel,
+    triggerVariant = "default",
     disabled = false,
     onConfirm,
   }: {
@@ -18,13 +19,21 @@
     confirmLabel?: string;
     cancelLabel?: string;
     triggerAriaLabel?: string;
+    triggerVariant?: "default" | "book-overlay";
     disabled?: boolean;
     onConfirm: () => void;
   } = $props();
+
+  let open = $state(false);
+
+  function handleConfirm() {
+    onConfirm();
+    open = false;
+  }
 </script>
 
-<AlertDialog.Root>
-  <AlertDialog.Trigger class="dialog-trigger" aria-label={triggerAriaLabel} {disabled}>
+<AlertDialog.Root bind:open>
+  <AlertDialog.Trigger class="dialog-trigger" data-variant={triggerVariant} aria-label={triggerAriaLabel} {disabled}>
     {@render trigger()}
   </AlertDialog.Trigger>
   <AlertDialog.Portal disabled>
@@ -34,7 +43,7 @@
       <AlertDialog.Description class="dialog-description">{description}</AlertDialog.Description>
       <div class="dialog-actions">
         <AlertDialog.Cancel class="dialog-button dialog-cancel">{cancelLabel}</AlertDialog.Cancel>
-        <AlertDialog.Action class="dialog-button dialog-confirm" onclick={onConfirm}>
+        <AlertDialog.Action class="dialog-button dialog-confirm" onclick={handleConfirm}>
           {confirmLabel}
         </AlertDialog.Action>
       </div>
@@ -57,6 +66,20 @@
 
   :global(.dialog-trigger:hover:not(:disabled)) { background: var(--app-control-hover, #262626); }
   :global(.dialog-trigger:disabled) { color: var(--app-muted, #999999); cursor: default; }
+  :global(.dialog-trigger[data-variant="book-overlay"]) {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    min-height: 28px;
+    background: color-mix(in srgb, var(--app-bg, #000000) 82%, transparent);
+    color: var(--app-text, #ffffff);
+    border-color: color-mix(in srgb, var(--app-border, #333333) 80%, transparent);
+    border-radius: var(--ui-radius-md);
+    opacity: 0;
+    transition: opacity var(--ui-transition-fast), background var(--ui-transition-fast);
+  }
+  :global(.book-card:hover .dialog-trigger[data-variant="book-overlay"]),
+  :global(.dialog-trigger[data-variant="book-overlay"]:focus-visible) { opacity: 1; }
   :global(.dialog-trigger:focus-visible),
   :global(.dialog-button:focus-visible) {
     outline: var(--ui-focus-ring-width) solid var(--ui-focus-ring-color);
@@ -118,5 +141,9 @@
   @media (max-width: 420px) {
     .dialog-actions { flex-direction: column-reverse; }
     :global(.dialog-button) { width: 100%; }
+  }
+
+  @media (max-width: 640px) {
+    :global(.dialog-trigger[data-variant="book-overlay"]) { opacity: 1; }
   }
 </style>

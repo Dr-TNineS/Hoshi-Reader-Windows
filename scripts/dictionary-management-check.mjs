@@ -145,7 +145,9 @@ async function main() {
     await deleteTrigger.click();
     const dialog = page.getByRole("alertdialog");
     await dialog.waitFor();
-    assert((await dialog.textContent())?.includes("This action cannot be undone."), "Delete should open a descriptive confirmation dialog.");
+    const deleteDialogText = await dialog.textContent();
+    assert(deleteDialogText?.includes("app-owned dictionary copy"), "Delete should describe the managed dictionary copy.");
+    assert(deleteDialogText?.includes("original zip file is not touched"), "Delete should protect the original dictionary zip.");
     await dialog.getByRole("button", { name: "Cancel" }).click();
     metrics = await panelMetrics(page);
     assert(metrics.removeEvents === "" && metrics.rows === 2, "Cancel should not remove a dictionary.", metrics);

@@ -8,6 +8,7 @@
     "build": "vite build",
     "preview": "vite preview",
     "check:anki-connect": "node scripts/anki-connect-check.mjs",
+    "check:bookshelf": "node scripts/bookshelf-check.mjs",
     "check:dictionary-management": "node scripts/dictionary-management-check.mjs",
     "check:lookup-popup": "node scripts/lookup-popup-check.mjs",
     "check:reader-visual": "node scripts/reader-visual-check.mjs",

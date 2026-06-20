@@ -119,7 +119,7 @@
                     </button>
                     <ConfirmDialog
                       title={`Delete ${dictionary.title}?`}
-                      description="This removes the imported dictionary and all of its Term, Frequency, and Pitch entries. This action cannot be undone."
+                      description="This removes the imported dictionary, all of its Term, Frequency, and Pitch entries, and the app-owned dictionary copy. The original zip file is not touched."
                       confirmLabel="Delete"
                       triggerAriaLabel={`Delete ${dictionary.title}`}
                       disabled={busy}
