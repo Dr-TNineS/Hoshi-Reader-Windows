@@ -1,0 +1,19 @@
+:root {
+  --ui-space-1: 4px;
+  --ui-space-2: 8px;
+  --ui-space-3: 12px;
+  --ui-space-4: 16px;
+  --ui-space-5: 20px;
+  --ui-space-6: 24px;
+  --ui-radius-sm: 4px;
+  --ui-radius-md: 6px;
+  --ui-radius-lg: 8px;
+  --ui-control-height-sm: 30px;
+  --ui-control-height-md: 36px;
+  --ui-focus-ring-width: 2px;
+  --ui-focus-ring-offset: 2px;
+  --ui-focus-ring-color: var(--app-primary, #d0bcff);
+  --ui-overlay: rgba(0, 0, 0, 0.66);
+  --ui-dialog-shadow: 0 18px 56px var(--app-shadow, rgba(0, 0, 0, 0.48));
+  --ui-transition-fast: 120ms ease;
+}

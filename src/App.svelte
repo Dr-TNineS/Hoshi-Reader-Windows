@@ -1,17 +1,10 @@
 <script lang="ts">
   import { invoke, isTauri as isTauriRuntime } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { loadAdvancedSettings, saveAdvancedSettings, type AdvancedSettings } from "./lib/advanced-settings";
   import { ankiHandlebarOptions, applyKnownNoteTypeDefaultsIfUnmapped, extractDictionaryMediaReferences, upsertFieldTemplate } from "./lib/anki-field-renderer";
   import BookshelfView from "./lib/BookshelfView.svelte";
   import {
-    loadReaderAppearance,
-    readerAppearanceCssVars,
-    readerAppearancePalette,
     readerThemeLabels,
-    saveReaderAppearance,
-    type ReaderAppearance,
-    type ReaderTheme,
   } from "./lib/appearance";
   import { clearDictionaryStyleCache, preloadCachedDictionaryStyles } from "./lib/dictionary-style-cache";
   import { beginLookupPerformance, discardLookupPerformance, markLookupPerformance } from "./lib/lookup-performance";
@@ -23,6 +16,7 @@
   import { clearLookupHighlight, READER_LOOKUP_HIGHLIGHT } from "./lib/lookup-highlight";
   import Reader from "./lib/reader/Reader.svelte";
   import ReaderControls from "./lib/ReaderControls.svelte";
+  import { createSettingsState } from "./lib/state/settings.svelte";
   import {
     buildReadingProgressUpdate,
     clampUnit,
@@ -71,19 +65,15 @@
   let readerSelection = $state<ReaderSelection | null>(null);
   let readerLookupHighlightText = $state("");
   let lookupPopups = $state<LookupPopupItem[]>([]);
-  let readerAppearance = $state<ReaderAppearance>(loadReaderAppearance());
-  let advancedSettings = $state<AdvancedSettings>(loadAdvancedSettings());
-  let showAppearancePanel = $state(false);
+  const settings = createSettingsState();
   let lookupRequestId = 0;
   let showToc = $state(false);
   let error = $state("");
   let dictionaryStatus = $state("");
-  let showDictionaryManager = $state(false);
   let dictionaryList = $state<DictionaryManifestEntry[]>([]);
   let dictionaryListStatus = $state<DictionaryStatus | null>(null);
   let dictionaryListError = $state("");
   let dictionaryBusy = $state(false);
-  let showAnkiPanel = $state(false);
   let ankiSettings = $state<AnkiSettings | null>(null);
   let ankiEndpointDraft = $state("http://127.0.0.1:8765");
   let ankiStatus = $state("");
@@ -100,8 +90,6 @@
 
   let tocEntries = $derived(meta ? flattenToc(meta.toc, meta) : []);
   let chapterBookInfo = $derived(meta?.book_info.chapter_info[chapterIndex] ?? null);
-  let appearancePalette = $derived(readerAppearancePalette(readerAppearance));
-  let appearanceVars = $derived(readerAppearanceCssVars(appearancePalette));
   let ankiTemplateOptions = $derived(ankiHandlebarOptions(dictionaryList.map((dictionary) => dictionary.title)));
 
   // Initialize persisted reading state once. Returning to the shelf should stay
@@ -110,7 +98,7 @@
     if (triedStartup) return;
     triedStartup = true;
     if (!isTauriRuntime()) return;
-    const shouldReopenLastBook = advancedSettings.reopenLastBookOnStartup;
+    const shouldReopenLastBook = settings.advancedSettings.reopenLastBookOnStartup;
 
     (async () => {
       try {
@@ -150,19 +138,6 @@
     if (!isTauriRuntime()) return;
     void loadAnkiSettings();
   });
-
-  $effect(() => {
-    saveReaderAppearance(readerAppearance);
-  });
-
-  function setReaderTheme(theme: ReaderTheme) {
-    readerAppearance = { ...readerAppearance, theme };
-  }
-
-  function setReopenLastBookOnStartup(enabled: boolean) {
-    advancedSettings = { ...advancedSettings, reopenLastBookOnStartup: enabled };
-    saveAdvancedSettings(advancedSettings);
-  }
 
   function saveProgress(
     locator: BookLocator,
@@ -273,12 +248,6 @@
   }
 
   async function forgetBook(book: BookRecord) {
-    const title = book.title || "this book";
-    const message = book.bookId
-      ? `Forget "${title}" from the bookshelf?\n\nThe app-owned EPUB copy will be removed. The original EPUB file is not touched.`
-      : `Forget "${title}" from the bookshelf?`;
-    if (!window.confirm(message)) return;
-
     try {
       if (book.bookId && isTauriRuntime()) {
         await invoke<LibraryBookRecord[]>("library_forget_book", { bookId: book.bookId });
@@ -316,7 +285,7 @@
   async function jumpToChapter(idx: number) {
     startAtEnd = false;
     closeReaderSelection();
-    showToc = false;
+    closeToc();
     await loadChapter(idx, 0);
   }
 
@@ -331,7 +300,7 @@
 
     startAtEnd = false;
     closeReaderSelection();
-    showToc = false;
+    closeToc(false);
     await loadChapter(idx, 0);
   }
 
@@ -756,9 +725,6 @@
 
   async function removeDictionaryImport(dictionary: DictionaryManifestEntry) {
     const title = dictionary.title || "this dictionary";
-    const message = `Delete "${title}" from imported dictionaries?\n\nThis removes this import from Term, Frequency, and Pitch categories and deletes the app-owned dictionary copy. The original zip file is not touched.`;
-    if (!window.confirm(message)) return;
-
     invalidateDictionaryLookupCaches();
     dictionaryBusy = true;
     dictionaryListError = "";
@@ -783,9 +749,28 @@
     view = "bookshelf";
   }
 
+  function restoreTocTriggerFocus() {
+    requestAnimationFrame(() => document.getElementById("reader-toc-trigger")?.focus());
+  }
+
+  function closeToc(restoreFocus = true) {
+    if (!showToc) return;
+    showToc = false;
+    if (restoreFocus) restoreTocTriggerFocus();
+  }
+
+  function handleReaderEscape() {
+    if (showToc) {
+      closeToc();
+      return;
+    }
+    backToShelf();
+  }
+
   function toggleToc() {
     closeReaderSelection();
-    showToc = !showToc;
+    if (showToc) closeToc();
+    else showToc = true;
   }
 
   function updateLookupPopup(id: string, update: Partial<LookupPopupItem>) {
@@ -1050,7 +1035,7 @@
 
 </script>
 
-<main class="app" data-theme={readerAppearance.theme} style={appearanceVars}>
+<main class="app" data-ui-portal-root data-theme={settings.readerAppearance.theme} style={settings.appearanceVars}>
   {#if view === "bookshelf"}
     <BookshelfView
       {books}
@@ -1058,29 +1043,23 @@
       {dictionaryStatus}
       {dictionaryBusy}
       {bookImportBusy}
-      {showAppearancePanel}
-      {readerAppearance}
+      readerAppearance={settings.readerAppearance}
       {readerThemeLabels}
-      {advancedSettings}
-      {showDictionaryManager}
+      advancedSettings={settings.advancedSettings}
       {dictionaryList}
       {dictionaryListStatus}
       {dictionaryListError}
-      {showAnkiPanel}
       {ankiSettings}
       {ankiEndpointDraft}
       {ankiStatus}
       {ankiError}
       {ankiBusy}
       {ankiTemplateOptions}
-      onToggleAnkiPanel={() => showAnkiPanel = !showAnkiPanel}
-      onToggleAppearancePanel={() => showAppearancePanel = !showAppearancePanel}
-      onToggleDictionaryManager={() => showDictionaryManager = !showDictionaryManager}
       onOpenBook={openBook}
       onContinueBook={continueBook}
       onForgetBook={forgetBook}
-      onSetReaderTheme={setReaderTheme}
-      onSetReopenLastBookOnStartup={setReopenLastBookOnStartup}
+      onSetReaderTheme={settings.setReaderTheme}
+      onSetReopenLastBookOnStartup={settings.setReopenLastBookOnStartup}
       onRefreshDictionaries={refreshDictionaries}
       onImportDictionary={importDictionary}
       onImportDictionaryFolder={importDictionaryFolder}
@@ -1105,11 +1084,11 @@
       onPrevChapterDirect={prevChapterDirect}
       onNextChapter={nextChapter}
       onNavigateHref={navigateReaderHref}
-      onBackToShelf={backToShelf}
+      onBackToShelf={handleReaderEscape}
       initialProgress={readerInitialProgress}
       chapterStartChars={chapterBookInfo?.current_total ?? 0}
       totalBookChars={meta?.book_info.character_count ?? 0}
-      {appearancePalette}
+      appearancePalette={settings.appearancePalette}
       lookupHighlightText={readerLookupHighlightText}
       onProgressChange={handleReaderProgress}
       onSelectionChange={handleReaderSelection}
@@ -1134,7 +1113,7 @@
       <TocPanel
         entries={tocEntries}
         {chapterIndex}
-        onClose={() => showToc = false}
+        onClose={closeToc}
         onJumpToChapter={jumpToChapter}
       />
     {/if}
@@ -1145,6 +1124,7 @@
       onNextChapter={nextChapter}
       onToggleToc={toggleToc}
       onBackToShelf={backToShelf}
+      tocOpen={showToc}
     />
   {/if}
 </main>

@@ -38,12 +38,15 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Re-importing identical EPUB content reuses the same app-owned record when the library file still exists.
   - New records open by `book_id` rather than original source path.
   - Opening an app-owned record with a missing `book.epub` returns a scoped re-import error for that book.
-  - Bookshelf records can be forgotten; app-owned records also remove the imported EPUB copy and manifest entry without touching the original source EPUB.
+  - Bookshelf records can be forgotten through an in-app confirmation; app-owned records also remove the imported EPUB copy and manifest entry without touching the original source EPUB, while legacy records remove only the bookshelf state.
 - Bookshelf:
+  - `BookshelfView.activePanel` is the single source of truth for Library, Dictionaries, Anki, Appearance, Advanced, and Shortcuts panel selection; App no longer mirrors panel visibility booleans.
   - Recent books render as a cover grid with EPUB cover, progress bar, percent, and title when cover data is available.
   - EPUB import entry.
-  - Minimal Appearance panel with HSA-aligned Light and Dark reader themes.
+  - Minimal Appearance panel with HSA-aligned Light and Dark reader themes using a single-select Bits UI ToggleGroup with roving keyboard focus.
   - Advanced panel with a default-on option to reopen the last reading session at startup.
+  - Bits UI provides the first headless UI primitives for the Advanced switch and dictionary Tabs, enabled switches, and delete confirmation dialog; shared CSS variables define non-invasive control tokens without changing Reader layout styles.
+  - Appearance and Advanced settings state is coordinated by a Svelte 5 runes controller in `src/lib/state/settings.svelte.ts`; persistence remains delegated to the existing appearance and Advanced storage modules.
   - The Advanced startup preference is stored locally in browser `localStorage`.
   - Read-only Shortcuts panel listing the currently implemented Reader keyboard and mouse shortcuts by feature group.
   - Resume from saved progress.
@@ -56,12 +59,13 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - CSS column-based pagination using `.rv.clientHeight`, `.rct.scrollHeight`, and `scrollTop`.
   - Previous/next page and chapter navigation.
   - Keyboard arrow navigation and Ctrl/Meta chapter navigation.
-  - Escape returns to shelf.
-  - TOC overlay and internal chapter-link navigation.
+  - Escape clears an active selection first, then closes the TOC, then returns to shelf.
+  - Nonmodal TOC drawer keeps reader controls available, restores trigger focus on close/jump, and supports internal chapter-link navigation.
   - EPUB asset URL rewriting.
   - Basic image load/reflow handling, SVG cover replacement, gaiji image handling, and block image handling.
   - Reader progress based on visible text position.
 - Reader visual probe fixture and `npm run check:reader-visual` cover baseline pagination geometry, final-page alignment, block image rendering, Shift-hover and left-click lookup selection, Shift-hover tiny-movement dedupe, plain mouse drag selection not opening lookup, narrow-window overflow, Ctrl chapter navigation, and page-boundary chapter navigation.
+- Reader TOC probe fixture and `npm run check:reader-toc` cover trigger semantics, initial/restored focus, nonmodal interaction, Escape priority, chapter jumps, and narrow-window bounds.
 - Reader selection and popup:
   - Captures selected reader text with rect and chapter index.
   - Supports Shift hover lookup trigger.
@@ -93,7 +97,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - `HSW_HOSHIDICTS_DIR` can override the default local hoshidicts path.
   - Bookshelf has a minimal `Import Dictionary` entry for Yomitan `.zip` files.
   - Bookshelf has a minimal dictionary management panel for Term/Frequency/Pitch categories, refreshing status, enabling/disabling role entries, changing per-category order, and deleting an imported dictionary from all categories.
-  - Dictionary management probe and `npm run check:dictionary-management` cover empty/loading/error/ready states, category tabs, visible counts, enable toggles, order controls, delete/import/refresh actions, and narrow-window overflow.
+  - Dictionary management uses one in-app delete confirmation that describes app-owned cleanup without touching the original zip; ordering buttons expose themed hover/focus tooltips. The probe and `npm run check:dictionary-management` cover empty/loading/error/ready states, category tab click/keyboard navigation, visible counts, enable switches, order controls and tooltip boundaries, delete confirmation/cancel/focus restoration, import/refresh actions, Escape dismissal, and narrow-window overflow.
   - Dictionary import uses zip content hash as stable `dict_id` and records successful imports in the manifest.
   - Dictionary import uses staging directories and preserves an existing dictionary dir if replacement fails.
   - `DictResult` includes rules, source dictionary, frequency entries, and pitch entries.
@@ -108,6 +112,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - MK3 compatibility import performance validation on 2026-06-18 with local `MK3Fix0213.zip` completed in about 24 seconds in the linked ignored Rust test; before switching the lookup-safe temp zip to stored entries, the safe-zip creation step alone took about 187 seconds.
   - Lookup responses map compatibility-import internal ASCII titles back to manifest titles for result, glossary, frequency, and pitch source labels.
 - Anki:
+  - Deck and note-type controls use the shared Bits UI Select primitive; field-template token pickers use the shared Bits UI DropdownMenu primitive with themed portal content kept inside the application overlay root; Word Audio enablement uses the shared Bits UI Switch.
   - Lookup popup keeps the Anki affordance disabled until endpoint, deck, note type, and fields are configured.
   - Bookshelf now has a minimal AnkiConnect readiness/configuration panel for endpoint editing, connection testing, deck/note-type fetch, deck selection, note-type selection, field template editing, and note field preview.
   - Anki field templates include HSA-aligned exact-name defaults for Lapis, Kiku, and Senren; unmapped known-model fields keep HSA's blank behavior, and custom model names do not inherit these presets.
@@ -118,7 +123,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Configured lookup popup results can call Rust `anki_add_note`; Rust performs `canAddNotesWithErrorDetail` before `addNote` and returns added/duplicate/error states.
   - Real desktop Anki runtime validation passed on 2026-06-18 with AnkiConnect v6 on `127.0.0.1:8765`: the ignored Rust validation test created a throwaway deck/model, added one note through HSW `anki_add_note`, verified duplicate handling on the second add, and attempted cleanup.
   - Rust/Tauri stores Anki settings in app data `anki/settings.json` and restricts AnkiConnect endpoints to localhost/127.0.0.1 HTTP.
-  - `npm run check:anki-connect` covers Anki panel empty/error/connected/ready states, action wiring, selections, field template edits, HSA-aligned Lapis defaults, exact-name preset matching, handlebar picker choices, and narrow-window overflow.
+  - `npm run check:anki-connect` covers Anki panel empty/error/connected/ready states, action wiring, pointer/keyboard selections, field template edits, HSA-aligned Lapis defaults, exact-name preset matching, token menu choices, and Select/Menu viewport boundaries without narrow-window overflow.
   - `npm run check:lookup-popup` covers configured compact Anki add action, sentence-context rendering, dictionary-specific glossary handlebars, unknown handlebars rendering empty, added/duplicate/error UI states, rendered note shape, and the unconfigured disabled Anki boundary.
   - First Anki media-export scope is tracked in `docs/ANKI_MEDIA_EXPORT_PLAN.md`; dictionary image media references are extracted from lookup glossary content, `{dictionary-media}` previews render deterministic HTML, and add-note flow stores dictionary media before note creation.
   - Rust `anki_store_dictionary_media` stores imported dictionary image media through AnkiConnect `storeMediaFile`; missing media returns warnings, while unsafe paths and unsupported types are blocked.
@@ -181,8 +186,11 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Frontend/type changes: `npm run check`
 - Frontend production build: `npm run build`
 - AnkiConnect panel regression probe: `npm run check:anki-connect`
+- Bookshelf shell and confirmation regression probe: `npm run check:bookshelf`
 - Dictionary management regression probe: `npm run check:dictionary-management`
+- Appearance ToggleGroup and Advanced settings controller probe: `npm run check:settings-state`
 - Lookup popup regression probe: `npm run check:lookup-popup`
+- Reader TOC regression probe: `npm run check:reader-toc`
 - Lookup cache regression probe: `npm run check:lookup-performance`
 - Reader visual regression probe: `npm run check:reader-visual`
 - Rust command/backend changes: `cd src-tauri; cargo check`

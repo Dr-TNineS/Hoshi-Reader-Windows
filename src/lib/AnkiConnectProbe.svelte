@@ -135,7 +135,7 @@
   }
 </script>
 
-<main class="probe">
+<main class="probe" data-ui-portal-root>
   <AnkiConnectPanel
     {settings}
     {endpoint}

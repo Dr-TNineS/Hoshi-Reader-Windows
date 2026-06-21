@@ -6,6 +6,7 @@
     onNextChapter,
     onToggleToc,
     onBackToShelf,
+    tocOpen = false,
   }: {
     chapterIndex?: number;
     totalChapters?: number;
@@ -13,6 +14,7 @@
     onNextChapter: () => void;
     onToggleToc: () => void;
     onBackToShelf: () => void;
+    tocOpen?: boolean;
   } = $props();
 </script>
 
@@ -20,7 +22,12 @@
   <button onclick={onPrevChapter}>Prev Ch</button>
   <span>Ch.{chapterIndex + 1}/{totalChapters}</span>
   <button onclick={onNextChapter}>Next Ch</button>
-  <button onclick={onToggleToc}>TOC</button>
+  <button
+    id="reader-toc-trigger"
+    aria-expanded={tocOpen}
+    aria-controls="reader-toc"
+    onclick={onToggleToc}
+  >TOC</button>
   <button onclick={onBackToShelf}>Esc</button>
 </div>
 

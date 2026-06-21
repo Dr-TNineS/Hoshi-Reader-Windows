@@ -1,5 +1,6 @@
 <script lang="ts">
   import type { AdvancedSettings } from "./advanced-settings";
+  import UiSwitch from "./ui/Switch.svelte";
 
   let {
     settings,
@@ -18,12 +19,10 @@
       <label for="reopen-last-book">Reopen last book on startup</label>
       <p>Automatically return to the last reading session when Hoshi Reader starts.</p>
     </div>
-    <input
+    <UiSwitch
       id="reopen-last-book"
-      type="checkbox"
-      role="switch"
       checked={settings.reopenLastBookOnStartup}
-      onchange={(event) => onReopenLastBookOnStartupChange(event.currentTarget.checked)}
+      onCheckedChange={onReopenLastBookOnStartupChange}
     />
   </div>
 </section>
@@ -35,8 +34,6 @@
   .setting-copy { min-width: 0; }
   label { color: var(--app-text); font-size: 14px; font-weight: 600; line-height: 1.35; cursor: pointer; }
   .setting-copy p { margin-top: 4px; color: var(--app-muted); font-size: 12px; line-height: 1.4; }
-  input { width: 42px; height: 22px; flex: 0 0 auto; accent-color: var(--app-primary); cursor: pointer; }
-
   @media (max-width: 640px) {
     .setting-card { align-items: flex-start; gap: 16px; }
   }

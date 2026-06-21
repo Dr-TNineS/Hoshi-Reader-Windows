@@ -66,7 +66,7 @@ async function panelMetrics(page) {
       text: panel.textContent ?? "",
       fieldTemplates,
       handlebarButtonCount: panel.querySelectorAll(".handlebar-trigger").length,
-      handlebarMenuText: panel.querySelector(".handlebar-menu")?.textContent ?? "",
+      handlebarMenuText: document.querySelector(".handlebar-menu")?.textContent ?? "",
       endpoint: state?.getAttribute("data-endpoint") ?? "",
       pingClicks: Number(state?.getAttribute("data-ping-clicks") ?? 0),
       fetchClicks: Number(state?.getAttribute("data-fetch-clicks") ?? 0),
@@ -193,15 +193,21 @@ async function main() {
     await page.getByRole("button", { name: "Save" }).click();
     await page.locator(".field-template-row").filter({ hasText: "Back" }).locator("input").fill("{glossary}");
     await page.locator(".field-template-row").filter({ hasText: "Back" }).locator("input").blur();
-    await page.getByLabel("Enable").check();
+    const audioSwitch = page.getByRole("switch", { name: "Enable", exact: true });
+    await audioSwitch.press("Space");
     await page.getByLabel("Source Name").fill("Probe Audio");
     await page.getByLabel("Source Name").blur();
     await page.getByLabel("Audio URL Template").fill("https://example.invalid/audio?term={term}&reading={reading}");
     await page.getByLabel("Audio URL Template").blur();
     await page.getByLabel("Timeout Ms").fill("7000");
     await page.getByLabel("Timeout Ms").blur();
-    await page.getByLabel("Deck").selectOption("Japanese::Reading");
-    await page.getByLabel("Note Type").selectOption("Hoshi Vocabulary");
+    const deckSelect = page.getByRole("button", { name: "Deck", exact: true });
+    await deckSelect.click();
+    await page.keyboard.press("ArrowDown");
+    await page.keyboard.press("Enter");
+    const noteTypeSelect = page.getByRole("button", { name: "Note Type", exact: true });
+    await noteTypeSelect.click();
+    await page.getByRole("option", { name: "Hoshi Vocabulary", exact: true }).click();
     metrics = await panelMetrics(page);
     assert(metrics.endpoint === "http://localhost:8765", "Endpoint input should update probe state.", metrics);
     assert(metrics.pingClicks === 1 && metrics.fetchClicks === 1 && metrics.saveClicks === 1, "Action buttons should be wired.", metrics);
@@ -209,7 +215,7 @@ async function main() {
     assert(metrics.noteTypeEvents.includes("Hoshi Vocabulary"), "Note type select should emit selected note type.", metrics);
     assert(metrics.fieldTemplateEvents.includes("Back:{glossary}"), "Field template edits should emit the field and template.", metrics);
     assert(metrics.fieldMappings.includes("Back:{glossary}"), "Field template edits should update visible state.", metrics);
-    assert(metrics.audioEnabled === "true", "Audio enable checkbox should update visible state.", metrics);
+    assert(metrics.audioEnabled === "true", "Audio enable switch should update visible state from the keyboard.", metrics);
     assert(metrics.audioSource === "Probe Audio", "Audio source name should update visible state.", metrics);
     assert(metrics.audioUrl.includes("{term}") && metrics.audioTimeout === 7000, "Audio URL and timeout should update visible state.", metrics);
     assert(metrics.audioEvents.includes("true:"), "Audio settings edits should emit changes.", metrics);
@@ -221,6 +227,30 @@ async function main() {
     metrics = await panelMetrics(page);
     assert(!metrics.horizontalOverflow, "Anki panel should not create horizontal overflow in a narrow window.", metrics);
     assert(metrics.panel.right <= metrics.viewport.width, "Anki panel should stay within the narrow viewport.", metrics);
+
+    await page.getByRole("button", { name: "Deck", exact: true }).click();
+    let layerBounds = await page.locator(".ui-select-content").evaluate((layer) => {
+      const rect = layer.getBoundingClientRect();
+      return { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left };
+    });
+    assert(
+      layerBounds.top >= 0 && layerBounds.left >= 0 && layerBounds.right <= metrics.viewport.width && layerBounds.bottom <= metrics.viewport.height,
+      "Select content should stay within the narrow viewport.",
+      { layerBounds, viewport: metrics.viewport },
+    );
+    await page.keyboard.press("Escape");
+
+    await page.locator(".field-template-row").filter({ hasText: "Front" }).locator(".handlebar-trigger").click();
+    layerBounds = await page.locator(".handlebar-menu").evaluate((layer) => {
+      const rect = layer.getBoundingClientRect();
+      return { top: rect.top, right: rect.right, bottom: rect.bottom, left: rect.left };
+    });
+    assert(
+      layerBounds.top >= 0 && layerBounds.left >= 0 && layerBounds.right <= metrics.viewport.width && layerBounds.bottom <= metrics.viewport.height,
+      "Token menu should stay within the narrow viewport.",
+      { layerBounds, viewport: metrics.viewport },
+    );
+    await page.keyboard.press("Escape");
 
     console.log(JSON.stringify(metrics, null, 2));
   } finally {

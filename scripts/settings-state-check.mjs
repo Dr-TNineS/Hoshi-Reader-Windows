@@ -1,0 +1,109 @@
+import { spawn, spawnSync } from "node:child_process";
+import { once } from "node:events";
+import { chromium } from "playwright";
+
+const port = Number(process.env.HSW_SETTINGS_STATE_PORT || 5177);
+const origin = `http://127.0.0.1:${port}`;
+
+function assert(condition, message, details = {}) {
+  if (condition) return;
+  const suffix = Object.keys(details).length ? `\n${JSON.stringify(details, null, 2)}` : "";
+  throw new Error(`${message}${suffix}`);
+}
+
+async function waitForServer(proc) {
+  let output = "";
+  const ready = new Promise((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`Vite did not become ready.\n${output}`)), 30000);
+    const onData = (chunk) => {
+      output += chunk.toString();
+      if (!output.includes("ready in")) return;
+      clearTimeout(timer);
+      resolve();
+    };
+    proc.stdout.on("data", onData);
+    proc.stderr.on("data", onData);
+  });
+  const exit = once(proc, "exit").then(([code]) => {
+    throw new Error(`Vite exited before ready with code ${code}.\n${output}`);
+  });
+  await Promise.race([ready, exit]);
+}
+
+function stopServer(proc) {
+  if (proc.exitCode !== null) return;
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/PID", String(proc.pid), "/T", "/F"], { stdio: "ignore" });
+    return;
+  }
+  proc.kill();
+}
+
+async function state(page) {
+  return page.locator(".probe-state").evaluate((element) => ({
+    theme: element.getAttribute("data-theme"),
+    reopen: element.getAttribute("data-reopen"),
+    appearanceVars: element.getAttribute("data-appearance-vars"),
+    savedAppearances: element.getAttribute("data-saved-appearances"),
+    savedAdvanced: element.getAttribute("data-saved-advanced"),
+  }));
+}
+
+async function main() {
+  const vite = spawn(
+    process.platform === "win32" ? "cmd.exe" : "npm",
+    process.platform === "win32"
+      ? ["/c", "npm", "run", "dev", "--", "--host", "127.0.0.1", "--port", String(port), "--strictPort"]
+      : ["run", "dev", "--", "--host", "127.0.0.1", "--port", String(port), "--strictPort"],
+    { cwd: process.cwd(), stdio: ["ignore", "pipe", "pipe"] },
+  );
+
+  let browser;
+  try {
+    await waitForServer(vite);
+    browser = await chromium.launch();
+    const page = await browser.newPage();
+    await page.goto(`${origin}/?settingsStateProbe=1`);
+    await page.locator(".probe-state").waitFor({ state: "attached" });
+
+    let current = await state(page);
+    assert(current.theme === "dark" && current.reopen === "true", "Controller should expose loaded settings.", current);
+    assert(current.savedAppearances === "dark", "Controller should preserve appearance startup normalization.", current);
+    assert(current.savedAdvanced === "", "Controller should not rewrite Advanced settings during startup.", current);
+
+    const lightTheme = page.getByRole("radio", { name: "Light", exact: true });
+    const darkTheme = page.getByRole("radio", { name: "Dark", exact: true });
+    assert(await darkTheme.getAttribute("aria-checked") === "true", "Loaded theme should be checked in the toggle group.");
+    await darkTheme.click();
+    current = await state(page);
+    assert(current.savedAppearances === "dark", "Clicking the active theme should not deselect or persist it again.", current);
+
+    await darkTheme.focus();
+    await page.keyboard.press("ArrowLeft");
+    await page.keyboard.press("Space");
+    current = await state(page);
+    assert(current.theme === "light", "Arrow navigation plus Space should update the selected theme.", current);
+    assert(current.savedAppearances === "dark,light", "Theme setter should persist the next appearance.", current);
+    assert(current.appearanceVars?.includes("--app-bg:#fff"), "Theme setter should recompute appearance CSS variables.", current);
+    assert(await lightTheme.getAttribute("aria-checked") === "true", "Keyboard-selected theme should become checked.");
+
+    await page.getByRole("button", { name: "Toggle startup", exact: true }).click();
+    current = await state(page);
+    assert(current.reopen === "false", "Advanced setter should update reactive state.", current);
+    assert(current.savedAdvanced === "false", "Advanced setter should persist the next settings value.", current);
+
+    await darkTheme.click();
+    current = await state(page);
+    assert(current.savedAppearances === "dark,light,dark", "Repeated theme changes should persist in order.", current);
+
+    console.log(JSON.stringify(current, null, 2));
+  } finally {
+    if (browser) await browser.close();
+    stopServer(vite);
+  }
+}
+
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});

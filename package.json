@@ -8,10 +8,13 @@
     "build": "vite build",
     "preview": "vite preview",
     "check:anki-connect": "node scripts/anki-connect-check.mjs",
+    "check:bookshelf": "node scripts/bookshelf-check.mjs",
     "check:dictionary-management": "node scripts/dictionary-management-check.mjs",
     "check:lookup-popup": "node scripts/lookup-popup-check.mjs",
     "check:lookup-performance": "node scripts/lookup-performance-check.mjs",
     "check:reader-visual": "node scripts/reader-visual-check.mjs",
+    "check:reader-toc": "node scripts/reader-toc-check.mjs",
+    "check:settings-state": "node scripts/settings-state-check.mjs",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
     "package": "powershell -ExecutionPolicy Bypass -File scripts/package-portable.ps1"
   },
@@ -28,6 +31,7 @@
   },
   "dependencies": {
     "@tauri-apps/api": "^2.11.0",
-    "@tauri-apps/plugin-dialog": "^2.7.1"
+    "@tauri-apps/plugin-dialog": "^2.7.1",
+    "bits-ui": "^2.18.1"
   }
 }

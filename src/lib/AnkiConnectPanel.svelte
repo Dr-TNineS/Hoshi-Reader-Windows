@@ -1,6 +1,9 @@
 <script lang="ts">
   import { effectiveTemplateForField } from "./anki-field-renderer";
   import type { AnkiAudioSource, AnkiSettings } from "./types";
+  import UiDropdownMenu from "./ui/DropdownMenu.svelte";
+  import UiSelect from "./ui/Select.svelte";
+  import UiSwitch from "./ui/Switch.svelte";
 
   let {
     settings = null,
@@ -37,7 +40,8 @@
   const selectedNote = $derived(
     settings?.noteTypes.find((noteType) => noteType.name === settings?.selectedNoteType) ?? null,
   );
-  let openHandlebarField = $state<string | null>(null);
+  const deckOptions = $derived(settings?.decks.map((deck) => ({ value: deck.name, label: deck.name })) ?? []);
+  const noteTypeOptions = $derived(settings?.noteTypes.map((noteType) => ({ value: noteType.name, label: noteType.name })) ?? []);
 
   function fetchedLabel(timestamp: number | null | undefined): string {
     if (!timestamp) return "Not fetched yet";
@@ -69,7 +73,6 @@
   }
 
   function selectHandlebar(field: string, option: string) {
-    openHandlebarField = null;
     onSetFieldTemplate(field, option === "-" ? "" : option);
   }
 </script>
@@ -106,39 +109,29 @@
   {/if}
 
   <div class="config-grid" aria-busy={busy}>
-    <label class="select-row">
-      <span>Deck</span>
-      <select
-        disabled={busy || !settings?.decks.length}
+    <div class="select-row">
+      <span id="anki-deck-label">Deck</span>
+      <UiSelect
         value={settings?.selectedDeck ?? ""}
-        onchange={(event) => onSelectDeck(event.currentTarget.value)}
-      >
-        {#if !settings?.decks.length}
-          <option value="">No decks fetched</option>
-        {:else}
-          {#each settings.decks as deck (deck.name)}
-            <option value={deck.name}>{deck.name}</option>
-          {/each}
-        {/if}
-      </select>
-    </label>
+        items={deckOptions}
+        placeholder={settings?.decks.length ? "Select a deck" : "No decks fetched"}
+        disabled={busy || !settings?.decks.length}
+        ariaLabelledby="anki-deck-label"
+        onValueChange={onSelectDeck}
+      />
+    </div>
 
-    <label class="select-row">
-      <span>Note Type</span>
-      <select
-        disabled={busy || !settings?.noteTypes.length}
+    <div class="select-row">
+      <span id="anki-note-type-label">Note Type</span>
+      <UiSelect
         value={settings?.selectedNoteType ?? ""}
-        onchange={(event) => onSelectNoteType(event.currentTarget.value)}
-      >
-        {#if !settings?.noteTypes.length}
-          <option value="">No note types fetched</option>
-        {:else}
-          {#each settings.noteTypes as noteType (noteType.name)}
-            <option value={noteType.name}>{noteType.name}</option>
-          {/each}
-        {/if}
-      </select>
-    </label>
+        items={noteTypeOptions}
+        placeholder={settings?.noteTypes.length ? "Select a note type" : "No note types fetched"}
+        disabled={busy || !settings?.noteTypes.length}
+        ariaLabelledby="anki-note-type-label"
+        onValueChange={onSelectNoteType}
+      />
+    </div>
   </div>
 
   <div class="fields-row">
@@ -156,25 +149,12 @@
                 spellcheck="false"
                 onchange={(event) => onSetFieldTemplate(field, event.currentTarget.value)}
               />
-              <button
-                type="button"
-                class="handlebar-trigger"
+              <UiDropdownMenu
+                items={handlebarOptions}
                 disabled={busy || handlebarOptions.length === 0}
-                aria-label={`Choose template token for ${field}`}
-                aria-expanded={openHandlebarField === field}
-                onclick={() => openHandlebarField = openHandlebarField === field ? null : field}
-              >
-                {"{}"}
-              </button>
-              {#if openHandlebarField === field}
-                <div class="handlebar-menu" role="menu">
-                  {#each handlebarOptions as option}
-                    <button type="button" role="menuitem" onclick={() => selectHandlebar(field, option)}>
-                      {option}
-                    </button>
-                  {/each}
-                </div>
-              {/if}
+                triggerAriaLabel={`Choose template token for ${field}`}
+                onSelect={(option) => selectHandlebar(field, option)}
+              />
             </div>
           </div>
         {/each}
@@ -192,15 +172,15 @@
           {settings?.audioEnabled ? "Audio token boundary enabled" : "Audio export disabled"}
         </p>
       </div>
-      <label class="audio-toggle">
-        <input
-          type="checkbox"
+      <div class="audio-toggle">
+        <UiSwitch
+          id="anki-audio-enabled"
           checked={settings?.audioEnabled ?? false}
           disabled={busy}
-          onchange={(event) => updateAudioEnabled(event.currentTarget.checked)}
+          onCheckedChange={updateAudioEnabled}
         />
-        <span>Enable</span>
-      </label>
+        <label for="anki-audio-enabled">Enable</label>
+      </div>
     </div>
     <div class="audio-grid">
       <label class="select-row">
@@ -249,8 +229,8 @@
   .compact-action:hover:not(:disabled) { background: var(--app-control-hover, #262626); }
   .compact-action:disabled { color: var(--app-muted, #999999); cursor: default; }
   .endpoint-row, .select-row { min-width: 0; display: flex; flex-direction: column; gap: 5px; color: var(--app-muted, #999999); font-size: 11px; text-transform: uppercase; }
-  .endpoint-row input, .select-row input, .select-row select { width: 100%; min-width: 0; padding: 7px 8px; background: var(--app-bg, #000); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 4px; font-size: 13px; text-transform: none; }
-  .endpoint-row input:disabled, .select-row input:disabled, .select-row select:disabled { color: var(--app-muted, #999999); }
+  .endpoint-row input, .select-row input { width: 100%; min-width: 0; padding: 7px 8px; background: var(--app-bg, #000); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 4px; font-size: 13px; text-transform: none; }
+  .endpoint-row input:disabled, .select-row input:disabled { color: var(--app-muted, #999999); }
   .config-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 10px; }
   .config-grid[aria-busy="true"] { opacity: 0.72; }
   .fields-row { display: flex; flex-direction: column; gap: 7px; }
@@ -259,7 +239,6 @@
   .audio-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
   .audio-summary { margin-top: 3px; color: var(--app-muted, #999999); font-size: 12px; line-height: 1.35; }
   .audio-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--app-text, #fff); font-size: 12px; }
-  .audio-toggle input { width: 14px; height: 14px; accent-color: var(--app-primary, #d0bcff); }
   .audio-grid { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 10px; }
   .field-template-list { display: flex; flex-direction: column; gap: 7px; }
   .field-template-row { min-width: 0; display: grid; grid-template-columns: minmax(90px, 0.32fr) minmax(0, 1fr); align-items: start; gap: 8px; }
@@ -267,12 +246,6 @@
   .field-template-control { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) 34px; gap: 6px; }
   .field-template-row input { width: 100%; min-width: 0; padding: 6px 7px; background: var(--app-bg, #000); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 4px; font-size: 12px; }
   .field-template-row input:disabled { color: var(--app-muted, #999999); }
-  .handlebar-trigger { width: 34px; min-height: 30px; background: var(--app-control, #1b1b1b); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 4px; cursor: pointer; font-size: 12px; font-family: ui-monospace, "Cascadia Code", Consolas, monospace; }
-  .handlebar-trigger:hover:not(:disabled) { background: var(--app-control-hover, #262626); }
-  .handlebar-trigger:disabled { color: var(--app-muted, #999999); cursor: default; }
-  .handlebar-menu { grid-column: 1 / -1; display: grid; grid-template-columns: repeat(auto-fit, minmax(168px, 1fr)); gap: 4px; max-height: 180px; overflow-y: auto; padding: 6px; background: var(--app-bg, #000); border: 1px solid var(--app-border, #333333); border-radius: 4px; }
-  .handlebar-menu button { min-width: 0; padding: 5px 7px; text-align: left; overflow-wrap: anywhere; background: transparent; color: var(--app-text, #fff); border: none; border-radius: 3px; cursor: pointer; font-size: 12px; }
-  .handlebar-menu button:hover { background: var(--app-control, #1b1b1b); }
   .anki-status { color: var(--app-status, #cce8d5); font-size: 13px; line-height: 1.4; }
   .err { color: var(--app-error, #ffb4ab); font-size: 13px; white-space: pre-wrap; }
   .empty, .fetched-at { color: var(--app-muted, #999999); font-size: 12px; }

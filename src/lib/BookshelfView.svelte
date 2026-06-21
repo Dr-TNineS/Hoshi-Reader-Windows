@@ -9,6 +9,7 @@
   import AdvancedPanel from "./AdvancedPanel.svelte";
   import type { AdvancedSettings } from "./advanced-settings";
   import { bookRecordKey, type BookRecord } from "./storage";
+  import ConfirmDialog from "./ui/ConfirmDialog.svelte";
 
   let {
     books,
@@ -16,24 +17,18 @@
     dictionaryStatus = "",
     dictionaryBusy = false,
     bookImportBusy = false,
-    showAppearancePanel = false,
     readerAppearance,
     readerThemeLabels,
     advancedSettings,
-    showDictionaryManager = false,
     dictionaryList = [],
     dictionaryListStatus = null,
     dictionaryListError = "",
-    showAnkiPanel = false,
     ankiSettings = null,
     ankiEndpointDraft = "http://127.0.0.1:8765",
     ankiStatus = "",
     ankiError = "",
     ankiBusy = false,
     ankiTemplateOptions = [],
-    onToggleAnkiPanel,
-    onToggleAppearancePanel,
-    onToggleDictionaryManager,
     onOpenBook,
     onContinueBook,
     onForgetBook,
@@ -59,24 +54,18 @@
     dictionaryStatus?: string;
     dictionaryBusy?: boolean;
     bookImportBusy?: boolean;
-    showAppearancePanel?: boolean;
     readerAppearance: ReaderAppearance;
     readerThemeLabels: Record<ReaderTheme, string>;
     advancedSettings: AdvancedSettings;
-    showDictionaryManager?: boolean;
     dictionaryList?: DictionaryManifestEntry[];
     dictionaryListStatus?: DictionaryStatus | null;
     dictionaryListError?: string;
-    showAnkiPanel?: boolean;
     ankiSettings?: AnkiSettings | null;
     ankiEndpointDraft?: string;
     ankiStatus?: string;
     ankiError?: string;
     ankiBusy?: boolean;
     ankiTemplateOptions?: string[];
-    onToggleAnkiPanel: () => void;
-    onToggleAppearancePanel: () => void;
-    onToggleDictionaryManager: () => void;
     onOpenBook: () => void;
     onContinueBook: (book: BookRecord) => void;
     onForgetBook: (book: BookRecord) => void;
@@ -138,18 +127,14 @@
     return `${progressPercent(book).toFixed(1)}%`;
   }
 
+  function forgetDescription(book: BookRecord): string {
+    return book.bookId
+      ? "This removes the book from the bookshelf and deletes the app-owned EPUB copy. The original EPUB file is not touched."
+      : "This removes the legacy book record from the bookshelf. The original EPUB file is not touched.";
+  }
+
   function ensurePanel(panel: ShelfPanel) {
-    if (activePanel === panel) return;
-
-    if (activePanel === "dictionaries" && showDictionaryManager) onToggleDictionaryManager();
-    if (activePanel === "anki" && showAnkiPanel) onToggleAnkiPanel();
-    if (activePanel === "appearance" && showAppearancePanel) onToggleAppearancePanel();
-
     activePanel = panel;
-
-    if (panel === "dictionaries" && !showDictionaryManager) onToggleDictionaryManager();
-    if (panel === "anki" && !showAnkiPanel) onToggleAnkiPanel();
-    if (panel === "appearance" && !showAppearancePanel) onToggleAppearancePanel();
   }
 
 </script>
@@ -232,7 +217,16 @@
                     </span>
                     <span class="book-title">{book.title}</span>
                   </button>
-                  <button class="book-forget" title="Forget book" onclick={() => onForgetBook(book)}>Forget</button>
+                  <ConfirmDialog
+                    title={`Forget ${book.title || "this book"}?`}
+                    description={forgetDescription(book)}
+                    confirmLabel="Forget"
+                    triggerAriaLabel={`Forget ${book.title || "book"}`}
+                    triggerVariant="book-overlay"
+                    onConfirm={() => onForgetBook(book)}
+                  >
+                    {#snippet trigger()}Forget{/snippet}
+                  </ConfirmDialog>
                 </article>
               {/each}
             </div>
@@ -334,9 +328,6 @@
   .book-progress span { display: block; width: var(--progress); height: 100%; background: var(--app-primary); border-radius: inherit; }
   .book-percent { color: var(--app-muted); font-size: 13px; font-weight: 650; line-height: 1; }
   .book-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-text); font-size: 15px; line-height: 1.35; }
-  .book-forget { position: absolute; top: 8px; right: 8px; min-height: 28px; padding: 0 8px; background: color-mix(in srgb, var(--app-bg) 82%, transparent); color: var(--app-text); border: 1px solid color-mix(in srgb, var(--app-border) 80%, transparent); border-radius: 6px; cursor: pointer; font-size: 11px; opacity: 0; transition: opacity 120ms ease, background 120ms ease; }
-  .book-card:hover .book-forget, .book-forget:focus-visible { opacity: 1; }
-  .book-forget:hover { background: var(--app-control-hover); }
   @media (max-width: 760px) {
     .bookshelf { grid-template-columns: 74px minmax(0, 1fr); }
     .sidebar { padding: 14px 8px; gap: 18px; align-items: center; }
@@ -349,7 +340,6 @@
     .head-open { width: 100%; }
     .section-head { align-items: start; flex-direction: column; gap: 4px; }
     .book-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 14px; }
-    .book-forget { opacity: 1; }
     .empty-state { grid-template-columns: 1fr; }
   }
 </style>
