@@ -74,6 +74,10 @@
 
 ## 文档规则
 
+- 多 slice 功能在修改实现前，必须先在 `docs/` 创建或更新完整计划文档；完整路线不能只存在于聊天、临时 TODO 或 agent 上下文中。
+- 计划文档记录完整 slice 路线、前置条件、验收标准、验证方式和当前状态，并作为该功能路线的真源。
+- `docs/TODO.md` 只记录当前 slice 和紧接着的一个 next slice，并明确指向对应计划文档。
+- 每完成一个 slice 后，更新计划文档中的状态、commit 和验证结果，再评估并写入下一个 slice。
 - `docs/PROJECT_STATUS.md` 记录当前工程状态：已实现功能、stub、known issues、risk areas 和 validation commands。
 - `docs/TODO.md` 记录短交接和下一步；`docs/LOOKUP_ROADMAP.md` 记录 lookup 切片；`docs/READER_ENTRY_CHARACTERIZATION.md` 和 `docs/reader-layout-baseline.md` 记录 reader 行为基线。
 - `STATUS.md` 只保留文档索引和当前优先级提示；如与 `docs/` 内容重合，保留 `docs/` 下的详细版本。

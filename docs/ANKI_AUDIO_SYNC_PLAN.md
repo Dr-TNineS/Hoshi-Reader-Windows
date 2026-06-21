@@ -5,10 +5,9 @@ Last updated: 2026-06-21
 This document defines the next Anki scope after text note creation and
 dictionary image media export.
 
-Implementation status as of 2026-06-21: Slice 5A word-audio settings, Slice 5B
-remote word-audio fetch/store, Slice 5C HSA-compatible local word audio, and
-Slice 5D optional AnkiConnect sync are implemented. Sasayaki audio is not
-implemented.
+Implementation status as of 2026-06-21: Slices 5A-5E are implemented at the
+documented validation level. Slice 5F is current. Slices 5G-5O are pending.
+Real runtime coverage remains explicitly separate from automated validation.
 
 ## Current Baseline
 
@@ -59,6 +58,14 @@ implemented.
   database content through Windows-native SQLite code.
 
 ## Implementation Slices
+
+| Slice | Status | Commit |
+| --- | --- | --- |
+| 5A-5C | Completed | See their individual status sections and repository history |
+| 5D | Completed | `073690f` |
+| 5E | Completed | `36ff38b` |
+| 5F | Current | Not committed |
+| 5G-5O | Pending | Not started |
 
 ### Slice 5A: Word Audio Settings And Preview Boundary
 
@@ -172,7 +179,7 @@ Goal: optionally call AnkiConnect `sync` after a successful addNote.
 
 Status: implemented on 2026-06-21. Automated Rust, Anki panel, lookup popup,
 and production build validation passes; real sync runtime validation is not
-verified.
+verified. Commit: `073690f`.
 
 Key changes:
 
@@ -206,7 +213,7 @@ duplicate options.
 Status: implemented on 2026-06-21. Settings v2 normalization, Rust request
 coverage, Anki panel probes, lookup popup probes, and production build
 validation pass. Real AnkiConnect validation of every duplicate scope is not
-verified.
+verified. Commit: `36ff38b`.
 
 Key changes:
 
@@ -375,6 +382,32 @@ not delete it automatically because another note may already share that file.
 - `docs/TODO.md` names only the current or next executable slice.
 - After each slice, update its status here, move TODO to the next slice, and
   revise only unimplemented slices when runtime findings require it.
+
+## Slice Execution Gates
+
+The goal and implementation boundary for each slice are defined in its section
+above. The table below is mandatory execution metadata; a slice is not complete
+until its acceptance and validation entries are satisfied and recorded.
+
+| Slice | Status | Boundary | Prerequisites | Acceptance | Validation |
+| --- | --- | --- | --- | --- | --- |
+| 5D | Completed (`073690f`) | Optional desktop AnkiConnect sync after add only; no background/cloud sync | Stable duplicate-check/addNote flow | Default-off; only successful add syncs; sync failure remains an added note with warning | Rust call-order/error tests; check, build, Anki panel and popup probes; VS `cargo test --lib` and `cargo check` |
+| 5E | Completed (`36ff38b`) | Tags and AnkiConnect duplicate options only; media ordering unchanged | 5D result/warning shape | Tags persist; Collection/Deck/Deck Root options are exact; allow-duplicates skips preflight; legacy defaults load | Rust migration/request/preflight tests; check, build, panel/popup probes; VS Rust tests/check |
+| 5F | Current | Compact exported glossary plus cover resolved in Rust only from app-owned `bookId`; no frontend path authority | 5E settings normalizer and existing media pipeline | Default-off compact HTML; referenced cover stores deterministically; missing warns; escape/forgery/oversize blocks; media-first orphan tradeoff remains documented | Rust containment/signature/size/store tests; panel/popup compact, success, missing, hard-error, ordering and no-token probes; common checks |
+| 5G | Pending | Stable remote-source identity, UI management, and ordered export fallback; no playback | Committed 5F media pipeline | Stable ids survive edits/reorder/duplicate names; local then enabled remotes; ordinary miss continues, hit stops, security error aborts | Settings migration/source tests; panel/popup order/fallback/security/narrow probes; common checks |
+| 5H | Pending | Shared word resolver, bounded cache, button playback and autoplay; Sasayaki coordination deferred | 5G source model | Export and playback select identically; play/stop/cancel/cleanup are deterministic; autoplay failure is non-fatal | Rust resolver/cache tests; playback lifecycle probes; local/remote Tauri runtime; common checks |
+| 5I-0 | Pending | Committed codec/clipping capability spike without UI; no unverified codec promise | Stable 5H word-audio path | MP3 and WAV pass deterministic cue-WAV output in dev/release/package; AAC/Opus listed only if proven; real Anki result recorded or `not verified` | Codec fixtures, timing/memory/corruption/Unicode tests, release build, package smoke test, optional real Anki |
+| 5I | Pending | Per-book sidecar/import/status/removal only; no matching or playback | 5I-0 verifies MP3 and WAV minimum | Staged atomic audio/SRT import by `bookId`; external/copy modes persist; failure preserves old data; external originals are never deleted | Rust import/containment/rollback/format/SRT/persistence tests; status UI and packaged path probes |
+| 5J | Pending | Cue parsing, matching, inspection, rematch and correction; no playback | 5I sidecar and SRT storage | Stable cue ids and chapter/offset/length matches persist; unmatched state and corrections survive; ruby/punctuation/repetition/boundaries pass fixtures | Rust parser/matcher parity fixtures; matching UI probes; real EPUB/SRT characterization |
+| 5K | Pending | Sasayaki player lifecycle and controls; highlighting/following deferred | 5J stable cues | Playback/navigation/rate/delay work and restore; missing external audio relinks; lifecycle does not leak players | Player state tests, reader lifecycle probes, manual Tauri playback, wide/narrow checks |
+| 5L | Pending | Cue presentation and reader coordination without replacing pagination | 5K playback events and 5J ranges | No layout shift; auto page/chapter/scroll/pause obey settings; reader baselines remain intact | Matcher-to-DOM tests, reader visual probe, playback-driven probes, manual vertical pagination checks |
+| 5M | Pending | `{sasayaki-audio}` accepts `bookId + cueId`; Rust owns path/range; no arbitrary frontend time/path | 5I-0 clipping plus stable 5J-L cues | Deterministic WAV sound tag; ordinary no-cue/decode failures warn and create text cards; tampering/escape/range/oversize blocks; ordering is covered | Rust clip/store/security tests; popup ordering and warning/error probes; optional real Anki playback |
+| 5N | Pending | Coordinate HSW-owned word and Sasayaki audio only; no Windows-wide focus | 5H word playback and 5K-L Sasayaki playback | Interrupt/Duck/Mix restore exact prior state; autoplay shares coordinator; rapid actions/failures/manual pause/navigation/shutdown are correct | Coordinator state-machine tests, rapid-action probes, manual Tauri playback for all modes |
+| 5O | Pending | Runtime evidence and parity closure only; missing fixtures remain visible | 5F-5N committed at automated level | Full real pipeline order passes where fixtures exist; HSA defaults/states/failures have explicit parity results; gaps say `not verified` | All common checks, real Anki add/media/sync, real HSA DB/remote audio, packaged playback, Sasayaki end-to-end, `npm run package` |
+
+Common checks mean `npm run check`, `npm run build`, the affected frontend
+probes, VS developer-shell `cargo test --lib`, and VS developer-shell
+`cargo check`. Reader changes additionally require `npm run check:reader-visual`.
 
 ## Recommended Next Step
 

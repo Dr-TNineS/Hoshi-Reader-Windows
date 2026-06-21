@@ -30,7 +30,10 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Final linked real dictionary validation with local `MK3Fix0213.zip` passed on 2026-06-12: `dict_id=93e8e532b599ba4a`, `term=140821`, `media=0`, `lookup_results=2`.
    - Anki HSA/Windows alignment is documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`; AnkiConnect readiness/configuration, field preview, minimal duplicate-check/add-note plumbing, and real AnkiConnect runtime add-note validation are complete.
 2. Treat the storage/model migration as complete at the JSON-store level: reading progress, recent books, and session now live in Tauri app data `reading/state.json`, with one-time legacy `localStorage` import and browser fallback.
-3. Treat Anki remote word-audio Slice 5B, HSA-compatible local-audio Slice 5C, post-add sync Slice 5D, and tags/duplicate policy Slice 5E in `docs/ANKI_AUDIO_SYNC_PLAN.md` as complete at automated-validation level. Next recommended slice: compact glossary and book-cover media (Slice 5F). Do not claim real remote-audio, real HSA local-audio database, real sync, all duplicate scopes, or combined add-note-plus-dictionary-media runtime verification until suitable fixtures are available.
+3. Follow the complete Anki/audio route in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
+   - Current: Slice 5F, compact glossary and `bookId`-only book-cover media.
+   - Next: Slice 5G, stable multi-source remote audio management and ordered fallback.
+   - Slices 5A-5E are complete at their documented validation levels. Do not promote automated results to real runtime verification.
 4. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 5. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
 
