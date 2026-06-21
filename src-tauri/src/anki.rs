@@ -21,7 +21,7 @@ use crate::dict::commands::{
 };
 
 const DEFAULT_ENDPOINT: &str = "http://127.0.0.1:8765";
-const SETTINGS_VERSION: u32 = 1;
+const SETTINGS_VERSION: u32 = 2;
 const TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_REMOTE_AUDIO_BYTES: usize = 10 * 1024 * 1024;
 const MAX_REMOTE_AUDIO_REDIRECTS: usize = 3;
@@ -54,6 +54,15 @@ pub struct AnkiAudioSource {
     pub enabled: bool,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum AnkiDuplicateScope {
+    #[default]
+    Collection,
+    Deck,
+    DeckRoot,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AnkiSettings {
@@ -75,6 +84,14 @@ pub struct AnkiSettings {
     pub audio_download_timeout_ms: u32,
     #[serde(default)]
     pub force_sync_after_add: bool,
+    #[serde(default = "default_anki_tags")]
+    pub tags: String,
+    #[serde(default)]
+    pub allow_duplicates: bool,
+    #[serde(default)]
+    pub check_duplicates_across_all_models: bool,
+    #[serde(default)]
+    pub duplicate_scope: AnkiDuplicateScope,
     pub last_fetched_at: Option<u64>,
 }
 
@@ -93,6 +110,10 @@ impl Default for AnkiSettings {
             audio_sources: default_audio_sources(),
             audio_download_timeout_ms: default_audio_download_timeout_ms(),
             force_sync_after_add: false,
+            tags: default_anki_tags(),
+            allow_duplicates: false,
+            check_duplicates_across_all_models: false,
+            duplicate_scope: AnkiDuplicateScope::Collection,
             last_fetched_at: None,
         }
     }
@@ -117,6 +138,12 @@ pub struct AnkiNoteRequest {
     pub tags: Vec<String>,
     #[serde(default)]
     pub force_sync_after_add: bool,
+    #[serde(default)]
+    pub allow_duplicates: bool,
+    #[serde(default)]
+    pub check_duplicates_across_all_models: bool,
+    #[serde(default)]
+    pub duplicate_scope: AnkiDuplicateScope,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -248,6 +275,10 @@ pub fn anki_fetch_config(endpoint: String, app: AppHandle) -> Result<AnkiSetting
         audio_sources: current.audio_sources,
         audio_download_timeout_ms: current.audio_download_timeout_ms,
         force_sync_after_add: current.force_sync_after_add,
+        tags: current.tags,
+        allow_duplicates: current.allow_duplicates,
+        check_duplicates_across_all_models: current.check_duplicates_across_all_models,
+        duplicate_scope: current.duplicate_scope,
         last_fetched_at: Some(now_millis()?),
     });
     write_settings(&root, &next)?;
@@ -272,18 +303,20 @@ where
     F: FnMut(&str, &str, Option<Value>) -> Result<Value, String>,
 {
     let endpoint = normalize_endpoint(&note.endpoint)?;
-    let check = parse_note_check_result(request(
-        &endpoint,
-        "canAddNotesWithErrorDetail",
-        Some(json!({ "notes": [note_json(note)?] })),
-    )?)?;
-    if !check.can_add {
-        return Ok(AnkiAddNoteResult {
-            status: "duplicate".into(),
-            note_id: None,
-            message: check.message,
-            warnings: Vec::new(),
-        });
+    if !note.allow_duplicates {
+        let check = parse_note_check_result(request(
+            &endpoint,
+            "canAddNotesWithErrorDetail",
+            Some(json!({ "notes": [note_json(note)?] })),
+        )?)?;
+        if !check.can_add {
+            return Ok(AnkiAddNoteResult {
+                status: "duplicate".into(),
+                note_id: None,
+                message: check.message,
+                warnings: Vec::new(),
+            });
+        }
     }
 
     let result = request(
@@ -831,7 +864,9 @@ fn read_settings(root: &Path) -> Result<AnkiSettings, String> {
     }
 
     let raw = fs::read_to_string(&path).map_err(|e| format!("Cannot read Anki settings: {e}"))?;
-    serde_json::from_str(&raw).map_err(|e| format!("Cannot parse Anki settings: {e}"))
+    let settings =
+        serde_json::from_str(&raw).map_err(|e| format!("Cannot parse Anki settings: {e}"))?;
+    Ok(normalize_settings(settings))
 }
 
 fn write_settings(root: &Path, settings: &AnkiSettings) -> Result<(), String> {
@@ -857,6 +892,7 @@ fn write_settings(root: &Path, settings: &AnkiSettings) -> Result<(), String> {
 }
 
 fn normalize_settings(mut settings: AnkiSettings) -> AnkiSettings {
+    settings.version = SETTINGS_VERSION;
     if settings.endpoint.trim().is_empty() {
         settings.endpoint = DEFAULT_ENDPOINT.into();
     } else {
@@ -869,7 +905,16 @@ fn normalize_settings(mut settings: AnkiSettings) -> AnkiSettings {
     );
     settings.audio_sources = normalize_audio_sources(settings.audio_sources);
     settings.audio_download_timeout_ms = settings.audio_download_timeout_ms.clamp(1000, 30000);
+    settings.tags = settings
+        .tags
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ");
     settings
+}
+
+fn default_anki_tags() -> String {
+    "hoshi-reader".into()
 }
 
 fn default_audio_sources() -> Vec<AnkiAudioSource> {
@@ -979,14 +1024,42 @@ fn note_json(note: &AnkiNoteRequest) -> Result<Value, String> {
     if note.fields.keys().any(|field| field.trim().is_empty()) {
         return Err("Anki note contains an empty field name.".into());
     }
+    let mut duplicate_scope_options = serde_json::Map::new();
+    let duplicate_scope = match note.duplicate_scope {
+        AnkiDuplicateScope::Collection => "collection",
+        AnkiDuplicateScope::Deck => "deck",
+        AnkiDuplicateScope::DeckRoot => {
+            duplicate_scope_options.insert(
+                "deckName".into(),
+                Value::String(
+                    note.deck_name
+                        .trim()
+                        .split("::")
+                        .next()
+                        .unwrap_or("")
+                        .into(),
+                ),
+            );
+            duplicate_scope_options.insert("checkChildren".into(), Value::Bool(true));
+            "deck"
+        }
+    };
+    if note.check_duplicates_across_all_models {
+        duplicate_scope_options.insert("checkAllModels".into(), Value::Bool(true));
+    }
+    let mut options = json!({
+        "allowDuplicate": note.allow_duplicates,
+        "duplicateScope": duplicate_scope,
+    });
+    if !duplicate_scope_options.is_empty() {
+        options["duplicateScopeOptions"] = Value::Object(duplicate_scope_options);
+    }
     Ok(json!({
         "deckName": note.deck_name.trim(),
         "modelName": note.model_name.trim(),
         "fields": note.fields,
         "tags": note.tags,
-        "options": {
-            "allowDuplicate": false,
-        },
+        "options": options,
     }))
 }
 
@@ -1290,6 +1363,10 @@ mod tests {
             loaded.audio_download_timeout_ms,
             default_audio_download_timeout_ms()
         );
+        assert_eq!(loaded.version, SETTINGS_VERSION);
+        assert_eq!(loaded.tags, "hoshi-reader");
+        assert!(!loaded.allow_duplicates);
+        assert_eq!(loaded.duplicate_scope, AnkiDuplicateScope::Collection);
         let _ = fs::remove_dir_all(root);
     }
 
@@ -1519,6 +1596,9 @@ mod tests {
             fields,
             tags: vec!["hoshi-reader".into()],
             force_sync_after_add: false,
+            allow_duplicates: false,
+            check_duplicates_across_all_models: false,
+            duplicate_scope: AnkiDuplicateScope::Collection,
         };
         let value = note_json(&note).unwrap();
         assert_eq!(value["deckName"], "Mining");
@@ -1526,6 +1606,31 @@ mod tests {
         assert_eq!(value["fields"]["Expression"], "学校");
         assert_eq!(value["tags"][0], "hoshi-reader");
         assert_eq!(value["options"]["allowDuplicate"], false);
+        assert_eq!(value["options"]["duplicateScope"], "collection");
+        assert!(value["options"].get("duplicateScopeOptions").is_none());
+
+        let deck_root = AnkiNoteRequest {
+            deck_name: "Japanese::Mining".into(),
+            allow_duplicates: true,
+            check_duplicates_across_all_models: true,
+            duplicate_scope: AnkiDuplicateScope::DeckRoot,
+            ..note.clone()
+        };
+        let value = note_json(&deck_root).unwrap();
+        assert_eq!(value["options"]["allowDuplicate"], true);
+        assert_eq!(value["options"]["duplicateScope"], "deck");
+        assert_eq!(
+            value["options"]["duplicateScopeOptions"]["deckName"],
+            "Japanese"
+        );
+        assert_eq!(
+            value["options"]["duplicateScopeOptions"]["checkChildren"],
+            true
+        );
+        assert_eq!(
+            value["options"]["duplicateScopeOptions"]["checkAllModels"],
+            true
+        );
 
         let missing_deck = AnkiNoteRequest {
             deck_name: "".into(),
@@ -1567,6 +1672,9 @@ mod tests {
             fields,
             tags: vec!["hoshi-reader".into()],
             force_sync_after_add: true,
+            allow_duplicates: false,
+            check_duplicates_across_all_models: false,
+            duplicate_scope: AnkiDuplicateScope::Collection,
         };
         let mut actions = Vec::new();
         let result = add_note_with_request(&note, |_endpoint, action, _params| {
@@ -1597,6 +1705,9 @@ mod tests {
             fields,
             tags: Vec::new(),
             force_sync_after_add: true,
+            allow_duplicates: false,
+            check_duplicates_across_all_models: false,
+            duplicate_scope: AnkiDuplicateScope::Collection,
         };
         let mut actions = Vec::new();
         let result = add_note_with_request(&note, |_endpoint, action, _params| {
@@ -1607,6 +1718,37 @@ mod tests {
         assert_eq!(actions, ["canAddNotesWithErrorDetail"]);
         assert_eq!(result.status, "duplicate");
         assert!(result.warnings.is_empty());
+    }
+
+    #[test]
+    fn allowed_duplicates_skip_preflight_and_add_directly() {
+        let mut fields = BTreeMap::new();
+        fields.insert("Expression".into(), "probe".into());
+        let note = AnkiNoteRequest {
+            endpoint: DEFAULT_ENDPOINT.into(),
+            deck_name: "Mining".into(),
+            model_name: "Basic".into(),
+            fields,
+            tags: Vec::new(),
+            force_sync_after_add: false,
+            allow_duplicates: true,
+            check_duplicates_across_all_models: false,
+            duplicate_scope: AnkiDuplicateScope::Deck,
+        };
+        let mut actions = Vec::new();
+        let result = add_note_with_request(&note, |_endpoint, action, params| {
+            actions.push(action.to_string());
+            assert_eq!(action, "addNote");
+            assert_eq!(params.unwrap()["note"]["options"]["allowDuplicate"], true);
+            assert_eq!(
+                note_json(&note).unwrap()["options"]["duplicateScope"],
+                "deck"
+            );
+            Ok(json!(73))
+        })
+        .unwrap();
+        assert_eq!(actions, ["addNote"]);
+        assert_eq!(result.note_id, Some(73));
     }
 
     fn test_manifest(root: &Path) -> DictionaryManifest {
@@ -1724,6 +1866,9 @@ mod tests {
             fields,
             tags: vec!["hoshi-reader-runtime-validation".into()],
             force_sync_after_add: false,
+            allow_duplicates: false,
+            check_duplicates_across_all_models: false,
+            duplicate_scope: AnkiDuplicateScope::Collection,
         };
 
         let added = anki_add_note(note.clone()).unwrap();

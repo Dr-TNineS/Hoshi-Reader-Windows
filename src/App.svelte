@@ -378,6 +378,10 @@
       audioSources: defaultAnkiAudioSources(),
       audioDownloadTimeoutMs: 5000,
       forceSyncAfterAdd: false,
+      tags: "hoshi-reader",
+      allowDuplicates: false,
+      checkDuplicatesAcrossAllModels: false,
+      duplicateScope: "collection",
       lastFetchedAt: null,
     };
   }
@@ -510,6 +514,18 @@
     if (ankiBusy) return;
     const base = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft };
     ankiSettings = { ...base, forceSyncAfterAdd: enabled };
+    await saveAnkiSettings();
+  }
+
+  async function setAnkiNoteOptions(
+    tags: string,
+    allowDuplicates: boolean,
+    duplicateScope: AnkiSettings["duplicateScope"],
+    checkDuplicatesAcrossAllModels: boolean,
+  ) {
+    if (ankiBusy) return;
+    const base = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft };
+    ankiSettings = { ...base, tags, allowDuplicates, duplicateScope, checkDuplicatesAcrossAllModels };
     await saveAnkiSettings();
   }
 
@@ -1184,6 +1200,7 @@
       onSetAnkiAudioConfig={setAnkiAudioConfig}
       onSetAnkiLocalAudioEnabled={setAnkiLocalAudioEnabled}
       onSetAnkiForceSyncAfterAdd={setAnkiForceSyncAfterAdd}
+      onSetAnkiNoteOptions={setAnkiNoteOptions}
       onImportLocalAudio={importLocalAudio}
       onRemoveLocalAudio={removeLocalAudio}
       onMoveLocalAudioSource={moveLocalAudioSource}

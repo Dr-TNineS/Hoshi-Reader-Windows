@@ -84,6 +84,11 @@ async function panelMetrics(page) {
       audioTimeout: Number(state?.getAttribute("data-audio-timeout") ?? 0),
       forceSyncAfterAdd: state?.getAttribute("data-force-sync-after-add") ?? "",
       syncEvents: state?.getAttribute("data-sync-events") ?? "",
+      noteOptionEvents: state?.getAttribute("data-note-option-events") ?? "",
+      tags: state?.getAttribute("data-tags") ?? "",
+      allowDuplicates: state?.getAttribute("data-allow-duplicates") ?? "",
+      duplicateScope: state?.getAttribute("data-duplicate-scope") ?? "",
+      checkAllModels: state?.getAttribute("data-check-all-models") ?? "",
       localAudioEnabled: state?.getAttribute("data-local-audio-enabled") ?? "",
       localAudioEvents: state?.getAttribute("data-local-audio-events") ?? "",
       localImportClicks: Number(state?.getAttribute("data-local-import-clicks") ?? 0),
@@ -145,6 +150,17 @@ async function main() {
     await page.getByLabel("Sync after add").click();
     metrics = await panelMetrics(page);
     assert(metrics.forceSyncAfterAdd === "true" && metrics.syncEvents.includes("true"), "Sync toggle should update settings through the panel boundary.", metrics);
+    assert(metrics.text.includes("Note Options") && metrics.tags === "hoshi-reader", "Ready panel should expose persisted note tags and duplicate settings.", metrics);
+    await page.getByLabel("Anki tags").fill("hoshi-reader mined");
+    await page.getByLabel("Anki tags").blur();
+    await page.getByLabel("Allow duplicates").click();
+    await page.getByLabel("Check all note types").click();
+    await page.locator(".select-row").filter({ hasText: "Duplicate Scope" }).getByRole("button").click();
+    await page.getByRole("option", { name: "Deck and children" }).click();
+    metrics = await panelMetrics(page);
+    assert(metrics.tags === "hoshi-reader mined" && metrics.allowDuplicates === "true", "Note tags and allow-duplicates should update through the panel boundary.", metrics);
+    assert(metrics.duplicateScope === "deckRoot" && metrics.checkAllModels === "true", "Duplicate scope and all-model checking should update through the panel boundary.", metrics);
+    assert(metrics.noteOptionEvents.includes("deckRoot"), "Note option changes should emit settings events.", metrics);
     assert(metrics.fieldMappings.includes("Front:{expression}") && metrics.fieldMappings.includes("Back:{glossary-first}"), "Ready panel should expose saved field templates.", metrics);
     assert(metrics.handlebarButtonCount === 3, "Ready panel should show a handlebar picker for each field template.", metrics);
     await page.locator(".field-template-row").filter({ hasText: "Front" }).locator(".handlebar-trigger").click();

@@ -125,6 +125,10 @@
       audioSources: [{ name: "Probe Audio", url: "https://example.invalid/audio?term={term}&reading={reading}", enabled: true }],
       audioDownloadTimeoutMs: 5000,
       forceSyncAfterAdd: params.get("forceSync") === "enabled",
+      tags: "hoshi-reader mining",
+      allowDuplicates: params.get("allowDuplicates") === "enabled",
+      checkDuplicatesAcrossAllModels: params.get("checkAllModels") === "enabled",
+      duplicateScope: params.get("duplicateScope") === "deckRoot" ? "deckRoot" : "collection",
       lastFetchedAt: 1780000000000,
     }
     : null;
@@ -485,6 +489,7 @@
     data-anki-last-deck={ankiAddRequests[ankiAddRequests.length - 1]?.deckName ?? ""}
     data-anki-last-model={ankiAddRequests[ankiAddRequests.length - 1]?.modelName ?? ""}
     data-anki-last-fields={JSON.stringify(ankiAddRequests[ankiAddRequests.length - 1]?.fields ?? {})}
+    data-anki-last-request={JSON.stringify(ankiAddRequests[ankiAddRequests.length - 1] ?? null)}
     data-state={lookupState}
     aria-hidden="true"
     ></div>

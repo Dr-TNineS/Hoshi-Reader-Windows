@@ -89,6 +89,10 @@
     audioSources: [{ name: "Default", url: "", enabled: false }],
     audioDownloadTimeoutMs: 5000,
     forceSyncAfterAdd: false,
+    tags: "hoshi-reader",
+    allowDuplicates: false,
+    checkDuplicatesAcrossAllModels: false,
+    duplicateScope: "collection",
     lastFetchedAt: 1780000000000,
   };
 
@@ -103,6 +107,7 @@
   let audioEvents = $state<string[]>([]);
   let localAudioEvents = $state<string[]>([]);
   let syncEvents = $state<string[]>([]);
+  let noteOptionEvents = $state<string[]>([]);
   let localImportClicks = $state(0);
   let localRemoveClicks = $state(0);
   let localAudioStatus = $state<LocalAudioStatus>({
@@ -155,6 +160,11 @@
     if (settings) settings = { ...settings, forceSyncAfterAdd: enabled };
   }
 
+  function setNoteOptions(tags: string, allowDuplicates: boolean, duplicateScope: AnkiSettings["duplicateScope"], checkAllModels: boolean) {
+    noteOptionEvents = [...noteOptionEvents, `${tags}:${allowDuplicates}:${duplicateScope}:${checkAllModels}`];
+    if (settings) settings = { ...settings, tags, allowDuplicates, duplicateScope, checkDuplicatesAcrossAllModels: checkAllModels };
+  }
+
   function moveLocalAudioSource(source: string, direction: -1 | 1) {
     localAudioEvents = [...localAudioEvents, `move:${source}:${direction}`];
     const sources = [...localAudioStatus.sources];
@@ -183,6 +193,7 @@
     onSetFieldTemplate={setFieldTemplate}
     onSetAudioConfig={setAudioConfig}
     onSetForceSyncAfterAdd={setForceSyncAfterAdd}
+    onSetNoteOptions={setNoteOptions}
     {localAudioStatus}
     onSetLocalAudioEnabled={setLocalAudioEnabled}
     onImportLocalAudio={() => localImportClicks += 1}
@@ -196,6 +207,7 @@
     data-fetch-clicks={fetchClicks}
     data-save-clicks={saveClicks}
     data-sync-events={syncEvents.join(",")}
+    data-note-option-events={noteOptionEvents.join("|")}
     data-deck-events={deckEvents.join(",")}
     data-note-type-events={noteTypeEvents.join(",")}
     data-field-template-events={fieldTemplateEvents.join(",")}
@@ -208,6 +220,10 @@
     data-audio-url={settings?.audioSources[0]?.url ?? ""}
     data-audio-timeout={settings?.audioDownloadTimeoutMs ?? 0}
     data-force-sync-after-add={settings?.forceSyncAfterAdd ?? false}
+    data-tags={settings?.tags ?? ""}
+    data-allow-duplicates={settings?.allowDuplicates ?? false}
+    data-duplicate-scope={settings?.duplicateScope ?? ""}
+    data-check-all-models={settings?.checkDuplicatesAcrossAllModels ?? false}
     data-local-audio-enabled={settings?.localAudioEnabled ? "true" : "false"}
     data-local-audio-events={localAudioEvents.join("|")}
     data-local-import-clicks={localImportClicks}

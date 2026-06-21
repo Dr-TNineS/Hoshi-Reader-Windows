@@ -147,8 +147,11 @@ export function buildAnkiNoteRequest(
     deckName: settings.selectedDeck,
     modelName: noteType.name,
     fields,
-    tags: ["hoshi-reader"],
+    tags: settings.tags.trim().split(/\s+/).filter(Boolean),
     forceSyncAfterAdd: settings.forceSyncAfterAdd,
+    allowDuplicates: settings.allowDuplicates,
+    checkDuplicatesAcrossAllModels: settings.checkDuplicatesAcrossAllModels,
+    duplicateScope: settings.duplicateScope,
   };
 }
 

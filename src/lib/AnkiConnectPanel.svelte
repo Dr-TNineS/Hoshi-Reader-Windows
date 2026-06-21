@@ -21,6 +21,7 @@
     onSetFieldTemplate = (_field: string, _template: string) => {},
     onSetAudioConfig = (_enabled: boolean, _sources: AnkiAudioSource[], _timeoutMs: number) => {},
     onSetForceSyncAfterAdd = (_enabled: boolean) => {},
+    onSetNoteOptions = (_tags: string, _allowDuplicates: boolean, _duplicateScope: AnkiSettings["duplicateScope"], _checkAllModels: boolean) => {},
     localAudioStatus = { imported: false, sizeBytes: null, sources: [] },
     onSetLocalAudioEnabled = (_enabled: boolean) => {},
     onImportLocalAudio = () => {},
@@ -42,6 +43,7 @@
     onSetFieldTemplate?: (field: string, template: string) => void;
     onSetAudioConfig?: (enabled: boolean, sources: AnkiAudioSource[], timeoutMs: number) => void;
     onSetForceSyncAfterAdd?: (enabled: boolean) => void;
+    onSetNoteOptions?: (tags: string, allowDuplicates: boolean, duplicateScope: AnkiSettings["duplicateScope"], checkAllModels: boolean) => void;
     localAudioStatus?: LocalAudioStatus;
     onSetLocalAudioEnabled?: (enabled: boolean) => void;
     onImportLocalAudio?: () => void;
@@ -54,6 +56,11 @@
   );
   const deckOptions = $derived(settings?.decks.map((deck) => ({ value: deck.name, label: deck.name })) ?? []);
   const noteTypeOptions = $derived(settings?.noteTypes.map((noteType) => ({ value: noteType.name, label: noteType.name })) ?? []);
+  const duplicateScopeOptions = [
+    { value: "collection", label: "Collection" },
+    { value: "deck", label: "Deck" },
+    { value: "deckRoot", label: "Deck and children" },
+  ];
 
   function fetchedLabel(timestamp: number | null | undefined): string {
     if (!timestamp) return "Not fetched yet";
@@ -86,6 +93,15 @@
 
   function selectHandlebar(field: string, option: string) {
     onSetFieldTemplate(field, option === "-" ? "" : option);
+  }
+
+  function updateNoteOptions(patch: Partial<Pick<AnkiSettings, "tags" | "allowDuplicates" | "duplicateScope" | "checkDuplicatesAcrossAllModels">>) {
+    onSetNoteOptions(
+      patch.tags ?? settings?.tags ?? "hoshi-reader",
+      patch.allowDuplicates ?? settings?.allowDuplicates ?? false,
+      patch.duplicateScope ?? settings?.duplicateScope ?? "collection",
+      patch.checkDuplicatesAcrossAllModels ?? settings?.checkDuplicatesAcrossAllModels ?? false,
+    );
   }
 
   function localAudioSizeLabel(): string {
@@ -183,6 +199,55 @@
     {:else}
       <p class="empty">Fetch AnkiConnect config to edit field templates.</p>
     {/if}
+  </div>
+
+  <div class="audio-row">
+    <div class="audio-head">
+      <div>
+        <p class="fields-title">Note Options</p>
+        <p class="audio-summary">Tags and duplicate matching sent to AnkiConnect.</p>
+      </div>
+      <div class="audio-toggle">
+        <UiSwitch
+          id="anki-allow-duplicates"
+          checked={settings?.allowDuplicates ?? false}
+          disabled={busy}
+          onCheckedChange={(enabled) => updateNoteOptions({ allowDuplicates: enabled })}
+        />
+        <label for="anki-allow-duplicates">Allow duplicates</label>
+      </div>
+    </div>
+    <label class="endpoint-row">
+      <span>Tags</span>
+      <input
+        aria-label="Anki tags"
+        value={settings?.tags ?? "hoshi-reader"}
+        disabled={busy}
+        spellcheck="false"
+        onchange={(event) => updateNoteOptions({ tags: event.currentTarget.value })}
+      />
+    </label>
+    <div class="config-grid">
+      <div class="select-row">
+        <span id="anki-duplicate-scope-label">Duplicate Scope</span>
+        <UiSelect
+          value={settings?.duplicateScope ?? "collection"}
+          items={duplicateScopeOptions}
+          disabled={busy}
+          ariaLabelledby="anki-duplicate-scope-label"
+          onValueChange={(scope) => updateNoteOptions({ duplicateScope: scope as AnkiSettings["duplicateScope"] })}
+        />
+      </div>
+      <div class="audio-toggle note-option-toggle">
+        <UiSwitch
+          id="anki-check-all-models"
+          checked={settings?.checkDuplicatesAcrossAllModels ?? false}
+          disabled={busy}
+          onCheckedChange={(enabled) => updateNoteOptions({ checkDuplicatesAcrossAllModels: enabled })}
+        />
+        <label for="anki-check-all-models">Check all note types</label>
+      </div>
+    </div>
   </div>
 
   <div class="audio-row">
@@ -325,6 +390,7 @@
   .audio-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
   .audio-summary { margin-top: 3px; color: var(--app-muted, #999999); font-size: 12px; line-height: 1.35; }
   .audio-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--app-text, #fff); font-size: 12px; }
+  .note-option-toggle { align-self: end; min-height: 34px; }
   .audio-grid { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 10px; }
   .field-template-list { display: flex; flex-direction: column; gap: 7px; }
   .field-template-row { min-width: 0; display: grid; grid-template-columns: minmax(90px, 0.32fr) minmax(0, 1fr); align-items: start; gap: 8px; }

@@ -203,6 +203,11 @@ Validation:
 Goal: align the note request with HSA's configurable tags and AnkiConnect
 duplicate options.
 
+Status: implemented on 2026-06-21. Settings v2 normalization, Rust request
+coverage, Anki panel probes, lookup popup probes, and production build
+validation pass. Real AnkiConnect validation of every duplicate scope is not
+verified.
+
 Key changes:
 
 - Add editable tags, allow duplicates, all-model checking, and Collection,
@@ -373,5 +378,5 @@ not delete it automatically because another note may already share that file.
 
 ## Recommended Next Step
 
-Implement Slice 5E tags and duplicate-request policy. Keep the post-add sync
-setting default-off and preserve successful note status when sync fails.
+Implement Slice 5F compact glossary export and `{book-cover}` media storage.
+Keep the Rust media read boundary keyed only by app-owned `bookId`.

@@ -262,8 +262,14 @@ export interface AnkiSettings {
   audioSources: AnkiAudioSource[];
   audioDownloadTimeoutMs: number;
   forceSyncAfterAdd: boolean;
+  tags: string;
+  allowDuplicates: boolean;
+  checkDuplicatesAcrossAllModels: boolean;
+  duplicateScope: AnkiDuplicateScope;
   lastFetchedAt: number | null;
 }
+
+export type AnkiDuplicateScope = "collection" | "deck" | "deckRoot";
 
 export interface AnkiConnectionStatus {
   ok: boolean;
@@ -295,6 +301,9 @@ export interface AnkiNoteRequest {
   fields: Record<string, string>;
   tags: string[];
   forceSyncAfterAdd: boolean;
+  allowDuplicates: boolean;
+  checkDuplicatesAcrossAllModels: boolean;
+  duplicateScope: AnkiDuplicateScope;
 }
 
 export interface AnkiNoteCheckResult {
