@@ -193,13 +193,13 @@ store-media runtime validation passed; combined add-note-plus-media validation
 with a real media-bearing dictionary is not verified. Audio and sync follow-up
 slices are planned in `docs/ANKI_AUDIO_SYNC_PLAN.md`; remote word-audio
 download/storage and `{audio}` rendering are implemented at automated-validation
-level. Local audio, optional post-add sync, tags, and advanced duplicate options
-are implemented at automated-validation level.
+level. Local audio, optional post-add sync, tags, advanced duplicate options,
+compact glossary export, and app-owned book-cover media are implemented at
+automated-validation level.
 
 Deferred items:
 
-- Sasayaki sentence audio.
-- Book-cover media and compact glossary export.
+- Sasayaki reader, cue matching, clipping, and sentence-audio export.
 
 Acceptance:
 
