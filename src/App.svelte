@@ -36,8 +36,10 @@
     AnkiAudioSource,
     AnkiDictionaryMediaRef,
     AnkiNoteRequest,
+    AnkiRemoteAudioRequest,
     AnkiSettings,
     AnkiStoreMediaResult,
+    AnkiStoreRemoteAudioResult,
     DictImportBatchSummary,
     DictResult,
     DictionaryManifestEntry,
@@ -578,6 +580,7 @@
       frequencies: result.frequencies,
       pitches: result.pitches,
       media: extractDictionaryMediaReferences(result.glossary),
+      audioFilename: null,
       sourceBook: {
         title: meta?.title ?? null,
         bookId: currentBookLocator?.bookId,
@@ -676,6 +679,13 @@
     const endpoint = ankiSettings?.endpoint;
     if (!endpoint) throw new Error("Anki endpoint is not configured.");
     return invoke<AnkiStoreMediaResult>("anki_store_dictionary_media", { endpoint, media });
+  }
+
+  async function storeAnkiRemoteAudio(request: AnkiRemoteAudioRequest): Promise<AnkiStoreRemoteAudioResult> {
+    if (!isTauriRuntime()) throw new Error("Anki audio storage requires Tauri runtime.");
+    const endpoint = ankiSettings?.endpoint;
+    if (!endpoint) throw new Error("Anki endpoint is not configured.");
+    return invoke<AnkiStoreRemoteAudioResult>("anki_store_remote_audio", { endpoint, request });
   }
 
   async function setDictionaryEnabled(dictionary: DictionaryManifestEntry, enabled: boolean) {
@@ -1107,6 +1117,7 @@
       ankiTitle={lookupAnkiTitle}
       {buildAnkiPayload}
       onStoreAnkiMedia={storeAnkiMedia}
+      onStoreAnkiRemoteAudio={storeAnkiRemoteAudio}
       onAddAnkiNote={addAnkiNote}
     />
     {#if showToc}

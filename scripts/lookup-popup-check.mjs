@@ -51,6 +51,9 @@ async function openProbe(page, state, options = {}) {
   if (options.ankiMode) params.set("ankiMode", options.ankiMode);
   if (options.ankiAddMode) params.set("ankiAddMode", options.ankiAddMode);
   if (options.ankiStoreMode) params.set("ankiStoreMode", options.ankiStoreMode);
+  if (options.ankiAudioStoreMode) params.set("ankiAudioStoreMode", options.ankiAudioStoreMode);
+  if (options.audioField === false) params.set("audioField", "disabled");
+  if (options.emptyExpression) params.set("emptyExpression", "1");
   await page.goto(`${origin}/?${params}`);
   await page.locator(".lookup-pop").waitFor({ timeout: 10000 });
 }
@@ -93,6 +96,8 @@ async function popupMetrics(page) {
       topPopupId: state?.getAttribute("data-top-popup-id") ?? "",
       ankiAddCount: Number(state?.getAttribute("data-anki-add-count") ?? 0),
       ankiStoreCount: Number(state?.getAttribute("data-anki-store-count") ?? 0),
+      ankiAudioStoreCount: Number(state?.getAttribute("data-anki-audio-store-count") ?? 0),
+      ankiLastAudioRequest: JSON.parse(state?.getAttribute("data-anki-last-audio-request") ?? "null"),
       ankiLastMedia: JSON.parse(state?.getAttribute("data-anki-last-media") ?? "[]"),
       ankiLastDeck: state?.getAttribute("data-anki-last-deck") ?? "",
       ankiLastModel: state?.getAttribute("data-anki-last-model") ?? "",
@@ -323,10 +328,41 @@ async function main() {
     assert(ankiAdded.ankiLastFields.Meaning.includes('data-sc-headword="school"'), "Add Anki should preserve structured glossary data attributes.", ankiAdded);
     assert(ankiAdded.ankiLastFields.JmOnly.includes("school; a place of study") && ankiAdded.ankiLastFields.JmOnly.includes('data-dictionary="JMdict [probe]"'), "Add Anki should send dictionary-specific glossary values with template-compatible wrappers.", ankiAdded);
     assert(ankiAdded.ankiLastFields.MissingDict === "", "Unknown dictionary-specific glossary tokens should render empty.", ankiAdded);
-    assert(ankiAdded.ankiLastFields.Audio === "", "Add Anki should keep audio fields empty until audio export is implemented.", ankiAdded);
+    assert(ankiAdded.ankiAudioStoreCount === 1, "Add Anki should store remote word audio before note creation.", ankiAdded);
+    assert(ankiAdded.ankiLastAudioRequest.expression === "school" && ankiAdded.ankiLastAudioRequest.reading === "school", "Remote audio request should use lookup expression and reading.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.Audio === "[sound:hsw_audio_probe.mp3]", "Add Anki should render the stored word audio filename.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Media.includes("<img src=\"stored_hsw_") && ankiAdded.ankiLastFields.Media.includes(".svg"), "Add Anki should include stored dictionary media filenames.", ankiAdded);
     assert(ankiAdded.text.includes("Added Anki note 4242."), "Added state should show the Anki note id message.", ankiAdded);
-    assert(ankiAdded.text.includes("Word audio token present"), "Add state should expose the word-audio boundary.", ankiAdded);
+    assert(ankiAdded.text.includes("Word audio stored as hsw_audio_probe.mp3"), "Add state should expose stored word audio.", ankiAdded);
+
+    await openProbe(page, "ready", { ankiMode: "configured", ankiAudioStoreMode: "missing" });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiMissingAudio = await popupMetrics(page);
+    assert(ankiMissingAudio.ankiAudioStoreCount === 1 && ankiMissingAudio.ankiAddCount === 1, "Missing remote audio should not block text note creation.", ankiMissingAudio);
+    assert(ankiMissingAudio.ankiLastFields.Audio === "", "Missing remote audio should leave the audio field empty.", ankiMissingAudio);
+    assert(ankiMissingAudio.text.includes("HTTP 404"), "Missing remote audio warning should be visible.", ankiMissingAudio);
+
+    await openProbe(page, "ready", { ankiMode: "configured", ankiAudioStoreMode: "unsupported" });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiUnsupportedAudio = await popupMetrics(page);
+    assert(ankiUnsupportedAudio.ankiAddCount === 1 && ankiUnsupportedAudio.ankiLastFields.Audio === "", "Unsupported remote audio should continue without audio.", ankiUnsupportedAudio);
+    assert(ankiUnsupportedAudio.text.includes("not a supported audio file"), "Unsupported remote audio warning should be visible.", ankiUnsupportedAudio);
+
+    await openProbe(page, "ready", { ankiMode: "configured", ankiAudioStoreMode: "error" });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiUnsafeAudio = await popupMetrics(page);
+    assert(ankiUnsafeAudio.ankiAudioStoreCount === 1 && ankiUnsafeAudio.ankiAddCount === 0, "Unsafe remote audio targets should stop note creation.", ankiUnsafeAudio);
+    assert(ankiUnsafeAudio.text.includes("private, local, or reserved"), "Unsafe remote audio error should be visible.", ankiUnsafeAudio);
+
+    await openProbe(page, "ready", { ankiMode: "configured", audioField: false });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiWithoutAudioField = await popupMetrics(page);
+    assert(ankiWithoutAudioField.ankiAudioStoreCount === 0 && ankiWithoutAudioField.ankiAddCount === 1, "Notes without an audio token should skip remote audio.", ankiWithoutAudioField);
+
+    await openProbe(page, "ready", { ankiMode: "configured", emptyExpression: true });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiWithoutExpression = await popupMetrics(page);
+    assert(ankiWithoutExpression.ankiAudioStoreCount === 0 && ankiWithoutExpression.ankiAddCount === 1, "Lookups without an expression should skip remote audio.", ankiWithoutExpression);
 
     await openProbe(page, "ready", { ankiMode: "configured", ankiStoreMode: "missing" });
     await page.getByRole("button", { name: "Add to Anki" }).click();
@@ -413,13 +449,16 @@ async function main() {
     assert(!afterBack.canGoBack && afterBack.canGoForward, "Back navigation should move the redirect into forward history.", afterBack);
 
     await page.locator(".lookup-pop[data-popup-id='root']").getByRole("button", { name: "Forward" }).click();
+    await page.waitForFunction(() => document.querySelector(".lookup-pop[data-popup-id='root']")?.textContent?.includes("nested result for academy"));
     const afterForward = await popupMetrics(page);
     assert(afterForward.text.includes("nested result for academy"), "Forward navigation should restore the redirected lookup.", afterForward);
     assert(afterForward.canGoBack && !afterForward.canGoForward, "Forward navigation should move the previous lookup back into back history.", afterForward);
 
     await page.locator(".lookup-pop[data-popup-id='root']").getByRole("button", { name: "Back" }).click();
+    await page.waitForFunction(() => document.querySelector(".lookup-pop[data-popup-id='root']")?.textContent?.includes("classroom school room"));
 
     await dispatchGlossaryClick(page, "classroom");
+    await page.waitForFunction(() => document.querySelectorAll(".lookup-pop").length === 2);
     const clickNested = await popupMetrics(page);
     assert(clickNested.nestedLookupCount === 1, "Plain left click inside glossary should trigger nested lookup callback.", clickNested);
     assert(clickNested.nestedLookupText.includes("classroom"), "Plain left click should select the glossary word under the pointer.", clickNested);
@@ -480,6 +519,7 @@ async function main() {
       el.scrollTop = 80;
       el.dispatchEvent(new Event("scroll", { bubbles: true }));
     });
+    await page.waitForFunction(() => document.querySelectorAll(".lookup-pop").length === 1);
     const scrolled = await popupMetrics(page);
     assert(scrolled.popupCount === 1, "Scrolling the parent popup should close child popups.", scrolled);
     assert(scrolled.scrollCloseCount >= 1, "Parent scroll should record child close behavior.", scrolled);

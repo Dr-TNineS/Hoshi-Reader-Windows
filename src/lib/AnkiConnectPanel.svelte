@@ -169,7 +169,7 @@
       <div>
         <p class="fields-title">Word Audio</p>
         <p class="audio-summary">
-          {settings?.audioEnabled ? "Audio token boundary enabled" : "Audio export disabled"}
+          {settings?.audioEnabled ? "Remote audio export enabled" : "Audio export disabled"}
         </p>
       </div>
       <div class="audio-toggle">
@@ -211,7 +211,7 @@
         value={audioSource().url}
         disabled={busy}
         spellcheck="false"
-        placeholder={`https://example.invalid/audio?term={term}&reading={reading}`}
+        placeholder={`https://audio.example/clip?term={term}&reading={reading}`}
         onchange={(event) => updateAudioSource({ url: event.currentTarget.value })}
       />
     </label>

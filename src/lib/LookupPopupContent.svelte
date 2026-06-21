@@ -1,13 +1,13 @@
 <script lang="ts">
   import { invoke, isTauri } from "@tauri-apps/api/core";
-  import { ankiDictionaryMediaRefs, buildAnkiNoteRequest, isAnkiPreviewConfigured, payloadWithStoredDictionaryMedia, renderAnkiFieldPreview } from "./anki-field-renderer";
+  import { ankiDictionaryMediaRefs, buildAnkiNoteRequest, isAnkiPreviewConfigured, payloadWithStoredDictionaryMedia, payloadWithStoredRemoteAudio, renderAnkiFieldPreview } from "./anki-field-renderer";
   import { loadCachedDictionaryStyles, type DictionaryStyleResource } from "./dictionary-style-cache";
   import { scopeDictionaryCss, type LookupPitchGroup, type LookupState } from "./lookup-popup";
   import { createLookupPopupViewModels, popupResultDictionaries } from "./lookup-popup-view-model";
   import { clearLookupHighlight, POPUP_LOOKUP_HIGHLIGHT } from "./lookup-highlight";
   import { markLookupPerformance } from "./lookup-performance";
   import { selectPopupTextFromPoint } from "./popup-selection";
-  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, AnkiStoreMediaResult, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
+  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiRemoteAudioRequest, AnkiSettings, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
   let {
     popupId,
@@ -33,6 +33,7 @@
     ankiSettings = null,
     buildAnkiPayload,
     onStoreAnkiMedia,
+    onStoreAnkiRemoteAudio,
     onAddAnkiNote,
   }: {
     popupId: string;
@@ -58,6 +59,7 @@
     ankiSettings?: AnkiSettings | null;
     buildAnkiPayload?: (result: DictResult, resultIndex: number) => LookupAnkiPayload;
     onStoreAnkiMedia?: (media: AnkiDictionaryMediaRef[]) => Promise<AnkiStoreMediaResult>;
+    onStoreAnkiRemoteAudio?: (request: AnkiRemoteAudioRequest) => Promise<AnkiStoreRemoteAudioResult>;
     onAddAnkiNote?: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
   } = $props();
 
@@ -329,12 +331,21 @@
     try {
       const storeResult = await storeAnkiMediaForPayload(payload);
       if (ankiActionKey !== key) return;
-      const notePayload = storeResult
+      let notePayload = storeResult
         ? payloadWithStoredDictionaryMedia(payload, storeResult.stored)
         : payload;
       ankiMediaWarnings = storeResult?.warnings ?? [];
-      const notePreviewFields = renderAnkiFieldPreview(notePayload, ankiSettings);
-      ankiAudioHint = audioBoundaryHint(notePayload, notePreviewFields);
+      let notePreviewFields = renderAnkiFieldPreview(notePayload, ankiSettings);
+      const audioResult = await storeAnkiAudioForPayload(notePayload, notePreviewFields);
+      if (ankiActionKey !== key) return;
+      if (audioResult) {
+        notePayload = payloadWithStoredRemoteAudio(notePayload, audioResult.filename);
+        ankiMediaWarnings = [...ankiMediaWarnings, ...audioResult.warnings];
+        notePreviewFields = renderAnkiFieldPreview(notePayload, ankiSettings);
+      }
+      ankiAudioHint = audioResult?.warnings.length
+        ? "Word audio was not stored; this note will be added without audio."
+        : audioBoundaryHint(notePayload, notePreviewFields);
       const note = buildAnkiNoteRequest(notePayload, ankiSettings);
       if (!note) return;
       const result = await onAddAnkiNote(note);
@@ -353,12 +364,30 @@
     return onStoreAnkiMedia(ankiDictionaryMediaRefs(payload.media));
   }
 
+  async function storeAnkiAudioForPayload(
+    payload: LookupAnkiPayload,
+    fields: AnkiFieldPreview[],
+  ): Promise<AnkiStoreRemoteAudioResult | null> {
+    if (!onStoreAnkiRemoteAudio || !ankiSettings?.audioEnabled || !payload.expression.trim()) return null;
+    if (!fields.some((field) => field.template.toLowerCase().includes("{audio}"))) return null;
+    const source = ankiSettings.audioSources.find((item) => item.enabled && item.url.trim());
+    if (!source) return null;
+    return onStoreAnkiRemoteAudio({
+      sourceName: source.name,
+      urlTemplate: source.url,
+      expression: payload.expression,
+      reading: payload.reading,
+      timeoutMs: ankiSettings.audioDownloadTimeoutMs,
+    });
+  }
+
   function audioBoundaryHint(payload: LookupAnkiPayload, fields: AnkiFieldPreview[]): string {
     if (!fields.some((field) => field.template.toLowerCase().includes("{audio}"))) return "";
     const source = ankiSettings?.audioSources.find((item) => item.enabled && item.url.trim());
     if (!ankiSettings?.audioEnabled || !source) return "Word audio token present; no enabled audio source is configured.";
     if (!payload.expression.trim()) return "Word audio token present; this lookup has no expression to resolve.";
-    return "Word audio token present; audio export will be resolved in a later slice.";
+    if (payload.audioFilename) return `Word audio stored as ${payload.audioFilename}.`;
+    return "Word audio will be fetched when this note is added.";
   }
 
   function ankiButtonLabel(key: string): string {

@@ -6,8 +6,10 @@
     AnkiAddNoteResult,
     AnkiDictionaryMediaRef,
     AnkiNoteRequest,
+    AnkiRemoteAudioRequest,
     AnkiSettings,
     AnkiStoreMediaResult,
+    AnkiStoreRemoteAudioResult,
     DictResult,
     LookupAnkiPayload,
     ReaderSelection,
@@ -45,6 +47,7 @@
     ankiTitle,
     buildAnkiPayload,
     onStoreAnkiMedia,
+    onStoreAnkiRemoteAudio,
     onAddAnkiNote,
   }: {
     popups?: LookupPopupItem[];
@@ -59,6 +62,7 @@
     ankiTitle: (selection: ReaderSelection, result: DictResult, resultIndex: number) => string;
     buildAnkiPayload: (selection: ReaderSelection, result: DictResult, resultIndex: number) => LookupAnkiPayload;
     onStoreAnkiMedia: (media: AnkiDictionaryMediaRef[]) => Promise<AnkiStoreMediaResult>;
+    onStoreAnkiRemoteAudio: (request: AnkiRemoteAudioRequest) => Promise<AnkiStoreRemoteAudioResult>;
     onAddAnkiNote: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
   } = $props();
 
@@ -144,6 +148,7 @@
       {ankiSettings}
       buildAnkiPayload={(result, resultIndex) => buildAnkiPayload(popup.selection, result, resultIndex)}
       onStoreAnkiMedia={onStoreAnkiMedia}
+      onStoreAnkiRemoteAudio={onStoreAnkiRemoteAudio}
       onAddAnkiNote={onAddAnkiNote}
     />
   </aside>

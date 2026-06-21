@@ -1,13 +1,13 @@
 # Anki Audio And Sync Plan
 
-Last updated: 2026-06-18
+Last updated: 2026-06-21
 
 This document defines the next Anki scope after text note creation and
 dictionary image media export.
 
-Implementation status as of 2026-06-18: Slice 5A word-audio settings and
-`{audio}` preview boundary are implemented. Audio download/storage, local audio,
-Sasayaki audio, and sync are not implemented.
+Implementation status as of 2026-06-21: Slice 5A word-audio settings and Slice
+5B remote word-audio fetch/store are implemented. Local audio, Sasayaki audio,
+and sync are not implemented.
 
 ## Current Baseline
 
@@ -18,6 +18,10 @@ Sasayaki audio, and sync are not implemented.
   renders stored filenames into `{dictionary-media}` fields.
 - HSW Anki settings include a minimal word-audio boundary: enable flag, one
   editable source, download timeout, and `{audio}` template recognition.
+- HSW resolves the first enabled public HTTP/HTTPS word-audio source, stores
+  supported audio through AnkiConnect, and renders `[sound:filename]` into
+  `{audio}`. Ordinary source failures remain non-fatal; unsafe or oversized
+  responses block the add operation.
 - Real store-media runtime validation passed with a throwaway SVG media file.
 - Real combined add-note-plus-dictionary-media validation with a normal
   media-bearing Yomitan dictionary is not verified because no suitable local
@@ -91,6 +95,9 @@ Validation:
 
 Goal: resolve one enabled remote audio source, store it through AnkiConnect, and
 render `[sound:filename]` into `{audio}`.
+
+Status: implemented on 2026-06-21. Automated Rust and lookup-popup validation
+passes; real remote-source-plus-AnkiConnect runtime validation is not verified.
 
 Key changes:
 
@@ -189,6 +196,6 @@ HSW should first decide whether Sasayaki itself is in scope for Windows.
 
 ## Recommended Next Step
 
-Implement Slice 5B next. It should add remote word-audio fetch/store while
-preserving the current behavior where `{audio}` remains empty if no audio is
-resolved.
+Design Slice 5C's Windows local-audio index/import boundary before
+implementation. Keep Slice 5D optional sync independent so it can be selected
+instead if local-audio source data is unavailable.

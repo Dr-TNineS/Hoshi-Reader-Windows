@@ -93,6 +93,7 @@ export interface LookupAnkiPayload {
   frequencies: FrequencyEntry[];
   pitches: PitchEntry[];
   media: LookupAnkiMediaReference[];
+  audioFilename: string | null;
   sourceBook: LookupAnkiSourceBook;
   sourceChapter: LookupAnkiSourceChapter;
 }
@@ -164,6 +165,19 @@ export interface DictImportSummary {
   mediaCount: number;
   ready: boolean;
   reused: boolean;
+}
+
+export interface AnkiRemoteAudioRequest {
+  sourceName: string;
+  urlTemplate: string;
+  expression: string;
+  reading: string;
+  timeoutMs: number;
+}
+
+export interface AnkiStoreRemoteAudioResult {
+  filename: string | null;
+  warnings: string[];
 }
 
 export interface DictImportFailure {

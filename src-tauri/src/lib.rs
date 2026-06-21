@@ -48,6 +48,7 @@ pub fn run() {
             anki::anki_check_note,
             anki::anki_add_note,
             anki::anki_store_dictionary_media,
+            anki::anki_store_remote_audio,
         ])
         .setup(|app| {
             app.state::<DictState>().initialize(app.handle());

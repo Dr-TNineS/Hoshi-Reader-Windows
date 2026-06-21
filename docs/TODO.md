@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Agent TODO
 
-Last updated: 2026-06-18
+Last updated: 2026-06-21
 
 This file is the short operational handoff for future agents. Keep detailed state in `docs/PROJECT_STATUS.md` and lookup-specific slice details in `docs/LOOKUP_ROADMAP.md`.
 
@@ -30,7 +30,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Final linked real dictionary validation with local `MK3Fix0213.zip` passed on 2026-06-12: `dict_id=93e8e532b599ba4a`, `term=140821`, `media=0`, `lookup_results=2`.
    - Anki HSA/Windows alignment is documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`; AnkiConnect readiness/configuration, field preview, minimal duplicate-check/add-note plumbing, and real AnkiConnect runtime add-note validation are complete.
 2. Treat the storage/model migration as complete at the JSON-store level: reading progress, recent books, and session now live in Tauri app data `reading/state.json`, with one-time legacy `localStorage` import and browser fallback.
-3. Next recommended product area: Anki remote word-audio fetch/store, Slice 5B in `docs/ANKI_AUDIO_SYNC_PLAN.md`; still do not claim combined add-note-plus-dictionary-media runtime verification until a media-bearing Yomitan dictionary is available.
+3. Treat Anki remote word-audio fetch/store, Slice 5B in `docs/ANKI_AUDIO_SYNC_PLAN.md`, as complete at automated-validation level. Next, design the Windows local-audio boundary for Slice 5C; Slice 5D optional sync remains an independent alternative. Do not claim real remote-audio-plus-AnkiConnect or combined add-note-plus-dictionary-media runtime verification until suitable fixtures are available.
 4. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 5. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
 

@@ -1,22 +1,30 @@
+use percent_encoding::{utf8_percent_encode, NON_ALPHANUMERIC};
+use reqwest::blocking::{Client, Response};
+use reqwest::header::{CONTENT_LENGTH, CONTENT_TYPE, LOCATION};
+use reqwest::redirect::Policy;
+use reqwest::{StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
+use sha2::{Digest, Sha256};
 use std::collections::BTreeMap;
 use std::fs;
 use std::io::{Read, Write};
-use std::net::{TcpStream, ToSocketAddrs};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
+#[cfg(test)]
+use crate::dict::commands::DictionaryManifestEntry;
 use crate::dict::commands::{
     dictionary_manifest_path, load_dictionary_media, read_dictionary_manifest, DictionaryManifest,
 };
-#[cfg(test)]
-use crate::dict::commands::DictionaryManifestEntry;
 
 const DEFAULT_ENDPOINT: &str = "http://127.0.0.1:8765";
 const SETTINGS_VERSION: u32 = 1;
 const TIMEOUT: Duration = Duration::from_secs(5);
+const MAX_REMOTE_AUDIO_BYTES: usize = 10 * 1024 * 1024;
+const MAX_REMOTE_AUDIO_REDIRECTS: usize = 3;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -142,6 +150,23 @@ pub struct AnkiStoreMediaResult {
     pub warnings: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AnkiRemoteAudioRequest {
+    pub source_name: String,
+    pub url_template: String,
+    pub expression: String,
+    pub reading: String,
+    pub timeout_ms: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AnkiStoreRemoteAudioResult {
+    pub filename: Option<String>,
+    pub warnings: Vec<String>,
+}
+
 #[tauri::command]
 pub fn anki_load_settings(app: AppHandle) -> Result<AnkiSettings, String> {
     let root = anki_root(&app)?;
@@ -235,7 +260,11 @@ pub fn anki_add_note(note: AnkiNoteRequest) -> Result<AnkiAddNoteResult, String>
     }
 
     let endpoint = normalize_endpoint(&note.endpoint)?;
-    let result = anki_request(&endpoint, "addNote", Some(json!({ "note": note_json(&note)? })))?;
+    let result = anki_request(
+        &endpoint,
+        "addNote",
+        Some(json!({ "note": note_json(&note)? })),
+    )?;
     let note_id = result
         .as_i64()
         .ok_or_else(|| "AnkiConnect addNote returned an unexpected response.".to_string())?;
@@ -254,6 +283,488 @@ pub fn anki_store_dictionary_media(
 ) -> Result<AnkiStoreMediaResult, String> {
     let manifest = read_dictionary_manifest(&dictionary_manifest_path(&app)?)?;
     store_dictionary_media_from_manifest(&endpoint, &manifest, &media)
+}
+
+#[tauri::command]
+pub fn anki_store_remote_audio(
+    endpoint: String,
+    request: AnkiRemoteAudioRequest,
+) -> Result<AnkiStoreRemoteAudioResult, String> {
+    let endpoint = normalize_endpoint(&endpoint)?;
+    let Some(download) = download_remote_audio(&request)? else {
+        return Ok(AnkiStoreRemoteAudioResult {
+            filename: None,
+            warnings: vec![remote_audio_warning(
+                &request.source_name,
+                "No audio was returned.",
+            )],
+        });
+    };
+    if let Some(warning) = download.warning {
+        return Ok(AnkiStoreRemoteAudioResult {
+            filename: None,
+            warnings: vec![remote_audio_warning(&request.source_name, &warning)],
+        });
+    }
+    let Some(bytes) = download.bytes else {
+        return Ok(AnkiStoreRemoteAudioResult {
+            filename: None,
+            warnings: vec![remote_audio_warning(
+                &request.source_name,
+                "No audio was returned.",
+            )],
+        });
+    };
+    let Some(extension) = detect_audio_extension(
+        &bytes,
+        download.content_type.as_deref(),
+        download.final_url.path(),
+    ) else {
+        return Ok(AnkiStoreRemoteAudioResult {
+            filename: None,
+            warnings: vec![remote_audio_warning(
+                &request.source_name,
+                "The response was not a supported MP3, OGG/Opus, WAV, M4A, or AAC file.",
+            )],
+        });
+    };
+    let filename = remote_audio_filename(&bytes, extension);
+    let stored_filename = anki_request(
+        &endpoint,
+        "storeMediaFile",
+        Some(json!({
+            "filename": filename,
+            "data": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes),
+        })),
+    )?
+    .as_str()
+    .ok_or_else(|| "AnkiConnect storeMediaFile returned an unexpected response.".to_string())?
+    .to_string();
+    let stored_filename = validate_anki_media_filename(&stored_filename)?;
+    Ok(AnkiStoreRemoteAudioResult {
+        filename: Some(stored_filename),
+        warnings: Vec::new(),
+    })
+}
+
+#[derive(Debug)]
+struct RemoteAudioDownload {
+    bytes: Option<Vec<u8>>,
+    content_type: Option<String>,
+    final_url: Url,
+    warning: Option<String>,
+}
+
+fn download_remote_audio(
+    request: &AnkiRemoteAudioRequest,
+) -> Result<Option<RemoteAudioDownload>, String> {
+    let expanded = match expand_audio_url_template(
+        &request.url_template,
+        &request.expression,
+        &request.reading,
+    ) {
+        Ok(expanded) => expanded,
+        Err(warning) => {
+            return Ok(Some(RemoteAudioDownload {
+                bytes: None,
+                content_type: None,
+                final_url: Url::parse("https://invalid.invalid/").expect("static URL"),
+                warning: Some(warning),
+            }))
+        }
+    };
+    let mut current = match Url::parse(&expanded) {
+        Ok(url) => url,
+        Err(error) => {
+            return Ok(Some(RemoteAudioDownload {
+                bytes: None,
+                content_type: None,
+                final_url: Url::parse("https://invalid.invalid/").expect("static URL"),
+                warning: Some(format!("The expanded audio URL is invalid: {error}")),
+            }))
+        }
+    };
+    let timeout = remote_audio_timeout(request.timeout_ms);
+
+    for redirect_count in 0..=MAX_REMOTE_AUDIO_REDIRECTS {
+        let target = match validate_remote_audio_url(&current) {
+            Ok(target) => target,
+            Err(error)
+                if error.starts_with("Cannot resolve remote audio host:")
+                    || error == "Remote audio host resolved to no addresses." =>
+            {
+                return Ok(Some(RemoteAudioDownload {
+                    bytes: None,
+                    content_type: None,
+                    final_url: current,
+                    warning: Some(error),
+                }))
+            }
+            Err(error) => return Err(error),
+        };
+        let client = match Client::builder()
+            .redirect(Policy::none())
+            .connect_timeout(timeout)
+            .timeout(timeout)
+            .resolve(&target.host, target.address)
+            .build()
+        {
+            Ok(client) => client,
+            Err(error) => {
+                return Ok(Some(RemoteAudioDownload {
+                    bytes: None,
+                    content_type: None,
+                    final_url: current,
+                    warning: Some(format!("Cannot build remote audio client: {error}")),
+                }))
+            }
+        };
+        let response = match client.get(current.clone()).send() {
+            Ok(response) => response,
+            Err(error) => {
+                return Ok(Some(RemoteAudioDownload {
+                    bytes: None,
+                    content_type: None,
+                    final_url: current,
+                    warning: Some(format!("Remote audio request failed: {error}")),
+                }))
+            }
+        };
+
+        if response.status().is_redirection() {
+            ensure_remote_audio_redirect_allowed(redirect_count)?;
+            let Some(location) = response.headers().get(LOCATION) else {
+                return Ok(Some(RemoteAudioDownload {
+                    bytes: None,
+                    content_type: None,
+                    final_url: current,
+                    warning: Some(
+                        "Remote audio redirect did not include a Location header.".into(),
+                    ),
+                }));
+            };
+            let location = match location.to_str() {
+                Ok(location) => location,
+                Err(_) => {
+                    return Ok(Some(RemoteAudioDownload {
+                        bytes: None,
+                        content_type: None,
+                        final_url: current,
+                        warning: Some(
+                            "Remote audio redirect included an invalid Location header.".into(),
+                        ),
+                    }))
+                }
+            };
+            current = match current.join(location) {
+                Ok(url) => url,
+                Err(error) => {
+                    return Ok(Some(RemoteAudioDownload {
+                        bytes: None,
+                        content_type: None,
+                        final_url: current,
+                        warning: Some(format!("Remote audio redirect URL is invalid: {error}")),
+                    }))
+                }
+            };
+            continue;
+        }
+        return read_remote_audio_response(response, current);
+    }
+    unreachable!("redirect loop always returns")
+}
+
+fn expand_audio_url_template(
+    template: &str,
+    expression: &str,
+    reading: &str,
+) -> Result<String, String> {
+    let template = template.trim();
+    if template.is_empty() {
+        return Err("The audio URL template is empty.".into());
+    }
+    let term = utf8_percent_encode(expression.trim(), NON_ALPHANUMERIC).to_string();
+    let reading = utf8_percent_encode(reading.trim(), NON_ALPHANUMERIC).to_string();
+    let expanded = template
+        .replace("{term}", &term)
+        .replace("{reading}", &reading);
+    if expanded.contains('{') || expanded.contains('}') {
+        return Err("The audio URL template contains an unknown or incomplete placeholder.".into());
+    }
+    Ok(expanded)
+}
+
+fn remote_audio_timeout(timeout_ms: u32) -> Duration {
+    Duration::from_millis(timeout_ms.clamp(1000, 30000) as u64)
+}
+
+fn ensure_remote_audio_redirect_allowed(completed_redirects: usize) -> Result<(), String> {
+    if completed_redirects >= MAX_REMOTE_AUDIO_REDIRECTS {
+        return Err(format!(
+            "Remote audio exceeded the limit of {MAX_REMOTE_AUDIO_REDIRECTS} redirects."
+        ));
+    }
+    Ok(())
+}
+
+#[derive(Debug)]
+struct ResolvedRemoteTarget {
+    host: String,
+    address: SocketAddr,
+}
+
+fn validate_remote_audio_url(url: &Url) -> Result<ResolvedRemoteTarget, String> {
+    if !matches!(url.scheme(), "http" | "https") {
+        return Err("Remote audio URL must use HTTP or HTTPS.".into());
+    }
+    if !url.username().is_empty() || url.password().is_some() {
+        return Err("Remote audio URL must not contain credentials.".into());
+    }
+    let host = url
+        .host_str()
+        .ok_or_else(|| "Remote audio URL must include a host.".to_string())?;
+    if host.eq_ignore_ascii_case("localhost") || host.ends_with(".localhost") {
+        return Err("Remote audio URL must not target localhost.".into());
+    }
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| "Remote audio URL has no usable port.".to_string())?;
+    let addresses: Vec<SocketAddr> = (host, port)
+        .to_socket_addrs()
+        .map_err(|error| format!("Cannot resolve remote audio host: {error}"))?
+        .collect();
+    if addresses.is_empty() {
+        return Err("Remote audio host resolved to no addresses.".into());
+    }
+    if addresses.iter().any(|address| !is_public_ip(address.ip())) {
+        return Err("Remote audio URL resolved to a private, local, or reserved address.".into());
+    }
+    Ok(ResolvedRemoteTarget {
+        host: host.into(),
+        address: addresses[0],
+    })
+}
+
+fn is_public_ip(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(ip) => is_public_ipv4(ip),
+        IpAddr::V6(ip) => is_public_ipv6(ip),
+    }
+}
+
+fn is_public_ipv4(ip: Ipv4Addr) -> bool {
+    let [a, b, c, _] = ip.octets();
+    !(ip.is_unspecified()
+        || ip.is_loopback()
+        || ip.is_private()
+        || ip.is_link_local()
+        || ip.is_multicast()
+        || ip.is_broadcast()
+        || ip.is_documentation()
+        || a == 0
+        || (a == 100 && (64..=127).contains(&b))
+        || (a == 192 && b == 0)
+        || (a == 192 && b == 88 && c == 99)
+        || (a == 198 && matches!(b, 18 | 19))
+        || a >= 240)
+}
+
+fn is_public_ipv6(ip: Ipv6Addr) -> bool {
+    let segments = ip.segments();
+    if let Some(ipv4) = ip.to_ipv4_mapped() {
+        return is_public_ipv4(ipv4);
+    }
+    !(ip.is_unspecified()
+        || ip.is_loopback()
+        || ip.is_multicast()
+        || (segments[0] & 0xfe00) == 0xfc00
+        || (segments[0] & 0xffc0) == 0xfe80
+        || (segments[0] & 0xffc0) == 0xfec0
+        || (segments[0] & 0xe000) != 0x2000
+        || (segments[0] == 0x2001 && (segments[1] <= 0x01ff || segments[1] == 0x0db8)))
+}
+
+fn read_remote_audio_response(
+    mut response: Response,
+    final_url: Url,
+) -> Result<Option<RemoteAudioDownload>, String> {
+    let status = response.status();
+    if let Some(warning) = remote_audio_status_warning(status) {
+        return Ok(Some(RemoteAudioDownload {
+            bytes: None,
+            content_type: None,
+            final_url,
+            warning: Some(warning),
+        }));
+    }
+    if let Some(length) = response
+        .headers()
+        .get(CONTENT_LENGTH)
+        .and_then(|value| value.to_str().ok())
+        .and_then(|value| value.parse::<u64>().ok())
+    {
+        ensure_remote_audio_size(length as usize)?;
+    }
+    let content_type = response
+        .headers()
+        .get(CONTENT_TYPE)
+        .and_then(|value| value.to_str().ok())
+        .map(str::to_string);
+    let mut bytes = Vec::new();
+    if let Err(error) = response
+        .by_ref()
+        .take((MAX_REMOTE_AUDIO_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+    {
+        return Ok(Some(RemoteAudioDownload {
+            bytes: None,
+            content_type,
+            final_url,
+            warning: Some(format!("Cannot read remote audio response: {error}")),
+        }));
+    }
+    ensure_remote_audio_size(bytes.len())?;
+    if bytes.is_empty() {
+        return Ok(Some(RemoteAudioDownload {
+            bytes: None,
+            content_type,
+            final_url,
+            warning: Some("Remote audio source returned an empty response.".into()),
+        }));
+    }
+    Ok(Some(RemoteAudioDownload {
+        bytes: Some(bytes),
+        content_type,
+        final_url,
+        warning: None,
+    }))
+}
+
+fn remote_audio_status_warning(status: StatusCode) -> Option<String> {
+    if status.is_success() && status != StatusCode::NO_CONTENT {
+        None
+    } else {
+        Some(format!(
+            "Remote audio source returned HTTP {}.",
+            status.as_u16()
+        ))
+    }
+}
+
+fn ensure_remote_audio_size(length: usize) -> Result<(), String> {
+    if length > MAX_REMOTE_AUDIO_BYTES {
+        return Err(format!(
+            "Remote audio exceeds the {} MiB size limit.",
+            MAX_REMOTE_AUDIO_BYTES / 1024 / 1024
+        ));
+    }
+    Ok(())
+}
+
+fn detect_audio_extension(
+    bytes: &[u8],
+    content_type: Option<&str>,
+    path: &str,
+) -> Option<&'static str> {
+    let signature = if matches!(bytes, [0xff, second, ..] if second & 0xf6 == 0xf0) {
+        "aac"
+    } else if bytes.starts_with(b"ID3")
+        || matches!(bytes, [0xff, second, ..] if second & 0xe0 == 0xe0)
+    {
+        "mp3"
+    } else if bytes.starts_with(b"OggS") {
+        if normalize_content_type(content_type)
+            .is_some_and(|mime| mime.eq_ignore_ascii_case("audio/opus"))
+        {
+            "opus"
+        } else {
+            "ogg"
+        }
+    } else if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WAVE" {
+        "wav"
+    } else if bytes.len() >= 12 && &bytes[4..8] == b"ftyp" {
+        "m4a"
+    } else {
+        return None;
+    };
+    if let Some(mime) = normalize_content_type(content_type) {
+        if mime.eq_ignore_ascii_case("application/octet-stream") {
+            // Generic binary responses are accepted when the file signature is supported.
+        } else if let Some(mime_extension) = audio_extension_for_mime(mime) {
+            if !audio_extensions_compatible(signature, mime_extension) {
+                return None;
+            }
+        } else {
+            return None;
+        }
+    }
+    if let Some(path_extension) = supported_path_audio_extension(path) {
+        if !audio_extensions_compatible(signature, path_extension) {
+            return None;
+        }
+    }
+    Some(signature)
+}
+
+fn normalize_content_type(content_type: Option<&str>) -> Option<&str> {
+    content_type?
+        .split(';')
+        .next()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+}
+
+fn audio_extension_for_mime(mime: &str) -> Option<&'static str> {
+    match mime.to_ascii_lowercase().as_str() {
+        "audio/mpeg" | "audio/mp3" => Some("mp3"),
+        "audio/ogg" | "application/ogg" => Some("ogg"),
+        "audio/opus" => Some("opus"),
+        "audio/wav" | "audio/wave" | "audio/x-wav" => Some("wav"),
+        "audio/mp4" | "audio/x-m4a" => Some("m4a"),
+        "audio/aac" | "audio/x-aac" => Some("aac"),
+        _ => None,
+    }
+}
+
+fn supported_path_audio_extension(path: &str) -> Option<&str> {
+    let extension = path.rsplit_once('.')?.1.to_ascii_lowercase();
+    match extension.as_str() {
+        "mp3" | "ogg" | "opus" | "wav" | "m4a" | "aac" => Some(match extension.as_str() {
+            "mp3" => "mp3",
+            "ogg" => "ogg",
+            "opus" => "opus",
+            "wav" => "wav",
+            "m4a" => "m4a",
+            _ => "aac",
+        }),
+        _ => None,
+    }
+}
+
+fn audio_extensions_compatible(left: &str, right: &str) -> bool {
+    left == right
+        || matches!(
+            (left, right),
+            ("ogg", "opus") | ("opus", "ogg") | ("m4a", "aac") | ("aac", "m4a")
+        )
+}
+
+fn remote_audio_filename(bytes: &[u8], extension: &str) -> String {
+    let digest = Sha256::digest(bytes);
+    let hash = digest[..12]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("hsw_audio_{hash}.{extension}")
+}
+
+fn remote_audio_warning(source_name: &str, warning: &str) -> String {
+    let source_name = source_name.trim();
+    if source_name.is_empty() {
+        format!("Word audio: {warning}")
+    } else {
+        format!("Word audio ({source_name}): {warning}")
+    }
 }
 
 fn anki_root(app: &AppHandle) -> Result<PathBuf, String> {
@@ -354,7 +865,10 @@ fn retain_field_mappings_for_note_type(
     let Some(selected_note_type) = selected_note_type else {
         return Vec::new();
     };
-    let Some(note_type) = note_types.iter().find(|note_type| note_type.name == selected_note_type) else {
+    let Some(note_type) = note_types
+        .iter()
+        .find(|note_type| note_type.name == selected_note_type)
+    else {
         return Vec::new();
     };
     mappings
@@ -378,12 +892,18 @@ fn parse_note_check_result(result: Value) -> Result<AnkiNoteCheckResult, String>
     let first = result
         .as_array()
         .and_then(|items| items.first())
-        .ok_or_else(|| "AnkiConnect duplicate check returned an unexpected response.".to_string())?;
+        .ok_or_else(|| {
+            "AnkiConnect duplicate check returned an unexpected response.".to_string()
+        })?;
     let can_add = first
         .get("canAdd")
         .and_then(Value::as_bool)
         .ok_or_else(|| "AnkiConnect duplicate check did not include canAdd.".to_string())?;
-    let error = first.get("error").and_then(Value::as_str).unwrap_or("").trim();
+    let error = first
+        .get("error")
+        .and_then(Value::as_str)
+        .unwrap_or("")
+        .trim();
     if can_add {
         return Ok(AnkiNoteCheckResult {
             can_add: true,
@@ -454,10 +974,7 @@ fn store_dictionary_media_from_manifest(
                 });
             }
             Err(error) if is_nonfatal_media_missing(&error) => {
-                warnings.push(format!(
-                    "{} / {}: {}",
-                    item.dictionary, item.path, error
-                ));
+                warnings.push(format!("{} / {}: {}", item.dictionary, item.path, error));
             }
             Err(error) => return Err(error),
         }
@@ -483,7 +1000,8 @@ fn validate_anki_media_filename(filename: &str) -> Result<String, String> {
 }
 
 fn is_nonfatal_media_missing(error: &str) -> bool {
-    error.starts_with("Dictionary media not found:") || error.starts_with("Dictionary not found for media request:")
+    error.starts_with("Dictionary media not found:")
+        || error.starts_with("Dictionary not found for media request:")
 }
 
 fn fetch_decks(endpoint: &str) -> Result<Vec<AnkiDeck>, String> {
@@ -520,9 +1038,9 @@ fn fetch_note_type_fields(endpoint: &str, model_name: &str) -> Result<Vec<String
         "modelFieldNames",
         Some(json!({ "modelName": model_name })),
     )?;
-    let fields = result
-        .as_array()
-        .ok_or_else(|| "AnkiConnect modelFieldNames returned an unexpected response.".to_string())?;
+    let fields = result.as_array().ok_or_else(|| {
+        "AnkiConnect modelFieldNames returned an unexpected response.".to_string()
+    })?;
     Ok(fields
         .iter()
         .filter_map(|value| value.as_str())
@@ -541,12 +1059,18 @@ fn anki_request(endpoint: &str, action: &str, params: Option<Value>) -> Result<V
     }
     let body = body.to_string();
     let response = http_post_json(&endpoint, &body)?;
-    let json: Value = serde_json::from_str(&response)
+    parse_anki_response(&response)
+}
+
+fn parse_anki_response(response: &str) -> Result<Value, String> {
+    let json: Value = serde_json::from_str(response)
         .map_err(|e| format!("Cannot parse AnkiConnect response: {e}"))?;
     if !json.get("error").unwrap_or(&Value::Null).is_null() {
         return Err(format!(
             "AnkiConnect error: {}",
-            json.get("error").and_then(Value::as_str).unwrap_or("unknown error")
+            json.get("error")
+                .and_then(Value::as_str)
+                .unwrap_or("unknown error")
         ));
     }
     Ok(json.get("result").cloned().unwrap_or(Value::Null))
@@ -566,7 +1090,10 @@ fn normalize_endpoint(endpoint: &str) -> Result<String, String> {
     } else {
         endpoint.path
     };
-    Ok(format!("http://{}:{}{}", endpoint.host, endpoint.port, path))
+    Ok(format!(
+        "http://{}:{}{}",
+        endpoint.host, endpoint.port, path
+    ))
 }
 
 fn parse_http_endpoint(endpoint: &str) -> Result<HttpEndpoint, String> {
@@ -715,7 +1242,10 @@ mod tests {
         assert!(loaded.field_mappings.is_empty());
         assert!(!loaded.audio_enabled);
         assert_eq!(loaded.audio_sources, default_audio_sources());
-        assert_eq!(loaded.audio_download_timeout_ms, default_audio_download_timeout_ms());
+        assert_eq!(
+            loaded.audio_download_timeout_ms,
+            default_audio_download_timeout_ms()
+        );
         let _ = fs::remove_dir_all(root);
     }
 
@@ -765,6 +1295,158 @@ mod tests {
         );
         assert_eq!(normalized.audio_sources[0].enabled, true);
         assert_eq!(normalized.audio_download_timeout_ms, 30000);
+    }
+
+    #[test]
+    fn expands_remote_audio_template_with_encoded_lookup_values() {
+        let expanded = expand_audio_url_template(
+            "https://audio.example/clip/{term}?reading={reading}",
+            "学 校",
+            "がっこう",
+        )
+        .unwrap();
+        assert_eq!(
+            expanded,
+            "https://audio.example/clip/%E5%AD%A6%20%E6%A0%A1?reading=%E3%81%8C%E3%81%A3%E3%81%93%E3%81%86"
+        );
+        assert!(
+            expand_audio_url_template("https://audio.example/{unknown}", "学校", "")
+                .unwrap_err()
+                .contains("unknown")
+        );
+        assert!(
+            expand_audio_url_template("https://audio.example/{term", "学校", "")
+                .unwrap_err()
+                .contains("incomplete")
+        );
+    }
+
+    #[test]
+    fn remote_audio_url_validation_blocks_non_public_targets() {
+        for url in [
+            "file:///C:/audio.mp3",
+            "ftp://8.8.8.8/audio.mp3",
+            "http://localhost/audio.mp3",
+            "http://127.0.0.1/audio.mp3",
+            "http://10.0.0.1/audio.mp3",
+            "http://169.254.1.2/audio.mp3",
+            "http://[::1]/audio.mp3",
+            "http://[fc00::1]/audio.mp3",
+            "http://user:pass@8.8.8.8/audio.mp3",
+        ] {
+            assert!(
+                validate_remote_audio_url(&Url::parse(url).unwrap()).is_err(),
+                "{url}"
+            );
+        }
+        let public =
+            validate_remote_audio_url(&Url::parse("https://8.8.8.8/audio.mp3").unwrap()).unwrap();
+        assert_eq!(public.address.ip(), "8.8.8.8".parse::<IpAddr>().unwrap());
+    }
+
+    #[test]
+    fn detects_supported_remote_audio_and_rejects_mismatches() {
+        assert_eq!(detect_audio_extension(&[], None, "/audio"), None);
+        assert_eq!(
+            detect_audio_extension(b"ID3\x04\0\0probe", Some("audio/mpeg"), "/a.mp3"),
+            Some("mp3")
+        );
+        assert_eq!(
+            detect_audio_extension(b"OggSprobe", Some("audio/opus"), "/a.opus"),
+            Some("opus")
+        );
+        assert_eq!(
+            detect_audio_extension(b"RIFF\0\0\0\0WAVEprobe", Some("audio/wav"), "/a.wav"),
+            Some("wav")
+        );
+        assert_eq!(
+            detect_audio_extension(b"\0\0\0\x18ftypM4A probe", Some("audio/mp4"), "/a.m4a"),
+            Some("m4a")
+        );
+        assert_eq!(
+            detect_audio_extension(&[0xff, 0xf1, 0x50, 0x80], Some("audio/aac"), "/a.aac"),
+            Some("aac")
+        );
+        assert_eq!(
+            detect_audio_extension(b"ID3\x04\0\0probe", Some("audio/wav"), "/a.mp3"),
+            None
+        );
+        assert_eq!(
+            detect_audio_extension(b"<html>not audio</html>", Some("text/html"), "/audio.mp3"),
+            None
+        );
+    }
+
+    #[test]
+    fn remote_audio_size_and_filename_are_stable() {
+        assert_eq!(remote_audio_timeout(1), Duration::from_millis(1000));
+        assert_eq!(remote_audio_timeout(7000), Duration::from_millis(7000));
+        assert_eq!(remote_audio_timeout(u32::MAX), Duration::from_millis(30000));
+        ensure_remote_audio_redirect_allowed(MAX_REMOTE_AUDIO_REDIRECTS - 1).unwrap();
+        assert!(
+            ensure_remote_audio_redirect_allowed(MAX_REMOTE_AUDIO_REDIRECTS)
+                .unwrap_err()
+                .contains("3 redirects")
+        );
+        assert!(remote_audio_status_warning(StatusCode::OK).is_none());
+        assert!(remote_audio_status_warning(StatusCode::NO_CONTENT)
+            .unwrap()
+            .contains("204"));
+        assert!(remote_audio_status_warning(StatusCode::NOT_FOUND)
+            .unwrap()
+            .contains("404"));
+        assert!(
+            remote_audio_status_warning(StatusCode::INTERNAL_SERVER_ERROR)
+                .unwrap()
+                .contains("500")
+        );
+        ensure_remote_audio_size(MAX_REMOTE_AUDIO_BYTES).unwrap();
+        assert!(ensure_remote_audio_size(MAX_REMOTE_AUDIO_BYTES + 1)
+            .unwrap_err()
+            .contains("10 MiB"));
+        let first = remote_audio_filename(b"ID3 stable bytes", "mp3");
+        let second = remote_audio_filename(b"ID3 stable bytes", "mp3");
+        assert_eq!(first, second);
+        assert!(first.starts_with("hsw_audio_"));
+        assert!(first.ends_with(".mp3"));
+        assert!(!first.contains('/') && !first.contains('\\'));
+    }
+
+    #[test]
+    fn parses_ankiconnect_store_media_response() {
+        assert_eq!(
+            parse_anki_response(r#"{"result":"hsw_audio_probe.mp3","error":null}"#).unwrap(),
+            json!("hsw_audio_probe.mp3")
+        );
+        assert!(
+            parse_anki_response(r#"{"result":null,"error":"store failed"}"#)
+                .unwrap_err()
+                .contains("store failed")
+        );
+        assert!(parse_anki_response("not json")
+            .unwrap_err()
+            .contains("Cannot parse"));
+    }
+
+    #[test]
+    fn malformed_remote_audio_request_is_warning_but_unsafe_url_is_error() {
+        let malformed = AnkiRemoteAudioRequest {
+            source_name: "Probe".into(),
+            url_template: "not a url {term}".into(),
+            expression: "学校".into(),
+            reading: "がっこう".into(),
+            timeout_ms: 5000,
+        };
+        let result = download_remote_audio(&malformed).unwrap().unwrap();
+        assert!(result.warning.unwrap().contains("invalid"));
+
+        let unsafe_request = AnkiRemoteAudioRequest {
+            url_template: "http://127.0.0.1/{term}.mp3".into(),
+            ..malformed
+        };
+        assert!(download_remote_audio(&unsafe_request)
+            .unwrap_err()
+            .contains("private, local, or reserved"));
     }
 
     #[test]
@@ -818,7 +1500,10 @@ mod tests {
         assert!(can_add.can_add);
         assert!(!can_add.duplicate);
 
-        let duplicate = parse_note_check_result(json!([{ "canAdd": false, "error": "cannot create note because it is a duplicate" }])).unwrap();
+        let duplicate = parse_note_check_result(
+            json!([{ "canAdd": false, "error": "cannot create note because it is a duplicate" }]),
+        )
+        .unwrap();
         assert!(!duplicate.can_add);
         assert!(duplicate.duplicate);
         assert!(duplicate.message.contains("duplicate"));
@@ -868,7 +1553,8 @@ mod tests {
             path: "missing.png".into(),
             filename: "hsw_missing.png".into(),
         }];
-        let result = store_dictionary_media_from_manifest(DEFAULT_ENDPOINT, &manifest, &refs).unwrap();
+        let result =
+            store_dictionary_media_from_manifest(DEFAULT_ENDPOINT, &manifest, &refs).unwrap();
         assert!(result.stored.is_empty());
         assert_eq!(result.warnings.len(), 1);
         assert!(result.warnings[0].contains("Dictionary media not found"));
@@ -887,7 +1573,8 @@ mod tests {
             path: "images/entry.txt".into(),
             filename: "hsw_entry.txt".into(),
         }];
-        let error = store_dictionary_media_from_manifest(DEFAULT_ENDPOINT, &manifest, &refs).unwrap_err();
+        let error =
+            store_dictionary_media_from_manifest(DEFAULT_ENDPOINT, &manifest, &refs).unwrap_err();
         assert!(error.starts_with("Unsupported dictionary media type:"));
         let _ = fs::remove_dir_all(root);
     }
@@ -896,11 +1583,14 @@ mod tests {
     #[ignore]
     fn validates_real_ankiconnect_add_note_and_duplicate_check() {
         if std::env::var("HSW_ANKI_RUNTIME_VALIDATE").ok().as_deref() != Some("1") {
-            eprintln!("Set HSW_ANKI_RUNTIME_VALIDATE=1 to run the real AnkiConnect add-note validation.");
+            eprintln!(
+                "Set HSW_ANKI_RUNTIME_VALIDATE=1 to run the real AnkiConnect add-note validation."
+            );
             return;
         }
 
-        let endpoint = std::env::var("HSW_ANKI_ENDPOINT").unwrap_or_else(|_| DEFAULT_ENDPOINT.into());
+        let endpoint =
+            std::env::var("HSW_ANKI_ENDPOINT").unwrap_or_else(|_| DEFAULT_ENDPOINT.into());
         let suffix = now_millis().unwrap();
         let deck_name = format!("HSW Runtime Validation {suffix}");
         let model_name = format!("HSW Runtime Model {suffix}");
@@ -925,7 +1615,10 @@ mod tests {
 
         let mut fields = BTreeMap::new();
         fields.insert("Expression".into(), expression);
-        fields.insert("Meaning".into(), "Created by HSW runtime validation.".into());
+        fields.insert(
+            "Meaning".into(),
+            "Created by HSW runtime validation.".into(),
+        );
         let note = AnkiNoteRequest {
             endpoint: endpoint.clone(),
             deck_name: deck_name.clone(),
@@ -947,18 +1640,25 @@ mod tests {
             "deleteDecks",
             Some(json!({ "decks": [deck_name], "cardsToo": true })),
         );
-        let _ = anki_request(&endpoint, "deleteModel", Some(json!({ "modelName": model_name })));
+        let _ = anki_request(
+            &endpoint,
+            "deleteModel",
+            Some(json!({ "modelName": model_name })),
+        );
     }
 
     #[test]
     #[ignore]
     fn validates_real_ankiconnect_store_dictionary_media() {
         if std::env::var("HSW_ANKI_RUNTIME_VALIDATE").ok().as_deref() != Some("1") {
-            eprintln!("Set HSW_ANKI_RUNTIME_VALIDATE=1 to run the real AnkiConnect media validation.");
+            eprintln!(
+                "Set HSW_ANKI_RUNTIME_VALIDATE=1 to run the real AnkiConnect media validation."
+            );
             return;
         }
 
-        let endpoint = std::env::var("HSW_ANKI_ENDPOINT").unwrap_or_else(|_| DEFAULT_ENDPOINT.into());
+        let endpoint =
+            std::env::var("HSW_ANKI_ENDPOINT").unwrap_or_else(|_| DEFAULT_ENDPOINT.into());
         let suffix = now_millis().unwrap();
         let filename = format!("hsw_runtime_{suffix}.svg");
         let root = temp_root("store_media_runtime");

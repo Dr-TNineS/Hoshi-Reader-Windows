@@ -1,14 +1,14 @@
 # Anki HSA / Windows Alignment
 
-Last updated: 2026-06-18
+Last updated: 2026-06-21
 
 This document evaluates how Hoshi Reader Windows (HSW) should move from the
 current disabled lookup-to-Anki payload boundary toward a Windows-native Anki
 integration.
 
-Implementation status as of 2026-06-18: Slice 1 readiness/configuration,
+Implementation status as of 2026-06-21: Slice 1 readiness/configuration,
 Slice 2 field mapping/preview, Slice 3 minimal duplicate-check/add-note
-plumbing, dictionary image media export, and word-audio settings boundary are
+plumbing, dictionary image media export, and remote word-audio export are
 implemented. Real desktop Anki runtime add-note validation passed against
 AnkiConnect v6 on localhost. Follow-up media/audio work is tracked in
 `docs/ANKI_MEDIA_EXPORT_PLAN.md` and `docs/ANKI_AUDIO_SYNC_PLAN.md`.
@@ -190,13 +190,13 @@ image media reference extraction, `{dictionary-media}` preview, Rust
 `storeMediaFile` support, and add-note media integration are implemented. Rust
 store-media runtime validation passed; combined add-note-plus-media validation
 with a real media-bearing dictionary is not verified. Audio and sync follow-up
-slices are planned in `docs/ANKI_AUDIO_SYNC_PLAN.md`; the word-audio settings
-and `{audio}` preview boundary are implemented, but audio download/storage is
-not implemented.
+slices are planned in `docs/ANKI_AUDIO_SYNC_PLAN.md`; remote word-audio
+download/storage and `{audio}` rendering are implemented at automated-validation
+level, while local audio and sync remain unimplemented.
 
 Deferred items:
 
-- Word audio and local audio export.
+- Local word audio export.
 - Sasayaki sentence audio.
 - Optional AnkiConnect `sync`.
 - Advanced duplicate scopes and all-model duplicate behavior.

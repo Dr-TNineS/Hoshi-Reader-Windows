@@ -182,7 +182,7 @@ function tokenValue(token: string, payload: LookupAnkiPayload): string {
     case "dictionary-media":
       return renderDictionaryMedia(payload.media);
     case "audio":
-      return "";
+      return payload.audioFilename ? `[sound:${payload.audioFilename}]` : "";
     default:
       return "";
   }
@@ -287,6 +287,13 @@ function glossaryTextForDictionary(dictionary: string, payload: LookupAnkiPayloa
 
   const normalized = normalizeDictionaryName(dictionary);
   return renderAnkiGlossaryEntries(payload.glossary.filter((entry) => normalizeDictionaryName(entry.dict) === normalized));
+}
+
+export function payloadWithStoredRemoteAudio(
+  payload: LookupAnkiPayload,
+  filename: string | null,
+): LookupAnkiPayload {
+  return { ...payload, audioFilename: filename };
 }
 
 function renderAnkiGlossaryEntries(entries: GlossaryEntry[]): string {

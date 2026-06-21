@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Project Status
 
-Last updated: 2026-06-20
+Last updated: 2026-06-21
 
 This file records current implementation facts for `hoshi-reader-windows`. It is not an agent rule file, product roadmap, or substitute for checking the current code.
 
@@ -129,13 +129,16 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Rust `anki_store_dictionary_media` stores imported dictionary image media through AnkiConnect `storeMediaFile`; missing media returns warnings, while unsafe paths and unsupported types are blocked.
   - `npm run check:lookup-popup` covers Anki media store success, missing-media warnings with text-card creation, and hard media-store failure without note creation.
   - Real AnkiConnect store-media runtime validation passed on 2026-06-18 with a throwaway SVG media file.
-  - Anki word-audio settings boundary is implemented: settings store an enable flag, editable source, timeout, and `{audio}` field templates render empty with an explicit preview hint until audio export is implemented.
-  - Anki audio/sync follow-up is planned in `docs/ANKI_AUDIO_SYNC_PLAN.md`; no audio download, local audio, Sasayaki audio, or sync implementation is present.
+  - Anki word-audio settings store an enable flag, editable remote source, and timeout.
+  - Remote word audio resolves `{term}` and `{reading}` against the first enabled public HTTP/HTTPS source, enforces redirect/address/timeout/format/size boundaries, stores successful audio through AnkiConnect, and renders `[sound:filename]` through `{audio}`.
+  - Ordinary remote-audio failures show warnings and preserve text-note creation; unsafe targets and oversized responses block the current add operation.
+  - `npm run check:lookup-popup` covers remote-audio success, missing/unsupported warnings, security failure, no-audio-field and missing-expression behavior.
+  - Local audio, Sasayaki audio, and sync remain planned in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
 
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata and reading state are still JSON.
-- Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; sync and audio export remain unimplemented. Follow-up slices are documented in `docs/ANKI_MEDIA_EXPORT_PLAN.md`.
+- Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; real remote-audio-plus-AnkiConnect runtime validation is also not verified. Local audio and sync remain unimplemented.
 - No sync implementation.
 - No full settings surface; only the minimal bookshelf Appearance and Advanced startup-behavior panels are implemented.
 - No verified app-owned cover thumbnail cache.

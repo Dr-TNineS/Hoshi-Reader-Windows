@@ -3,7 +3,7 @@
   import { extractDictionaryMediaReferences } from "./anki-field-renderer";
   import type { LookupState } from "./lookup-popup";
   import { lookupPopupStyle } from "./lookup-popup-position";
-  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiNoteRequest, AnkiSettings, AnkiStoreMediaResult, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
+  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiNoteRequest, AnkiRemoteAudioRequest, AnkiSettings, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
   const params = new URLSearchParams(window.location.search);
   const allowedStates: LookupState[] = ["loading", "noDictionaries", "engineUnavailable", "empty", "error", "ready"];
@@ -15,6 +15,9 @@
   const ankiMode = params.get("ankiMode") ?? "disabled";
   const ankiAddMode = params.get("ankiAddMode") ?? "added";
   const ankiStoreMode = params.get("ankiStoreMode") ?? "success";
+  const ankiAudioStoreMode = params.get("ankiAudioStoreMode") ?? "success";
+  const audioFieldEnabled = params.get("audioField") !== "disabled";
+  const emptyExpression = params.has("emptyExpression");
 
   const rootSelection: ReaderSelection = {
     text: "school",
@@ -68,7 +71,7 @@
   ]);
 
   const baseResult: DictResult = {
-    expression: "school",
+    expression: emptyExpression ? "" : "school",
     reading: "school",
     glossary: [
       { dict: "Jitendex.org [probe]", text: structuredGlossaryText, termTags: "n common", definitionTags: "education" },
@@ -103,7 +106,7 @@
       selectedDeck: "Mining",
       selectedNoteType: "Hoshi Vocabulary",
       decks: [{ name: "Mining" }],
-      noteTypes: [{ name: "Hoshi Vocabulary", fields: ["Expression", "Meaning", "Sentence", "JmOnly", "MissingDict", "Media", "Audio", "Frequency", "Pitch", "Unknown"] }],
+      noteTypes: [{ name: "Hoshi Vocabulary", fields: ["Expression", "Meaning", "Sentence", "JmOnly", "MissingDict", "Media", ...(audioFieldEnabled ? ["Audio"] : []), "Frequency", "Pitch", "Unknown"] }],
       fieldMappings: [
         { field: "Expression", template: "{expression} / {reading}" },
         { field: "Meaning", template: "{glossary-first}" },
@@ -111,7 +114,7 @@
         { field: "JmOnly", template: "{single-glossary-JMdict [probe]}" },
         { field: "MissingDict", template: "{single-glossary-Missing Probe}" },
         { field: "Media", template: "{dictionary-media}" },
-        { field: "Audio", template: "{audio}" },
+        ...(audioFieldEnabled ? [{ field: "Audio", template: "{audio}" }] : []),
         { field: "Frequency", template: "{frequencies}" },
         { field: "Pitch", template: "{pitch-accent-positions}" },
         { field: "Unknown", template: "before{not-a-token}after" },
@@ -151,6 +154,7 @@
   let nestedLookupText = $state("");
   let ankiAddRequests = $state<AnkiNoteRequest[]>([]);
   let ankiStoreRequests = $state<AnkiDictionaryMediaRef[][]>([]);
+  let ankiAudioStoreRequests = $state<AnkiRemoteAudioRequest[]>([]);
   let popupSizes = $state<Record<string, { width: number; height: number }>>({});
 
   function readerBottomBoundary(): number {
@@ -329,6 +333,7 @@
       frequencies: result.frequencies,
       pitches: result.pitches,
       media: extractDictionaryMediaReferences(result.glossary),
+      audioFilename: null,
       sourceBook: { title: "Probe Book" },
       sourceChapter: { chapterIndex: 0, chapterNumber: 1, totalChapters: 1, idref: "probe" },
     };
@@ -360,6 +365,18 @@
       })),
       warnings: [],
     };
+  }
+
+  async function storeAnkiRemoteAudio(request: AnkiRemoteAudioRequest): Promise<AnkiStoreRemoteAudioResult> {
+    ankiAudioStoreRequests = [...ankiAudioStoreRequests, request];
+    if (ankiAudioStoreMode === "error") throw new Error("Remote audio URL resolved to a private, local, or reserved address.");
+    if (ankiAudioStoreMode === "missing") {
+      return { filename: null, warnings: ["Word audio (Probe Audio): Remote audio source returned HTTP 404."] };
+    }
+    if (ankiAudioStoreMode === "unsupported") {
+      return { filename: null, warnings: ["Word audio (Probe Audio): The response was not a supported audio file."] };
+    }
+    return { filename: "hsw_audio_probe.mp3", warnings: [] };
   }
 
   async function loadDictionaryStyles(dictionary: string) {
@@ -426,6 +443,7 @@
         {ankiSettings}
         buildAnkiPayload={(result, resultIndex) => buildAnkiPayload(popup.selection, result, resultIndex)}
         onStoreAnkiMedia={storeAnkiMedia}
+        onStoreAnkiRemoteAudio={storeAnkiRemoteAudio}
         onAddAnkiNote={addAnkiNote}
       />
     </aside>
@@ -442,6 +460,8 @@
     data-top-popup-id={popups[popups.length - 1]?.id ?? ""}
     data-anki-add-count={ankiAddRequests.length}
     data-anki-store-count={ankiStoreRequests.length}
+    data-anki-audio-store-count={ankiAudioStoreRequests.length}
+    data-anki-last-audio-request={JSON.stringify(ankiAudioStoreRequests[ankiAudioStoreRequests.length - 1] ?? null)}
     data-anki-last-media={JSON.stringify(ankiStoreRequests[ankiStoreRequests.length - 1] ?? [])}
     data-anki-last-deck={ankiAddRequests[ankiAddRequests.length - 1]?.deckName ?? ""}
     data-anki-last-model={ankiAddRequests[ankiAddRequests.length - 1]?.modelName ?? ""}
