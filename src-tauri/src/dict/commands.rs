@@ -189,9 +189,12 @@ impl DictState {
 #[tauri::command]
 pub fn dict_lookup(
     text: String,
+    request_id: Option<u64>,
     state: tauri::State<DictState>,
 ) -> Result<Vec<DictResult>, String> {
+    let command_started = Instant::now();
     let runtime = state.runtime.lock().unwrap();
+    let lock_wait_ms = command_started.elapsed().as_secs_f64() * 1000.0;
     if text.trim().is_empty() {
         return Ok(Vec::new());
     }
@@ -202,13 +205,29 @@ pub fn dict_lookup(
             .backend
             .as_ref()
             .ok_or_else(|| runtime_error(&runtime))?;
+        let lookup_started = Instant::now();
         let mut results = backend.lookup(&text)?;
+        let native_lookup_ms = lookup_started.elapsed().as_secs_f64() * 1000.0;
+        let override_started = Instant::now();
         apply_dictionary_title_overrides(&mut results, &runtime.dictionary_title_overrides);
+        let title_override_ms = override_started.elapsed().as_secs_f64() * 1000.0;
+        #[cfg(debug_assertions)]
+        log::info!(
+            "lookup_perf request_id={} text_chars={} lock_wait_ms={:.3} native_lookup_ms={:.3} title_override_ms={:.3} total_ms={:.3} result_count={}",
+            request_id.map(|value| value.to_string()).unwrap_or_else(|| "none".into()),
+            text.chars().count(),
+            lock_wait_ms,
+            native_lookup_ms,
+            title_override_ms,
+            command_started.elapsed().as_secs_f64() * 1000.0,
+            results.len(),
+        );
         return Ok(results);
     }
 
     #[cfg(not(hoshi_dicts_linked))]
     {
+        let _ = (request_id, lock_wait_ms);
         Err(runtime_error(&runtime))
     }
 }
