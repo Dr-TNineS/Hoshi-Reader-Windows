@@ -141,6 +141,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Anki settings v2 includes editable whitespace-separated tags, allow-duplicates, Collection/Deck/Deck Root duplicate scope, and all-note-type checking. Rust maps these to AnkiConnect note options and skips the blocking preflight when duplicates are allowed.
   - Anki settings include default-off compact glossary card CSS. `{book-cover}` resolves only an app-owned `bookId` through the Rust library manifest, validates containment/signature/size, stores deterministic cover media, and renders the stored image filename.
   - The media pipeline stores dictionary images, then book cover, then word audio before rendering and addNote. Duplicate notes may leave shared content-hash media; HSW does not automatically delete it.
+  - Remote word-audio sources have stable ids and support add/remove/edit/enable/reorder. Export tries local audio first, then every enabled remote source in saved order; ordinary warnings fall through and security errors stop immediately.
 
 ## Not Implemented Or Not Verified
 

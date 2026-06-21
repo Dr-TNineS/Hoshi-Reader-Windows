@@ -5,8 +5,8 @@ Last updated: 2026-06-21
 This document defines the next Anki scope after text note creation and
 dictionary image media export.
 
-Implementation status as of 2026-06-21: Slices 5A-5F are implemented at the
-documented validation level. Slice 5G is current. Slices 5H-5O are pending.
+Implementation status as of 2026-06-21: Slices 5A-5G are implemented at the
+documented validation level. Slice 5H is current. Slices 5I-0-5O are pending.
 Real runtime coverage remains explicitly separate from automated validation.
 
 ## Current Baseline
@@ -65,8 +65,9 @@ Real runtime coverage remains explicitly separate from automated validation.
 | 5D | Completed | `073690f` |
 | 5E | Completed | `36ff38b` |
 | 5F | Completed | `5d7c8f0` |
-| 5G | Current | Not committed |
-| 5H-5O | Pending | Not started |
+| 5G | Completed | `0e367ac` |
+| 5H | Current | Not committed |
+| 5I-0-5O | Pending | Not started |
 
 ### Slice 5A: Word Audio Settings And Preview Boundary
 
@@ -248,6 +249,10 @@ Key changes:
 
 Goal: finish the remote source model and ordered fallback behavior.
 
+Status: implemented on 2026-06-21 in `0e367ac`. Stable-id migration, source
+management, ordered fallback, warning aggregation, and hard-error stop behavior
+pass automated validation. Real multi-source runtime validation is not verified.
+
 Key changes:
 
 - Give each remote source a stable id and support add, remove, edit, enable,
@@ -399,8 +404,8 @@ until its acceptance and validation entries are satisfied and recorded.
 | 5D | Completed (`073690f`) | Optional desktop AnkiConnect sync after add only; no background/cloud sync | Stable duplicate-check/addNote flow | Default-off; only successful add syncs; sync failure remains an added note with warning | Rust call-order/error tests; check, build, Anki panel and popup probes; VS `cargo test --lib` and `cargo check` |
 | 5E | Completed (`36ff38b`) | Tags and AnkiConnect duplicate options only; media ordering unchanged | 5D result/warning shape | Tags persist; Collection/Deck/Deck Root options are exact; allow-duplicates skips preflight; legacy defaults load | Rust migration/request/preflight tests; check, build, panel/popup probes; VS Rust tests/check |
 | 5F | Completed (`5d7c8f0`) | Compact exported glossary plus cover resolved in Rust only from app-owned `bookId`; no frontend path authority | 5E settings normalizer and existing media pipeline | Default-off compact HTML; referenced cover stores deterministically; missing warns; escape/forgery/oversize blocks; media-first orphan tradeoff remains documented | Passed: 89 Rust tests plus 3 ignored, Rust check, frontend check/build, panel and popup probes; real Anki cover runtime `not verified` |
-| 5G | Current | Stable remote-source identity, UI management, and ordered export fallback; no playback | Committed 5F media pipeline | Stable ids survive edits/reorder/duplicate names; local then enabled remotes; ordinary miss continues, hit stops, security error aborts | Settings migration/source tests; panel/popup order/fallback/security/narrow probes; common checks |
-| 5H | Pending | Shared word resolver, bounded cache, button playback and autoplay; Sasayaki coordination deferred | 5G source model | Export and playback select identically; play/stop/cancel/cleanup are deterministic; autoplay failure is non-fatal | Rust resolver/cache tests; playback lifecycle probes; local/remote Tauri runtime; common checks |
+| 5G | Completed (`0e367ac`) | Stable remote-source identity, UI management, and ordered export fallback; no playback | Committed 5F media pipeline | Stable ids survive edits/reorder/duplicate names; local then enabled remotes; ordinary miss continues, hit stops, security error aborts | Passed: 90 Rust tests plus 3 ignored, Rust check, frontend check/build, panel/popup source/order/fallback/security/narrow probes; real multi-source runtime `not verified` |
+| 5H | Current | Shared word resolver, bounded cache, button playback and autoplay; Sasayaki coordination deferred | 5G source model | Export and playback select identically; play/stop/cancel/cleanup are deterministic; autoplay failure is non-fatal | Rust resolver/cache tests; playback lifecycle probes; local/remote Tauri runtime; common checks |
 | 5I-0 | Pending | Committed codec/clipping capability spike without UI; no unverified codec promise | Stable 5H word-audio path | MP3 and WAV pass deterministic cue-WAV output in dev/release/package; AAC/Opus listed only if proven; real Anki result recorded or `not verified` | Codec fixtures, timing/memory/corruption/Unicode tests, release build, package smoke test, optional real Anki |
 | 5I | Pending | Per-book sidecar/import/status/removal only; no matching or playback | 5I-0 verifies MP3 and WAV minimum | Staged atomic audio/SRT import by `bookId`; external/copy modes persist; failure preserves old data; external originals are never deleted | Rust import/containment/rollback/format/SRT/persistence tests; status UI and packaged path probes |
 | 5J | Pending | Cue parsing, matching, inspection, rematch and correction; no playback | 5I sidecar and SRT storage | Stable cue ids and chapter/offset/length matches persist; unmatched state and corrections survive; ruby/punctuation/repetition/boundaries pass fixtures | Rust parser/matcher parity fixtures; matching UI probes; real EPUB/SRT characterization |
@@ -416,5 +421,5 @@ probes, VS developer-shell `cargo test --lib`, and VS developer-shell
 
 ## Recommended Next Step
 
-Implement Slice 5G stable multi-source remote audio management and ordered
-fallback. Preserve the 5F media order and hard security-error behavior.
+Implement Slice 5H shared word-audio resolution, bounded playback cache, popup
+play/stop, and autoplay. Preserve 5G source ordering and security behavior.
