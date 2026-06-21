@@ -86,7 +86,7 @@
         ],
     audioEnabled: false,
     localAudioEnabled: false,
-    audioSources: [{ name: "Default", url: "", enabled: false }],
+    audioSources: [{ id: "default", name: "Default", url: "", enabled: false }],
     audioDownloadTimeoutMs: 5000,
     forceSyncAfterAdd: false,
     tags: "hoshi-reader",
@@ -228,6 +228,7 @@
     data-audio-source={settings?.audioSources[0]?.name ?? ""}
     data-audio-url={settings?.audioSources[0]?.url ?? ""}
     data-audio-timeout={settings?.audioDownloadTimeoutMs ?? 0}
+    data-remote-sources={JSON.stringify(settings?.audioSources ?? [])}
     data-force-sync-after-add={settings?.forceSyncAfterAdd ?? false}
     data-tags={settings?.tags ?? ""}
     data-allow-duplicates={settings?.allowDuplicates ?? false}

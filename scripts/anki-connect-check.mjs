@@ -82,6 +82,7 @@ async function panelMetrics(page) {
       audioSource: state?.getAttribute("data-audio-source") ?? "",
       audioUrl: state?.getAttribute("data-audio-url") ?? "",
       audioTimeout: Number(state?.getAttribute("data-audio-timeout") ?? 0),
+      remoteSources: JSON.parse(state?.getAttribute("data-remote-sources") ?? "[]"),
       forceSyncAfterAdd: state?.getAttribute("data-force-sync-after-add") ?? "",
       syncEvents: state?.getAttribute("data-sync-events") ?? "",
       noteOptionEvents: state?.getAttribute("data-note-option-events") ?? "",
@@ -231,12 +232,22 @@ async function main() {
     await page.getByLabel("Source Name").blur();
     await page.getByLabel("Audio URL Template").fill("https://example.invalid/audio?term={term}&reading={reading}");
     await page.getByLabel("Audio URL Template").blur();
+    await page.getByRole("button", { name: "Add Source" }).click();
+    let remoteCards = page.locator(".remote-source-card");
+    await remoteCards.nth(1).getByLabel("Source Name").fill("Probe Audio");
+    await remoteCards.nth(1).getByLabel("Source Name").blur();
+    await remoteCards.nth(1).getByRole("button", { name: /Move .* up/ }).click();
+    metrics = await panelMetrics(page);
+    assert(metrics.remoteSources.length === 2 && metrics.remoteSources[0].name === "Probe Audio" && metrics.remoteSources[1].name === "Probe Audio", "Remote sources should support duplicate names and ordering.", metrics);
+    assert(metrics.remoteSources[0].id && metrics.remoteSources[1].id && metrics.remoteSources[0].id !== metrics.remoteSources[1].id, "Remote sources should keep distinct stable ids.", metrics);
+    remoteCards = page.locator(".remote-source-card");
+    await remoteCards.nth(0).getByRole("button", { name: /Remove/ }).click();
     await page.getByLabel("Timeout Ms").fill("7000");
     await page.getByLabel("Timeout Ms").blur();
     await page.getByLabel("Local first").check();
     await page.getByRole("button", { name: "Replace Database" }).click();
     await page.getByRole("button", { name: "Move forvo up" }).click();
-    await page.getByRole("button", { name: "Remove" }).click();
+    await page.getByRole("button", { name: "Remove", exact: true }).click();
     const deckSelect = page.getByRole("button", { name: "Deck", exact: true });
     await deckSelect.click();
     await page.keyboard.press("ArrowDown");
@@ -255,6 +266,7 @@ async function main() {
     assert(metrics.audioSource === "Probe Audio", "Audio source name should update visible state.", metrics);
     assert(metrics.audioUrl.includes("{term}") && metrics.audioTimeout === 7000, "Audio URL and timeout should update visible state.", metrics);
     assert(metrics.audioEvents.includes("true:"), "Audio settings edits should emit changes.", metrics);
+    assert(metrics.remoteSources.length === 1 && metrics.remoteSources[0].id === "default", "Remote source removal should preserve the surviving source identity.", metrics);
     assert(metrics.localAudioEnabled === "true" && metrics.localAudioEvents.includes("enabled:true"), "Local audio enable should update settings.", metrics);
     assert(metrics.localImportClicks === 1 && metrics.localRemoveClicks === 1, "Local audio import and remove actions should be wired.", metrics);
     assert(metrics.localSources.startsWith("forvo,nhk16") && metrics.localAudioEvents.includes("move:forvo:-1"), "Local audio source ordering should update visible state.", metrics);

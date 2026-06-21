@@ -389,7 +389,7 @@
   }
 
   function defaultAnkiAudioSources(): AnkiAudioSource[] {
-    return [{ name: "Default", url: "", enabled: false }];
+    return [{ id: "default", name: "Default", url: "", enabled: false }];
   }
 
   async function loadAnkiSettings() {

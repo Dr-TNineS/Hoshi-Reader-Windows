@@ -71,24 +71,42 @@
     return `Fetched ${date.toLocaleString()}`;
   }
 
-  function audioSource(): AnkiAudioSource {
-    return settings?.audioSources[0] ?? { name: "Default", url: "", enabled: false };
+  function audioSources(): AnkiAudioSource[] {
+    return settings?.audioSources ?? [{ id: "default", name: "Default", url: "", enabled: false }];
   }
 
-  function updateAudioSource(patch: Partial<AnkiAudioSource>) {
-    const source = { ...audioSource(), ...patch };
-    onSetAudioConfig(Boolean(settings?.audioEnabled), [source], settings?.audioDownloadTimeoutMs ?? 5000);
+  function updateAudioSource(id: string, patch: Partial<AnkiAudioSource>) {
+    const sources = audioSources().map((source) => source.id === id ? { ...source, ...patch } : source);
+    onSetAudioConfig(Boolean(settings?.audioEnabled), sources, settings?.audioDownloadTimeoutMs ?? 5000);
+  }
+
+  function addAudioSource() {
+    const id = typeof crypto.randomUUID === "function" ? crypto.randomUUID() : `source-${Date.now()}`;
+    onSetAudioConfig(Boolean(settings?.audioEnabled), [...audioSources(), { id, name: "New Source", url: "", enabled: true }], settings?.audioDownloadTimeoutMs ?? 5000);
+  }
+
+  function removeAudioSource(id: string) {
+    onSetAudioConfig(Boolean(settings?.audioEnabled), audioSources().filter((source) => source.id !== id), settings?.audioDownloadTimeoutMs ?? 5000);
+  }
+
+  function moveAudioSource(id: string, direction: -1 | 1) {
+    const sources = [...audioSources()];
+    const index = sources.findIndex((source) => source.id === id);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= sources.length) return;
+    [sources[index], sources[target]] = [sources[target], sources[index]];
+    onSetAudioConfig(Boolean(settings?.audioEnabled), sources, settings?.audioDownloadTimeoutMs ?? 5000);
   }
 
   function updateAudioEnabled(enabled: boolean) {
-    onSetAudioConfig(enabled, [{ ...audioSource(), enabled }], settings?.audioDownloadTimeoutMs ?? 5000);
+    onSetAudioConfig(enabled, audioSources(), settings?.audioDownloadTimeoutMs ?? 5000);
   }
 
   function updateAudioTimeout(value: string) {
     const timeout = Number(value);
     onSetAudioConfig(
       Boolean(settings?.audioEnabled),
-      [audioSource()],
+      audioSources(),
       Number.isFinite(timeout) ? Math.max(1000, Math.min(30000, Math.round(timeout))) : 5000,
     );
   }
@@ -297,17 +315,8 @@
         <label for="anki-audio-enabled">Enable</label>
       </div>
     </div>
-    <div class="audio-grid">
-      <label class="select-row">
-        <span>Source Name</span>
-        <input
-          value={audioSource().name}
-          disabled={busy}
-          spellcheck="false"
-          onchange={(event) => updateAudioSource({ name: event.currentTarget.value })}
-        />
-      </label>
-      <label class="select-row">
+    <div class="audio-source-toolbar">
+      <label class="select-row audio-timeout">
         <span>Timeout Ms</span>
         <input
           type="number"
@@ -319,17 +328,49 @@
           onchange={(event) => updateAudioTimeout(event.currentTarget.value)}
         />
       </label>
+      <button class="compact-action" disabled={busy} onclick={addAudioSource}>Add Source</button>
     </div>
-    <label class="endpoint-row">
-      <span>Audio URL Template</span>
-      <input
-        value={audioSource().url}
-        disabled={busy}
-        spellcheck="false"
-        placeholder={`https://audio.example/clip?term={term}&reading={reading}`}
-        onchange={(event) => updateAudioSource({ url: event.currentTarget.value })}
-      />
-    </label>
+    <div class="remote-source-list" aria-label="Remote audio sources">
+      {#each audioSources() as source, index (source.id)}
+        <div class="remote-source-card" data-source-id={source.id}>
+          <div class="remote-source-head">
+            <div class="audio-toggle">
+              <UiSwitch
+                id={`anki-audio-source-${source.id}`}
+                checked={source.enabled}
+                disabled={busy}
+                onCheckedChange={(enabled) => updateAudioSource(source.id, { enabled })}
+              />
+              <label for={`anki-audio-source-${source.id}`}>Enabled</label>
+            </div>
+            <div class="local-source-actions">
+              <button aria-label={`Move ${source.name} up`} disabled={busy || index === 0} onclick={() => moveAudioSource(source.id, -1)}>↑</button>
+              <button aria-label={`Move ${source.name} down`} disabled={busy || index === audioSources().length - 1} onclick={() => moveAudioSource(source.id, 1)}>↓</button>
+              <button aria-label={`Remove ${source.name}`} disabled={busy} onclick={() => removeAudioSource(source.id)}>×</button>
+            </div>
+          </div>
+          <label class="select-row">
+            <span>Source Name</span>
+            <input
+              value={source.name}
+              disabled={busy}
+              spellcheck="false"
+              onchange={(event) => updateAudioSource(source.id, { name: event.currentTarget.value })}
+            />
+          </label>
+          <label class="endpoint-row">
+            <span>Audio URL Template</span>
+            <input
+              value={source.url}
+              disabled={busy}
+              spellcheck="false"
+              placeholder={`https://audio.example/clip?term={term}&reading={reading}`}
+              onchange={(event) => updateAudioSource(source.id, { url: event.currentTarget.value })}
+            />
+          </label>
+        </div>
+      {/each}
+    </div>
 
     <div class="local-audio-card">
       <div class="audio-head">
@@ -402,7 +443,10 @@
   .audio-summary { margin-top: 3px; color: var(--app-muted, #999999); font-size: 12px; line-height: 1.35; }
   .audio-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--app-text, #fff); font-size: 12px; }
   .note-option-toggle { align-self: end; min-height: 34px; }
-  .audio-grid { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 10px; }
+  .audio-source-toolbar, .remote-source-head { display: flex; align-items: end; justify-content: space-between; gap: 10px; }
+  .audio-timeout { width: 130px; }
+  .remote-source-list { display: flex; flex-direction: column; gap: 8px; }
+  .remote-source-card { display: flex; flex-direction: column; gap: 7px; padding: 8px; border: 1px solid var(--app-border, #333333); border-radius: 5px; }
   .field-template-list { display: flex; flex-direction: column; gap: 7px; }
   .field-template-row { min-width: 0; display: grid; grid-template-columns: minmax(90px, 0.32fr) minmax(0, 1fr); align-items: start; gap: 8px; }
   .field-template-row span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-status, #cce8d5); font-size: 12px; }
@@ -417,7 +461,6 @@
     .anki-actions { width: 100%; }
     .anki-actions button { flex: 1 1 0; }
     .config-grid { grid-template-columns: 1fr; }
-    .audio-grid { grid-template-columns: 1fr; }
     .field-template-row { grid-template-columns: 1fr; gap: 4px; }
     .field-template-control { grid-template-columns: minmax(0, 1fr) 34px; }
   }

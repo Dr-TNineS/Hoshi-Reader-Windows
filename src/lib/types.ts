@@ -290,6 +290,7 @@ export interface AnkiFieldMapping {
 }
 
 export interface AnkiAudioSource {
+  id: string;
   name: string;
   url: string;
   enabled: boolean;

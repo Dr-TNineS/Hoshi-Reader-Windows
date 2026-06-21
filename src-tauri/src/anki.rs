@@ -6,7 +6,7 @@ use reqwest::{StatusCode, Url};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use sha2::{Digest, Sha256};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io::{Read, Write};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, ToSocketAddrs};
@@ -51,6 +51,8 @@ pub struct AnkiFieldMapping {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AnkiAudioSource {
+    #[serde(default)]
+    pub id: String,
     pub name: String,
     pub url: String,
     pub enabled: bool,
@@ -218,7 +220,9 @@ pub struct AnkiStoreBookCoverResult {
 #[tauri::command]
 pub fn anki_load_settings(app: AppHandle) -> Result<AnkiSettings, String> {
     let root = anki_root(&app)?;
-    read_settings(&root)
+    let settings = read_settings(&root)?;
+    write_settings(&root, &settings)?;
+    Ok(settings)
 }
 
 #[tauri::command]
@@ -1046,6 +1050,7 @@ fn default_anki_tags() -> String {
 
 fn default_audio_sources() -> Vec<AnkiAudioSource> {
     vec![AnkiAudioSource {
+        id: "default".into(),
         name: "Default".into(),
         url: String::new(),
         enabled: false,
@@ -1057,12 +1062,31 @@ fn default_audio_download_timeout_ms() -> u32 {
 }
 
 fn normalize_audio_sources(sources: Vec<AnkiAudioSource>) -> Vec<AnkiAudioSource> {
+    let mut ids = HashSet::new();
     let mut normalized: Vec<AnkiAudioSource> = sources
         .into_iter()
-        .map(|source| AnkiAudioSource {
-            name: source.name.trim().into(),
-            url: source.url.trim().into(),
-            enabled: source.enabled,
+        .enumerate()
+        .map(|(index, source)| {
+            let name = source.name.trim().to_string();
+            let url = source.url.trim().to_string();
+            let requested_id = source.id.trim();
+            let base_id = if requested_id.is_empty() {
+                legacy_audio_source_id(index, &name, &url)
+            } else {
+                requested_id.to_string()
+            };
+            let mut id = base_id.clone();
+            let mut suffix = 2;
+            while !ids.insert(id.clone()) {
+                id = format!("{base_id}-{suffix}");
+                suffix += 1;
+            }
+            AnkiAudioSource {
+                id,
+                name,
+                url,
+                enabled: source.enabled,
+            }
         })
         .filter(|source| !source.name.is_empty() || !source.url.is_empty())
         .collect();
@@ -1070,6 +1094,15 @@ fn normalize_audio_sources(sources: Vec<AnkiAudioSource>) -> Vec<AnkiAudioSource
         normalized = default_audio_sources();
     }
     normalized
+}
+
+fn legacy_audio_source_id(index: usize, name: &str, url: &str) -> String {
+    let digest = Sha256::digest(format!("{index}\0{name}\0{url}").as_bytes());
+    let hash = digest[..6]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    format!("source-{hash}")
 }
 
 fn retain_field_mappings_for_note_type(
@@ -1528,6 +1561,7 @@ mod tests {
         let settings = AnkiSettings {
             audio_enabled: true,
             audio_sources: vec![AnkiAudioSource {
+                id: String::new(),
                 name: " Probe ".into(),
                 url: " https://example.invalid/audio?term={term} ".into(),
                 enabled: true,
@@ -1543,7 +1577,32 @@ mod tests {
             "https://example.invalid/audio?term={term}"
         );
         assert_eq!(normalized.audio_sources[0].enabled, true);
+        assert!(normalized.audio_sources[0].id.starts_with("source-"));
         assert_eq!(normalized.audio_download_timeout_ms, 30000);
+    }
+
+    #[test]
+    fn normalize_audio_sources_repairs_duplicate_ids_stably() {
+        let sources = vec![
+            AnkiAudioSource {
+                id: "same".into(),
+                name: "First".into(),
+                url: "https://first.invalid/{term}".into(),
+                enabled: true,
+            },
+            AnkiAudioSource {
+                id: "same".into(),
+                name: "First".into(),
+                url: "https://second.invalid/{term}".into(),
+                enabled: true,
+            },
+        ];
+        let first = normalize_audio_sources(sources.clone());
+        let second = normalize_audio_sources(sources);
+        assert_eq!(first, second);
+        assert_eq!(first[0].id, "same");
+        assert_eq!(first[1].id, "same-2");
+        assert_eq!(first[0].name, first[1].name);
     }
 
     #[test]

@@ -398,16 +398,20 @@
       warnings.push(...localResult.warnings);
       if (localResult.filename) return { filename: localResult.filename, warnings };
     }
-    const source = ankiSettings.audioSources.find((item) => item.enabled && item.url.trim());
-    if (!source || !onStoreAnkiRemoteAudio) return warnings.length > 0 ? { filename: null, warnings } : null;
-    const remoteResult = await onStoreAnkiRemoteAudio({
-      sourceName: source.name,
-      urlTemplate: source.url,
-      expression: payload.expression,
-      reading: payload.reading,
-      timeoutMs: ankiSettings.audioDownloadTimeoutMs,
-    });
-    return { filename: remoteResult.filename, warnings: [...warnings, ...remoteResult.warnings] };
+    const sources = ankiSettings.audioSources.filter((item) => item.enabled && item.url.trim());
+    if (sources.length === 0 || !onStoreAnkiRemoteAudio) return warnings.length > 0 ? { filename: null, warnings } : null;
+    for (const source of sources) {
+      const remoteResult = await onStoreAnkiRemoteAudio({
+        sourceName: source.name,
+        urlTemplate: source.url,
+        expression: payload.expression,
+        reading: payload.reading,
+        timeoutMs: ankiSettings.audioDownloadTimeoutMs,
+      });
+      warnings.push(...remoteResult.warnings);
+      if (remoteResult.filename) return { filename: remoteResult.filename, warnings };
+    }
+    return { filename: null, warnings };
   }
 
   function audioBoundaryHint(payload: LookupAnkiPayload, fields: AnkiFieldPreview[]): string {

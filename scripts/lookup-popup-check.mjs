@@ -58,6 +58,8 @@ async function openProbe(page, state, options = {}) {
   if (options.compactGlossaries) params.set("compactGlossaries", "enabled");
   if (options.coverField === false) params.set("coverField", "disabled");
   if (options.noBookId) params.set("noBookId", "1");
+  if (options.firstRemoteMiss) params.set("firstRemoteMiss", "1");
+  if (options.firstRemoteUnsafe) params.set("firstRemoteUnsafe", "1");
   if (options.ankiStoreMode) params.set("ankiStoreMode", options.ankiStoreMode);
   if (options.ankiAudioStoreMode) params.set("ankiAudioStoreMode", options.ankiAudioStoreMode);
   if (options.localAudioStoreMode) params.set("localAudioStoreMode", options.localAudioStoreMode);
@@ -394,6 +396,17 @@ async function main() {
     await page.getByRole("button", { name: "Add to Anki" }).click();
     const ankiLegacyBook = await popupMetrics(page);
     assert(ankiLegacyBook.coverStoreCount === 0 && ankiLegacyBook.ankiAddCount === 1 && ankiLegacyBook.ankiLastFields.Picture === "", "Legacy books without bookId should create cards without reading frontend paths.", ankiLegacyBook);
+
+    await openProbe(page, "ready", { ankiMode: "configured", firstRemoteMiss: true });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiRemoteFallback = await popupMetrics(page);
+    assert(ankiRemoteFallback.ankiAudioStoreCount === 2 && ankiRemoteFallback.ankiLastFields.Audio === "[sound:hsw_audio_probe.mp3]", "A remote miss should continue to the next enabled source.", ankiRemoteFallback);
+    assert(ankiRemoteFallback.text.includes("Missing Audio") && ankiRemoteFallback.text.includes("HTTP 404"), "Earlier remote-source warnings should remain visible after fallback succeeds.", ankiRemoteFallback);
+
+    await openProbe(page, "ready", { ankiMode: "configured", firstRemoteUnsafe: true });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiUnsafeFirstRemote = await popupMetrics(page);
+    assert(ankiUnsafeFirstRemote.ankiAudioStoreCount === 1 && ankiUnsafeFirstRemote.ankiAddCount === 0, "A hard error in the first remote source should stop fallback and note creation.", ankiUnsafeFirstRemote);
 
     await openProbe(page, "ready", { ankiMode: "configured", localAudio: true });
     await page.getByRole("button", { name: "Add to Anki" }).click();

@@ -126,7 +126,11 @@
       ],
       audioEnabled: params.get("audioEnabled") !== "disabled",
       localAudioEnabled: params.get("localAudio") === "enabled",
-      audioSources: [{ name: "Probe Audio", url: "https://example.invalid/audio?term={term}&reading={reading}", enabled: true }],
+      audioSources: [
+        ...(params.get("firstRemoteMiss") === "1" ? [{ id: "missing", name: "Missing Audio", url: "https://missing.invalid/{term}.mp3", enabled: true }] : []),
+        ...(params.get("firstRemoteUnsafe") === "1" ? [{ id: "unsafe", name: "Unsafe Audio", url: "http://127.0.0.1/{term}.mp3", enabled: true }] : []),
+        { id: "probe", name: "Probe Audio", url: "https://example.invalid/audio?term={term}&reading={reading}", enabled: true },
+      ],
       audioDownloadTimeoutMs: 5000,
       forceSyncAfterAdd: params.get("forceSync") === "enabled",
       tags: "hoshi-reader mining",
@@ -401,6 +405,10 @@
   async function storeAnkiRemoteAudio(request: AnkiRemoteAudioRequest): Promise<AnkiStoreRemoteAudioResult> {
     operationEvents = [...operationEvents, "audio"];
     ankiAudioStoreRequests = [...ankiAudioStoreRequests, request];
+    if (request.sourceName === "Missing Audio") {
+      return { filename: null, warnings: ["Word audio (Missing Audio): Remote audio source returned HTTP 404."] };
+    }
+    if (request.sourceName === "Unsafe Audio") throw new Error("Remote audio target resolves to a private, local, or reserved address.");
     if (ankiAudioStoreMode === "error") throw new Error("Remote audio URL resolved to a private, local, or reserved address.");
     if (ankiAudioStoreMode === "missing") {
       return { filename: null, warnings: ["Word audio (Probe Audio): Remote audio source returned HTTP 404."] };
