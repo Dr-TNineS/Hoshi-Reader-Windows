@@ -26,6 +26,11 @@ export function loadCachedDictionaryStyles(dictionary: string): Promise<Dictiona
   return request;
 }
 
+export async function preloadCachedDictionaryStyles(dictionaries: string[]): Promise<void> {
+  const unique = [...new Set(dictionaries.map((dictionary) => dictionary.trim()).filter(Boolean))];
+  await Promise.allSettled(unique.map((dictionary) => loadCachedDictionaryStyles(dictionary)));
+}
+
 async function invokeDictionaryStyles(dictionary: string): Promise<DictionaryStyleResource> {
   if (!isTauri()) return { css: "", source: dictionary };
   return invoke<DictionaryStyleResource>("dictionary_styles", { dictionary });

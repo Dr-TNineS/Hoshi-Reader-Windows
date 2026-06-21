@@ -2,13 +2,16 @@
   import { invoke, isTauri } from "@tauri-apps/api/core";
   import { ankiDictionaryMediaRefs, buildAnkiNoteRequest, isAnkiPreviewConfigured, payloadWithStoredDictionaryMedia, renderAnkiFieldPreview } from "./anki-field-renderer";
   import { loadCachedDictionaryStyles, type DictionaryStyleResource } from "./dictionary-style-cache";
-  import { formatLookupMatch, frequencyGroups, glossaryGroups, pitchGroups, renderGlossaryContent, ruleTags, scopeDictionaryCss, type LookupPitchGroup, type LookupState } from "./lookup-popup";
+  import { scopeDictionaryCss, type LookupPitchGroup, type LookupState } from "./lookup-popup";
+  import { createLookupPopupViewModels, popupResultDictionaries } from "./lookup-popup-view-model";
   import { clearLookupHighlight, POPUP_LOOKUP_HIGHLIGHT } from "./lookup-highlight";
+  import { markLookupPerformance } from "./lookup-performance";
   import { selectPopupTextFromPoint } from "./popup-selection";
   import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, AnkiStoreMediaResult, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
   let {
     popupId,
+    requestId = 0,
     selection,
     state: lookupState,
     error = "",
@@ -33,6 +36,7 @@
     onAddAnkiNote,
   }: {
     popupId: string;
+    requestId?: number;
     selection: ReaderSelection;
     state: LookupState;
     error?: string;
@@ -72,8 +76,10 @@
   let ankiMediaWarnings = $state<string[]>([]);
   let ankiAudioHint = $state("");
   let styleRequestId = 0;
+  let firstPaintRequestId = 0;
   const styleTag = "style";
   const canPreviewAnki = $derived(isAnkiPreviewConfigured(ankiSettings) && Boolean(buildAnkiPayload));
+  const renderedResults = $derived(createLookupPopupViewModels(results));
 
   interface DictionaryMediaResource {
     mimeType: string;
@@ -116,7 +122,13 @@
   $effect(() => {
     if (lookupState !== "ready" || !contentRoot) return;
 
-    const frame = window.requestAnimationFrame(() => hydrateDictionaryMedia(contentRoot));
+    const frame = window.requestAnimationFrame(() => {
+      if (requestId > 0 && firstPaintRequestId !== requestId) {
+        firstPaintRequestId = requestId;
+        markLookupPerformance(requestId, "first-paint", { resultCount: results.length });
+      }
+      hydrateDictionaryMedia(contentRoot);
+    });
     return () => window.cancelAnimationFrame(frame);
   });
 
@@ -133,9 +145,9 @@
       return;
     }
 
-    const dictionaries = resultDictionaries(results);
-    const requestId = ++styleRequestId;
-    void loadScopedDictionaryStyles(dictionaries, requestId);
+    const dictionaries = popupResultDictionaries(renderedResults);
+    const nextStyleRequestId = ++styleRequestId;
+    void loadScopedDictionaryStyles(dictionaries, nextStyleRequestId, requestId);
   });
 
   $effect(() => {
@@ -265,6 +277,7 @@
       placeholder.dataset.mediaStatus = "loaded";
       placeholder.classList.remove("gloss-media-placeholder-loading");
       placeholder.classList.add("gloss-media-placeholder-loaded");
+      if (requestId > 0) markLookupPerformance(requestId, "first-media-ready", { dictionary, path });
     } catch {
       if (!placeholder.isConnected) return;
       placeholder.textContent = "Media unavailable";
@@ -280,38 +293,30 @@
     return invoke<DictionaryMediaResource>("dictionary_media", { dictionary, path });
   }
 
-  function resultDictionaries(lookupResults: DictResult[]): string[] {
-    const dictionaries: string[] = [];
-    for (const result of lookupResults) {
-      for (const group of glossaryGroups(result)) {
-        if (group.dictionary && !dictionaries.includes(group.dictionary)) dictionaries.push(group.dictionary);
-      }
-    }
-    return dictionaries;
-  }
-
-  async function loadScopedDictionaryStyles(dictionaries: string[], requestId: number) {
+  async function loadScopedDictionaryStyles(dictionaries: string[], scopedStyleRequestId: number, lookupRequestId: number) {
     if (dictionaries.length === 0) {
       dictionaryStyleCss = "";
+      if (lookupRequestId > 0) markLookupPerformance(lookupRequestId, "styles-ready", { dictionaryCount: 0 });
       return;
     }
 
-    const chunks: string[] = [];
-    for (const dictionary of dictionaries) {
-      try {
-        const resource = await loadDictionaryStyles?.(dictionary) ?? await loadCachedDictionaryStyles(dictionary);
-        if (requestId !== styleRequestId) return;
-        if (resource.css.trim()) chunks.push(scopeDictionaryCss(resource.css, popupId));
-      } catch {
-        if (requestId !== styleRequestId) return;
-      }
+    const resources = await Promise.allSettled(dictionaries.map((dictionary) => (
+      loadDictionaryStyles?.(dictionary) ?? loadCachedDictionaryStyles(dictionary)
+    )));
+    if (scopedStyleRequestId !== styleRequestId) return;
+    const chunks = resources.flatMap((resource) => (
+      resource.status === "fulfilled" && resource.value.css.trim()
+        ? [scopeDictionaryCss(resource.value.css, popupId)]
+        : []
+    ));
+    if (scopedStyleRequestId === styleRequestId) {
+      dictionaryStyleCss = chunks.filter(Boolean).join("\n");
+      if (lookupRequestId > 0) markLookupPerformance(lookupRequestId, "styles-ready", { dictionaryCount: dictionaries.length });
     }
-    if (requestId === styleRequestId) dictionaryStyleCss = chunks.filter(Boolean).join("\n");
   }
 
-  async function addAnki(result: DictResult, resultIndex: number) {
+  async function addAnki(result: DictResult, resultIndex: number, key: string) {
     if (!buildAnkiPayload || !canPreviewAnki || !onAddAnkiNote || ankiActionState === "adding") return;
-    const key = `${resultIndex}:${result.expression}:${result.reading}`;
     const payload = buildAnkiPayload(result, resultIndex);
 
     ankiPreviewKey = key;
@@ -356,8 +361,7 @@
     return "Word audio token present; audio export will be resolved in a later slice.";
   }
 
-  function ankiButtonLabel(result: DictResult, resultIndex: number): string {
-    const key = `${resultIndex}:${result.expression}:${result.reading}`;
+  function ankiButtonLabel(key: string): string {
     if (ankiActionKey !== key) return canPreviewAnki ? "Add to Anki" : "Anki not configured";
     if (ankiActionState === "adding") return "Adding...";
     if (ankiActionState === "added") return "Added";
@@ -366,23 +370,12 @@
     return canPreviewAnki ? "Add to Anki" : "Anki not configured";
   }
 
-  function ankiButtonIcon(result: DictResult, resultIndex: number): string {
-    const key = `${resultIndex}:${result.expression}:${result.reading}`;
+  function ankiButtonIcon(key: string): string {
     if (ankiActionKey !== key) return canPreviewAnki ? "+" : "-";
     if (ankiActionState === "adding") return "...";
     if (ankiActionState === "added" || ankiActionState === "duplicate") return "ok";
     if (ankiActionState === "error") return "!";
     return canPreviewAnki ? "+" : "-";
-  }
-
-  function resultKey(result: DictResult, resultIndex: number): string {
-    return `${resultIndex}:${result.expression}:${result.reading}`;
-  }
-
-  function pitchMoras(reading: string): string[] {
-    const trimmed = reading.trim();
-    if (!trimmed) return [];
-    return Array.from(trimmed).slice(0, 18);
   }
 
   function pitchLevel(position: number, index: number, total: number): "high" | "low" {
@@ -401,8 +394,8 @@
     return `pitch ${position}`;
   }
 
-  function hasPitchVisual(group: LookupPitchGroup, reading: string): boolean {
-    return pitchMoras(reading).length > 0 && group.positions.length > 0;
+  function hasPitchVisual(group: LookupPitchGroup, moras: string[]): boolean {
+    return moras.length > 0 && group.positions.length > 0;
   }
 </script>
 
@@ -434,13 +427,13 @@
     <p class="lookup-state">No dictionary results for "{selection.text}".</p>
   {:else if lookupState === "ready"}
     <div class="lookup-results" onscroll={handleResultsScroll}>
-      {#each results as result, resultIndex}
+      {#each renderedResults as rendered}
         <section class="lookup-result">
           <div class="lookup-result-head">
             <div class="lookup-expression-wrap">
-              <span class="lookup-expression">{result.expression}</span>
-              {#if result.reading && result.reading !== result.expression}
-                <span class="lookup-reading">{result.reading}</span>
+              <span class="lookup-expression">{rendered.result.expression}</span>
+              {#if rendered.result.reading && rendered.result.reading !== rendered.result.expression}
+                <span class="lookup-reading">{rendered.result.reading}</span>
               {/if}
             </div>
             <div class="lookup-header-actions" aria-label="Lookup actions">
@@ -449,34 +442,34 @@
               </button>
               <button
                 class:ready={canPreviewAnki}
-                class:added={ankiActionKey === resultKey(result, resultIndex) && ankiActionState === "added"}
-                class:duplicate={ankiActionKey === resultKey(result, resultIndex) && ankiActionState === "duplicate"}
-                class:error={ankiActionKey === resultKey(result, resultIndex) && ankiActionState === "error"}
+                class:added={ankiActionKey === rendered.key && ankiActionState === "added"}
+                class:duplicate={ankiActionKey === rendered.key && ankiActionState === "duplicate"}
+                class:error={ankiActionKey === rendered.key && ankiActionState === "error"}
                 class="lookup-action-slot lookup-anki"
                 disabled={!canPreviewAnki || ankiActionState === "adding"}
-                title={canPreviewAnki ? ankiButtonLabel(result, resultIndex) : ankiTitle(result, resultIndex)}
-                aria-label={ankiButtonLabel(result, resultIndex)}
-                onclick={() => addAnki(result, resultIndex)}
+                title={canPreviewAnki ? ankiButtonLabel(rendered.key) : ankiTitle(rendered.result, rendered.resultIndex)}
+                aria-label={ankiButtonLabel(rendered.key)}
+                onclick={() => addAnki(rendered.result, rendered.resultIndex, rendered.key)}
               >
-                <span aria-hidden="true">{ankiButtonIcon(result, resultIndex)}</span>
+                <span aria-hidden="true">{ankiButtonIcon(rendered.key)}</span>
               </button>
             </div>
           </div>
-          {#if formatLookupMatch(result) || result.rules || frequencyGroups(result).length > 0 || pitchGroups(result).length > 0}
+          {#if rendered.match || rendered.rules.length > 0 || rendered.frequencies.length > 0 || rendered.pitches.length > 0}
             <div class="entry-tags">
-              {#if formatLookupMatch(result) || result.rules}
+              {#if rendered.match || rendered.rules.length > 0}
                 <div class="lookup-tags">
-                  {#if formatLookupMatch(result)}
-                    <span class="lookup-tag">{formatLookupMatch(result)}</span>
+                  {#if rendered.match}
+                    <span class="lookup-tag">{rendered.match}</span>
                   {/if}
-                  {#each ruleTags(result) as rule}
+                  {#each rendered.rules as rule}
                     <span class="lookup-tag">{rule}</span>
                   {/each}
                 </div>
               {/if}
-              {#if frequencyGroups(result).length > 0}
+              {#if rendered.frequencies.length > 0}
                 <div class="frequency-row" aria-label="Frequency dictionaries">
-                  {#each frequencyGroups(result) as frequency}
+                  {#each rendered.frequencies as frequency}
                     <span class="frequency-group">
                       <span class="frequency-dict-label">{frequency.dictionary}</span>
                       <span class="frequency-values">{frequency.values.join(", ")}</span>
@@ -484,18 +477,18 @@
                   {/each}
                 </div>
               {/if}
-              {#if pitchGroups(result).length > 0}
+              {#if rendered.pitches.length > 0}
                 <div class="pitch-list" aria-label="Pitch dictionaries">
-                  {#each pitchGroups(result) as pitch}
+                  {#each rendered.pitches as pitch}
                     <div class="pitch-group">
                       <span class="pitch-dict-label">{pitch.dictionary}</span>
-                      {#if hasPitchVisual(pitch, result.reading)}
+                      {#if hasPitchVisual(pitch, rendered.pitchMoras)}
                         <ul class="pitch-entries">
                           {#each pitch.positions as position}
                             <li>
                               <span class="pitch-visual" aria-label={pitchPositionLabel(position)}>
-                                {#each pitchMoras(result.reading) as mora, moraIndex}
-                                  <span class="pronunciation-mora" data-pitch={pitchLevel(position, moraIndex, pitchMoras(result.reading).length)} data-next-pitch={nextPitchLevel(position, moraIndex, pitchMoras(result.reading).length)}>
+                                {#each rendered.pitchMoras as mora, moraIndex}
+                                  <span class="pronunciation-mora" data-pitch={pitchLevel(position, moraIndex, rendered.pitchMoras.length)} data-next-pitch={nextPitchLevel(position, moraIndex, rendered.pitchMoras.length)}>
                                     <span class="pronunciation-mora-line"></span>
                                     <span>{mora}</span>
                                   </span>
@@ -525,7 +518,7 @@
               {/if}
             </div>
           {/if}
-          {#each glossaryGroups(result) as group, groupIndex}
+          {#each rendered.glossaryGroups as group, groupIndex}
             <details class="lookup-glossary-group" open={groupIndex === 0}>
               <summary class="lookup-glossary-dict">{group.dictionary}</summary>
               {#if group.termTags.length > 0}
@@ -551,13 +544,13 @@
                       aria-label="Lookup glossary text"
                       onpointermove={handleGlossaryPointerMove}
                       onpointerleave={resetShiftHover}
-                    >{@html renderGlossaryContent(entry.text, group.dictionary)}</div>
+                    >{@html entry.html}</div>
                   </li>
                 {/each}
               </ol>
             </details>
           {/each}
-          {#if ankiPreviewKey === resultKey(result, resultIndex)}
+          {#if ankiPreviewKey === rendered.key}
             <section class="anki-preview" aria-label="Anki field preview">
               {#if ankiAudioHint}
                 <p class="anki-action-message warn">{ankiAudioHint}</p>
