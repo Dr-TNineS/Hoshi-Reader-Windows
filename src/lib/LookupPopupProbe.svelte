@@ -3,7 +3,7 @@
   import { extractDictionaryMediaReferences } from "./anki-field-renderer";
   import type { LookupState } from "./lookup-popup";
   import { lookupPopupStyle } from "./lookup-popup-position";
-  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiNoteRequest, AnkiRemoteAudioRequest, AnkiSettings, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LocalAudioStoreRequest, LocalAudioStoreResult, LookupAnkiPayload, ReaderSelection } from "./types";
+  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiNoteRequest, AnkiRemoteAudioRequest, AnkiSettings, AnkiStoreBookCoverResult, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LocalAudioStoreRequest, LocalAudioStoreResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
   const params = new URLSearchParams(window.location.search);
   const allowedStates: LookupState[] = ["loading", "noDictionaries", "engineUnavailable", "empty", "error", "ready"];
@@ -17,7 +17,10 @@
   const ankiStoreMode = params.get("ankiStoreMode") ?? "success";
   const ankiAudioStoreMode = params.get("ankiAudioStoreMode") ?? "success";
   const localAudioStoreMode = params.get("localAudioStoreMode") ?? "success";
+  const coverStoreMode = params.get("coverStoreMode") ?? "success";
   const audioFieldEnabled = params.get("audioField") !== "disabled";
+  const coverFieldEnabled = params.get("coverField") !== "disabled";
+  const noBookId = params.has("noBookId");
   const emptyExpression = params.has("emptyExpression");
 
   const rootSelection: ReaderSelection = {
@@ -107,7 +110,7 @@
       selectedDeck: "Mining",
       selectedNoteType: "Hoshi Vocabulary",
       decks: [{ name: "Mining" }],
-      noteTypes: [{ name: "Hoshi Vocabulary", fields: ["Expression", "Meaning", "Sentence", "JmOnly", "MissingDict", "Media", ...(audioFieldEnabled ? ["Audio"] : []), "Frequency", "Pitch", "Unknown"] }],
+      noteTypes: [{ name: "Hoshi Vocabulary", fields: ["Expression", "Meaning", "Sentence", "JmOnly", "MissingDict", "Media", ...(coverFieldEnabled ? ["Picture"] : []), ...(audioFieldEnabled ? ["Audio"] : []), "Frequency", "Pitch", "Unknown"] }],
       fieldMappings: [
         { field: "Expression", template: "{expression} / {reading}" },
         { field: "Meaning", template: "{glossary-first}" },
@@ -115,6 +118,7 @@
         { field: "JmOnly", template: "{single-glossary-JMdict [probe]}" },
         { field: "MissingDict", template: "{single-glossary-Missing Probe}" },
         { field: "Media", template: "{dictionary-media}" },
+        ...(coverFieldEnabled ? [{ field: "Picture", template: "{book-cover}" }] : []),
         ...(audioFieldEnabled ? [{ field: "Audio", template: "{audio}" }] : []),
         { field: "Frequency", template: "{frequencies}" },
         { field: "Pitch", template: "{pitch-accent-positions}" },
@@ -129,6 +133,7 @@
       allowDuplicates: params.get("allowDuplicates") === "enabled",
       checkDuplicatesAcrossAllModels: params.get("checkAllModels") === "enabled",
       duplicateScope: params.get("duplicateScope") === "deckRoot" ? "deckRoot" : "collection",
+      compactGlossaries: params.get("compactGlossaries") === "enabled",
       lastFetchedAt: 1780000000000,
     }
     : null;
@@ -163,6 +168,8 @@
   let ankiStoreRequests = $state<AnkiDictionaryMediaRef[][]>([]);
   let ankiAudioStoreRequests = $state<AnkiRemoteAudioRequest[]>([]);
   let localAudioStoreRequests = $state<LocalAudioStoreRequest[]>([]);
+  let coverStoreRequests = $state<string[]>([]);
+  let operationEvents = $state<string[]>([]);
   let popupSizes = $state<Record<string, { width: number; height: number }>>({});
 
   function readerBottomBoundary(): number {
@@ -342,12 +349,14 @@
       pitches: result.pitches,
       media: extractDictionaryMediaReferences(result.glossary),
       audioFilename: null,
-      sourceBook: { title: "Probe Book" },
+      coverFilename: null,
+      sourceBook: { title: "Probe Book", ...(noBookId ? {} : { bookId: "probe-book" }) },
       sourceChapter: { chapterIndex: 0, chapterNumber: 1, totalChapters: 1, idref: "probe" },
     };
   }
 
   async function addAnkiNote(note: AnkiNoteRequest): Promise<AnkiAddNoteResult> {
+    operationEvents = [...operationEvents, "add"];
     ankiAddRequests = [...ankiAddRequests, note];
     if (ankiAddMode === "error") throw new Error("Probe AnkiConnect failure");
     if (ankiAddMode === "duplicate") {
@@ -362,6 +371,7 @@
   }
 
   async function storeAnkiMedia(media: AnkiDictionaryMediaRef[]): Promise<AnkiStoreMediaResult> {
+    operationEvents = [...operationEvents, "dictionary"];
     ankiStoreRequests = [...ankiStoreRequests, media];
     if (ankiStoreMode === "error") throw new Error("Probe media store failure");
     if (ankiStoreMode === "missing") {
@@ -380,7 +390,16 @@
     };
   }
 
+  async function storeAnkiBookCover(bookId: string): Promise<AnkiStoreBookCoverResult> {
+    operationEvents = [...operationEvents, "cover"];
+    coverStoreRequests = [...coverStoreRequests, bookId];
+    if (coverStoreMode === "error") throw new Error("Probe cover path escapes the app-owned book directory.");
+    if (coverStoreMode === "missing") return { filename: null, warnings: ["Book cover is not available."] };
+    return { filename: "hsw_cover_probe.jpg", warnings: [] };
+  }
+
   async function storeAnkiRemoteAudio(request: AnkiRemoteAudioRequest): Promise<AnkiStoreRemoteAudioResult> {
+    operationEvents = [...operationEvents, "audio"];
     ankiAudioStoreRequests = [...ankiAudioStoreRequests, request];
     if (ankiAudioStoreMode === "error") throw new Error("Remote audio URL resolved to a private, local, or reserved address.");
     if (ankiAudioStoreMode === "missing") {
@@ -463,6 +482,7 @@
         {ankiSettings}
         buildAnkiPayload={(result, resultIndex) => buildAnkiPayload(popup.selection, result, resultIndex)}
         onStoreAnkiMedia={storeAnkiMedia}
+        onStoreAnkiBookCover={storeAnkiBookCover}
         onStoreAnkiRemoteAudio={storeAnkiRemoteAudio}
         onStoreAnkiLocalAudio={storeAnkiLocalAudio}
         onAddAnkiNote={addAnkiNote}
@@ -490,6 +510,9 @@
     data-anki-last-model={ankiAddRequests[ankiAddRequests.length - 1]?.modelName ?? ""}
     data-anki-last-fields={JSON.stringify(ankiAddRequests[ankiAddRequests.length - 1]?.fields ?? {})}
     data-anki-last-request={JSON.stringify(ankiAddRequests[ankiAddRequests.length - 1] ?? null)}
+    data-cover-store-count={coverStoreRequests.length}
+    data-cover-last-book-id={coverStoreRequests[coverStoreRequests.length - 1] ?? ""}
+    data-operation-events={operationEvents.join(",")}
     data-state={lookupState}
     aria-hidden="true"
     ></div>

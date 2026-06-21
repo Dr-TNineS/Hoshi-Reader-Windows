@@ -39,6 +39,7 @@
     AnkiRemoteAudioRequest,
     AnkiSettings,
     AnkiStoreMediaResult,
+    AnkiStoreBookCoverResult,
     AnkiStoreRemoteAudioResult,
     DictImportBatchSummary,
     DictResult,
@@ -382,6 +383,7 @@
       allowDuplicates: false,
       checkDuplicatesAcrossAllModels: false,
       duplicateScope: "collection",
+      compactGlossaries: false,
       lastFetchedAt: null,
     };
   }
@@ -526,6 +528,13 @@
     if (ankiBusy) return;
     const base = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft };
     ankiSettings = { ...base, tags, allowDuplicates, duplicateScope, checkDuplicatesAcrossAllModels };
+    await saveAnkiSettings();
+  }
+
+  async function setAnkiCompactGlossaries(enabled: boolean) {
+    if (ankiBusy) return;
+    const base = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft };
+    ankiSettings = { ...base, compactGlossaries: enabled };
     await saveAnkiSettings();
   }
 
@@ -687,6 +696,7 @@
       pitches: result.pitches,
       media: extractDictionaryMediaReferences(result.glossary),
       audioFilename: null,
+      coverFilename: null,
       sourceBook: {
         title: meta?.title ?? null,
         bookId: currentBookLocator?.bookId,
@@ -792,6 +802,13 @@
     const endpoint = ankiSettings?.endpoint;
     if (!endpoint) throw new Error("Anki endpoint is not configured.");
     return invoke<AnkiStoreRemoteAudioResult>("anki_store_remote_audio", { endpoint, request });
+  }
+
+  async function storeAnkiBookCover(bookId: string): Promise<AnkiStoreBookCoverResult> {
+    if (!isTauriRuntime()) throw new Error("Anki book cover storage requires Tauri runtime.");
+    const endpoint = ankiSettings?.endpoint;
+    if (!endpoint) throw new Error("Anki endpoint is not configured.");
+    return invoke<AnkiStoreBookCoverResult>("anki_store_book_cover", { endpoint, bookId });
   }
 
   async function storeAnkiLocalAudio(request: LocalAudioStoreRequest): Promise<LocalAudioStoreResult> {
@@ -1201,6 +1218,7 @@
       onSetAnkiLocalAudioEnabled={setAnkiLocalAudioEnabled}
       onSetAnkiForceSyncAfterAdd={setAnkiForceSyncAfterAdd}
       onSetAnkiNoteOptions={setAnkiNoteOptions}
+      onSetAnkiCompactGlossaries={setAnkiCompactGlossaries}
       onImportLocalAudio={importLocalAudio}
       onRemoveLocalAudio={removeLocalAudio}
       onMoveLocalAudioSource={moveLocalAudioSource}
@@ -1238,6 +1256,7 @@
       {buildAnkiPayload}
       onStoreAnkiMedia={storeAnkiMedia}
       onStoreAnkiRemoteAudio={storeAnkiRemoteAudio}
+      onStoreAnkiBookCover={storeAnkiBookCover}
       onStoreAnkiLocalAudio={storeAnkiLocalAudio}
       onAddAnkiNote={addAnkiNote}
     />

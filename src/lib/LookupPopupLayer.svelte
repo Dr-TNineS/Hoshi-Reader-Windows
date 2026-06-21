@@ -9,6 +9,7 @@
     AnkiRemoteAudioRequest,
     AnkiSettings,
     AnkiStoreMediaResult,
+    AnkiStoreBookCoverResult,
     AnkiStoreRemoteAudioResult,
     DictResult,
     LookupAnkiPayload,
@@ -49,6 +50,7 @@
     ankiTitle,
     buildAnkiPayload,
     onStoreAnkiMedia,
+    onStoreAnkiBookCover,
     onStoreAnkiRemoteAudio,
     onStoreAnkiLocalAudio,
     onAddAnkiNote,
@@ -65,6 +67,7 @@
     ankiTitle: (selection: ReaderSelection, result: DictResult, resultIndex: number) => string;
     buildAnkiPayload: (selection: ReaderSelection, result: DictResult, resultIndex: number) => LookupAnkiPayload;
     onStoreAnkiMedia: (media: AnkiDictionaryMediaRef[]) => Promise<AnkiStoreMediaResult>;
+    onStoreAnkiBookCover: (bookId: string) => Promise<AnkiStoreBookCoverResult>;
     onStoreAnkiRemoteAudio: (request: AnkiRemoteAudioRequest) => Promise<AnkiStoreRemoteAudioResult>;
     onStoreAnkiLocalAudio: (request: LocalAudioStoreRequest) => Promise<LocalAudioStoreResult>;
     onAddAnkiNote: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
@@ -152,6 +155,7 @@
       {ankiSettings}
       buildAnkiPayload={(result, resultIndex) => buildAnkiPayload(popup.selection, result, resultIndex)}
       onStoreAnkiMedia={onStoreAnkiMedia}
+      onStoreAnkiBookCover={onStoreAnkiBookCover}
       onStoreAnkiRemoteAudio={onStoreAnkiRemoteAudio}
       onStoreAnkiLocalAudio={onStoreAnkiLocalAudio}
       onAddAnkiNote={onAddAnkiNote}

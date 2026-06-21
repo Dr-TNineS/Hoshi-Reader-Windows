@@ -19,12 +19,14 @@ use crate::dict::commands::DictionaryManifestEntry;
 use crate::dict::commands::{
     dictionary_manifest_path, load_dictionary_media, read_dictionary_manifest, DictionaryManifest,
 };
+use crate::library::library_cover_path;
 
 const DEFAULT_ENDPOINT: &str = "http://127.0.0.1:8765";
 const SETTINGS_VERSION: u32 = 2;
 const TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_REMOTE_AUDIO_BYTES: usize = 10 * 1024 * 1024;
 const MAX_REMOTE_AUDIO_REDIRECTS: usize = 3;
+const MAX_BOOK_COVER_BYTES: usize = 10 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -92,6 +94,8 @@ pub struct AnkiSettings {
     pub check_duplicates_across_all_models: bool,
     #[serde(default)]
     pub duplicate_scope: AnkiDuplicateScope,
+    #[serde(default)]
+    pub compact_glossaries: bool,
     pub last_fetched_at: Option<u64>,
 }
 
@@ -114,6 +118,7 @@ impl Default for AnkiSettings {
             allow_duplicates: false,
             check_duplicates_across_all_models: false,
             duplicate_scope: AnkiDuplicateScope::Collection,
+            compact_glossaries: false,
             last_fetched_at: None,
         }
     }
@@ -203,6 +208,13 @@ pub struct AnkiStoreRemoteAudioResult {
     pub warnings: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct AnkiStoreBookCoverResult {
+    pub filename: Option<String>,
+    pub warnings: Vec<String>,
+}
+
 #[tauri::command]
 pub fn anki_load_settings(app: AppHandle) -> Result<AnkiSettings, String> {
     let root = anki_root(&app)?;
@@ -279,6 +291,7 @@ pub fn anki_fetch_config(endpoint: String, app: AppHandle) -> Result<AnkiSetting
         allow_duplicates: current.allow_duplicates,
         check_duplicates_across_all_models: current.check_duplicates_across_all_models,
         duplicate_scope: current.duplicate_scope,
+        compact_glossaries: current.compact_glossaries,
         last_fetched_at: Some(now_millis()?),
     });
     write_settings(&root, &next)?;
@@ -399,6 +412,120 @@ pub fn anki_store_remote_audio(
         filename: Some(stored_filename),
         warnings: Vec::new(),
     })
+}
+
+#[tauri::command]
+pub fn anki_store_book_cover(
+    endpoint: String,
+    book_id: String,
+    app: AppHandle,
+) -> Result<AnkiStoreBookCoverResult, String> {
+    let cover = match library_cover_path(&app, &book_id) {
+        Ok(Some(path)) => path,
+        Ok(None) => {
+            return Ok(AnkiStoreBookCoverResult {
+                filename: None,
+                warnings: vec!["Book cover is not available.".into()],
+            })
+        }
+        Err(error) if error.starts_with("Library book not found:") => {
+            return Ok(AnkiStoreBookCoverResult {
+                filename: None,
+                warnings: vec![error],
+            })
+        }
+        Err(error) => return Err(error),
+    };
+    store_book_cover_from_path(&endpoint, &cover, anki_request)
+}
+
+fn store_book_cover_from_path<F>(
+    endpoint: &str,
+    cover: &Path,
+    mut request: F,
+) -> Result<AnkiStoreBookCoverResult, String>
+where
+    F: FnMut(&str, &str, Option<Value>) -> Result<Value, String>,
+{
+    let endpoint = normalize_endpoint(endpoint)?;
+    let Some(hint) = cover_extension_hint(cover) else {
+        return Ok(AnkiStoreBookCoverResult {
+            filename: None,
+            warnings: vec!["Book cover is not a supported JPEG, PNG, GIF, or WebP image.".into()],
+        });
+    };
+    let size = fs::metadata(cover)
+        .map_err(|e| format!("Cannot read book cover metadata: {e}"))?
+        .len();
+    if size > MAX_BOOK_COVER_BYTES as u64 {
+        return Err("Book cover exceeds the 10 MiB limit.".into());
+    }
+    let mut bytes = Vec::with_capacity(size as usize);
+    fs::File::open(cover)
+        .map_err(|e| format!("Cannot open book cover: {e}"))?
+        .take((MAX_BOOK_COVER_BYTES + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("Cannot read book cover: {e}"))?;
+    if bytes.len() > MAX_BOOK_COVER_BYTES {
+        return Err("Book cover exceeds the 10 MiB limit.".into());
+    }
+    if bytes.is_empty() {
+        return Ok(AnkiStoreBookCoverResult {
+            filename: None,
+            warnings: vec!["Book cover is empty.".into()],
+        });
+    }
+    let detected = detect_book_cover_extension(&bytes).ok_or_else(|| {
+        "Book cover signature does not match a supported image format.".to_string()
+    })?;
+    if detected != hint {
+        return Err("Book cover extension does not match its file signature.".into());
+    }
+    let digest = Sha256::digest(&bytes);
+    let hash = digest[..12]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let filename = format!("hsw_cover_{hash}.{detected}");
+    let stored = request(
+        &endpoint,
+        "storeMediaFile",
+        Some(json!({
+            "filename": filename,
+            "data": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes),
+        })),
+    )?
+    .as_str()
+    .ok_or_else(|| "AnkiConnect storeMediaFile returned an unexpected response.".to_string())?
+    .to_string();
+    Ok(AnkiStoreBookCoverResult {
+        filename: Some(validate_anki_media_filename(&stored)?),
+        warnings: Vec::new(),
+    })
+}
+
+fn cover_extension_hint(path: &Path) -> Option<&'static str> {
+    match path.extension()?.to_str()?.to_ascii_lowercase().as_str() {
+        "jpg" | "jpeg" => Some("jpg"),
+        "png" => Some("png"),
+        "gif" => Some("gif"),
+        "webp" => Some("webp"),
+        _ => None,
+    }
+}
+
+fn detect_book_cover_extension(bytes: &[u8]) -> Option<&'static str> {
+    if bytes.starts_with(&[0xff, 0xd8, 0xff]) {
+        Some("jpg")
+    } else if bytes.starts_with(b"\x89PNG\r\n\x1a\n") {
+        Some("png")
+    } else if bytes.starts_with(b"GIF87a") || bytes.starts_with(b"GIF89a") {
+        Some("gif")
+    } else if bytes.len() >= 12 && bytes.starts_with(b"RIFF") && &bytes[8..12] == b"WEBP" {
+        Some("webp")
+    } else {
+        None
+    }
 }
 
 pub(crate) fn store_audio_bytes(
@@ -1367,6 +1494,7 @@ mod tests {
         assert_eq!(loaded.tags, "hoshi-reader");
         assert!(!loaded.allow_duplicates);
         assert_eq!(loaded.duplicate_scope, AnkiDuplicateScope::Collection);
+        assert!(!loaded.compact_glossaries);
         let _ = fs::remove_dir_all(root);
     }
 
@@ -1496,6 +1624,79 @@ mod tests {
             detect_audio_extension(b"<html>not audio</html>", Some("text/html"), "/audio.mp3"),
             None
         );
+    }
+
+    #[test]
+    fn detects_and_stores_stable_book_cover_media() {
+        assert_eq!(
+            detect_book_cover_extension(&[0xff, 0xd8, 0xff]),
+            Some("jpg")
+        );
+        assert_eq!(
+            detect_book_cover_extension(b"\x89PNG\r\n\x1a\nprobe"),
+            Some("png")
+        );
+        assert_eq!(detect_book_cover_extension(b"GIF89aprobe"), Some("gif"));
+        assert_eq!(
+            detect_book_cover_extension(b"RIFF\0\0\0\0WEBPprobe"),
+            Some("webp")
+        );
+        assert_eq!(detect_book_cover_extension(b"<html>"), None);
+
+        let root = temp_root("cover_store");
+        let cover = root.join("cover.jpg");
+        fs::write(&cover, [0xff, 0xd8, 0xff, 1, 2, 3]).unwrap();
+        let mut stored_filename = String::new();
+        let result = store_book_cover_from_path(DEFAULT_ENDPOINT, &cover, |_, action, params| {
+            assert_eq!(action, "storeMediaFile");
+            let params = params.unwrap();
+            stored_filename = params["filename"].as_str().unwrap().to_string();
+            assert!(!params["data"].as_str().unwrap().is_empty());
+            Ok(Value::String(stored_filename.clone()))
+        })
+        .unwrap();
+        assert_eq!(result.filename.as_deref(), Some(stored_filename.as_str()));
+        assert!(stored_filename.starts_with("hsw_cover_"));
+        assert!(stored_filename.ends_with(".jpg"));
+
+        let same = store_book_cover_from_path(DEFAULT_ENDPOINT, &cover, |_, _, params| {
+            Ok(params.unwrap()["filename"].clone())
+        })
+        .unwrap();
+        assert_eq!(same.filename, result.filename);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn book_cover_rejects_forged_and_oversized_files_and_warns_on_unsupported_type() {
+        let root = temp_root("cover_errors");
+        let forged = root.join("cover.jpg");
+        fs::write(&forged, b"<html>not an image</html>").unwrap();
+        assert!(
+            store_book_cover_from_path(DEFAULT_ENDPOINT, &forged, |_, _, _| unreachable!())
+                .unwrap_err()
+                .contains("signature")
+        );
+
+        let unsupported = root.join("cover.svg");
+        fs::write(&unsupported, b"<svg></svg>").unwrap();
+        let result =
+            store_book_cover_from_path(DEFAULT_ENDPOINT, &unsupported, |_, _, _| unreachable!())
+                .unwrap();
+        assert!(result.filename.is_none());
+        assert!(result.warnings[0].contains("supported"));
+
+        let oversized = root.join("cover.png");
+        fs::File::create(&oversized)
+            .unwrap()
+            .set_len((MAX_BOOK_COVER_BYTES + 1) as u64)
+            .unwrap();
+        assert!(
+            store_book_cover_from_path(DEFAULT_ENDPOINT, &oversized, |_, _, _| unreachable!())
+                .unwrap_err()
+                .contains("10 MiB")
+        );
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

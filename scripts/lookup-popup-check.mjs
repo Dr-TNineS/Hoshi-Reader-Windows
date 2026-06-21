@@ -54,6 +54,10 @@ async function openProbe(page, state, options = {}) {
   if (options.allowDuplicates) params.set("allowDuplicates", "enabled");
   if (options.checkAllModels) params.set("checkAllModels", "enabled");
   if (options.duplicateScope) params.set("duplicateScope", options.duplicateScope);
+  if (options.coverStoreMode) params.set("coverStoreMode", options.coverStoreMode);
+  if (options.compactGlossaries) params.set("compactGlossaries", "enabled");
+  if (options.coverField === false) params.set("coverField", "disabled");
+  if (options.noBookId) params.set("noBookId", "1");
   if (options.ankiStoreMode) params.set("ankiStoreMode", options.ankiStoreMode);
   if (options.ankiAudioStoreMode) params.set("ankiAudioStoreMode", options.ankiAudioStoreMode);
   if (options.localAudioStoreMode) params.set("localAudioStoreMode", options.localAudioStoreMode);
@@ -112,6 +116,9 @@ async function popupMetrics(page) {
       ankiLastModel: state?.getAttribute("data-anki-last-model") ?? "",
       ankiLastFields: JSON.parse(state?.getAttribute("data-anki-last-fields") ?? "{}"),
       ankiLastRequest: JSON.parse(state?.getAttribute("data-anki-last-request") ?? "null"),
+      coverStoreCount: Number(state?.getAttribute("data-cover-store-count") ?? 0),
+      coverLastBookId: state?.getAttribute("data-cover-last-book-id") ?? "",
+      operationEvents: state?.getAttribute("data-operation-events") ?? "",
       popup: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom },
       viewport: { width: window.innerWidth, height: window.innerHeight },
       controlsTop: controlsRect?.top ?? window.innerHeight,
@@ -343,6 +350,9 @@ async function main() {
     assert(ankiAdded.ankiAudioStoreCount === 1, "Add Anki should store remote word audio before note creation.", ankiAdded);
     assert(ankiAdded.ankiLastAudioRequest.expression === "school" && ankiAdded.ankiLastAudioRequest.reading === "school", "Remote audio request should use lookup expression and reading.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Audio === "[sound:hsw_audio_probe.mp3]", "Add Anki should render the stored word audio filename.", ankiAdded);
+    assert(ankiAdded.coverStoreCount === 1 && ankiAdded.coverLastBookId === "probe-book", "Referenced book cover should be stored by bookId.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.Picture === '<img src="hsw_cover_probe.jpg">', "Stored cover should render into the book-cover field.", ankiAdded);
+    assert(ankiAdded.operationEvents === "dictionary,cover,audio,add", "Media should store in dictionary-cover-audio order before addNote.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Media.includes("<img src=\"stored_hsw_") && ankiAdded.ankiLastFields.Media.includes(".svg"), "Add Anki should include stored dictionary media filenames.", ankiAdded);
     assert(ankiAdded.text.includes("Added Anki note 4242."), "Added state should show the Anki note id message.", ankiAdded);
     assert(ankiAdded.text.includes("Word audio stored as hsw_audio_probe.mp3"), "Add state should expose stored word audio.", ankiAdded);
@@ -358,6 +368,32 @@ async function main() {
     const ankiDuplicatePolicy = await popupMetrics(page);
     assert(ankiDuplicatePolicy.ankiLastRequest.allowDuplicates === true, "Configured allow-duplicates should reach the note request.", ankiDuplicatePolicy);
     assert(ankiDuplicatePolicy.ankiLastRequest.checkDuplicatesAcrossAllModels === true && ankiDuplicatePolicy.ankiLastRequest.duplicateScope === "deckRoot", "Configured duplicate scope should reach the note request.", ankiDuplicatePolicy);
+
+    await openProbe(page, "ready", { ankiMode: "configured", compactGlossaries: true });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiCompactGlossary = await popupMetrics(page);
+    assert(ankiCompactGlossary.ankiLastFields.Meaning.includes(".yomitan-glossary li{margin:.1em 0}"), "Compact glossary setting should inject card-only compact CSS.", ankiCompactGlossary);
+
+    await openProbe(page, "ready", { ankiMode: "configured", coverStoreMode: "missing" });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiMissingCover = await popupMetrics(page);
+    assert(ankiMissingCover.ankiAddCount === 1 && ankiMissingCover.ankiLastFields.Picture === "", "Missing cover should continue with a text card.", ankiMissingCover);
+    assert(ankiMissingCover.text.includes("Book cover is not available."), "Missing cover warning should remain visible.", ankiMissingCover);
+
+    await openProbe(page, "ready", { ankiMode: "configured", coverStoreMode: "error" });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiUnsafeCover = await popupMetrics(page);
+    assert(ankiUnsafeCover.coverStoreCount === 1 && ankiUnsafeCover.ankiAddCount === 0, "Unsafe cover path should block note creation.", ankiUnsafeCover);
+
+    await openProbe(page, "ready", { ankiMode: "configured", coverField: false });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiWithoutCoverField = await popupMetrics(page);
+    assert(ankiWithoutCoverField.coverStoreCount === 0 && ankiWithoutCoverField.ankiAddCount === 1, "Notes without book-cover token should skip cover storage.", ankiWithoutCoverField);
+
+    await openProbe(page, "ready", { ankiMode: "configured", noBookId: true });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiLegacyBook = await popupMetrics(page);
+    assert(ankiLegacyBook.coverStoreCount === 0 && ankiLegacyBook.ankiAddCount === 1 && ankiLegacyBook.ankiLastFields.Picture === "", "Legacy books without bookId should create cards without reading frontend paths.", ankiLegacyBook);
 
     await openProbe(page, "ready", { ankiMode: "configured", localAudio: true });
     await page.getByRole("button", { name: "Add to Anki" }).click();

@@ -94,6 +94,7 @@ export interface LookupAnkiPayload {
   pitches: PitchEntry[];
   media: LookupAnkiMediaReference[];
   audioFilename: string | null;
+  coverFilename: string | null;
   sourceBook: LookupAnkiSourceBook;
   sourceChapter: LookupAnkiSourceChapter;
 }
@@ -120,6 +121,11 @@ export interface AnkiStoredMedia {
 
 export interface AnkiStoreMediaResult {
   stored: AnkiStoredMedia[];
+  warnings: string[];
+}
+
+export interface AnkiStoreBookCoverResult {
+  filename: string | null;
   warnings: string[];
 }
 
@@ -266,6 +272,7 @@ export interface AnkiSettings {
   allowDuplicates: boolean;
   checkDuplicatesAcrossAllModels: boolean;
   duplicateScope: AnkiDuplicateScope;
+  compactGlossaries: boolean;
   lastFetchedAt: number | null;
 }
 

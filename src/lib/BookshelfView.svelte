@@ -51,6 +51,7 @@
     onSetAnkiAudioConfig,
     onSetAnkiForceSyncAfterAdd = (_enabled: boolean) => {},
     onSetAnkiNoteOptions = (_tags: string, _allowDuplicates: boolean, _duplicateScope: AnkiSettings["duplicateScope"], _checkAllModels: boolean) => {},
+    onSetAnkiCompactGlossaries = (_enabled: boolean) => {},
     onSetAnkiLocalAudioEnabled = (_enabled: boolean) => {},
     onImportLocalAudio = () => {},
     onRemoveLocalAudio = () => {},
@@ -95,6 +96,7 @@
     onSetAnkiAudioConfig: (audioEnabled: boolean, audioSources: AnkiAudioSource[], audioDownloadTimeoutMs: number) => void;
     onSetAnkiForceSyncAfterAdd?: (enabled: boolean) => void;
     onSetAnkiNoteOptions?: (tags: string, allowDuplicates: boolean, duplicateScope: AnkiSettings["duplicateScope"], checkAllModels: boolean) => void;
+    onSetAnkiCompactGlossaries?: (enabled: boolean) => void;
     onSetAnkiLocalAudioEnabled?: (enabled: boolean) => void;
     onImportLocalAudio?: () => void;
     onRemoveLocalAudio?: () => void;
@@ -278,6 +280,7 @@
         onSetAudioConfig={onSetAnkiAudioConfig}
         onSetForceSyncAfterAdd={onSetAnkiForceSyncAfterAdd}
         onSetNoteOptions={onSetAnkiNoteOptions}
+        onSetCompactGlossaries={onSetAnkiCompactGlossaries}
         {localAudioStatus}
         onSetLocalAudioEnabled={onSetAnkiLocalAudioEnabled}
         onImportLocalAudio={onImportLocalAudio}

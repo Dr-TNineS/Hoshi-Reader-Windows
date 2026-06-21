@@ -93,6 +93,7 @@
     allowDuplicates: false,
     checkDuplicatesAcrossAllModels: false,
     duplicateScope: "collection",
+    compactGlossaries: false,
     lastFetchedAt: 1780000000000,
   };
 
@@ -108,6 +109,7 @@
   let localAudioEvents = $state<string[]>([]);
   let syncEvents = $state<string[]>([]);
   let noteOptionEvents = $state<string[]>([]);
+  let compactGlossaryEvents = $state<string[]>([]);
   let localImportClicks = $state(0);
   let localRemoveClicks = $state(0);
   let localAudioStatus = $state<LocalAudioStatus>({
@@ -165,6 +167,11 @@
     if (settings) settings = { ...settings, tags, allowDuplicates, duplicateScope, checkDuplicatesAcrossAllModels: checkAllModels };
   }
 
+  function setCompactGlossaries(enabled: boolean) {
+    compactGlossaryEvents = [...compactGlossaryEvents, String(enabled)];
+    if (settings) settings = { ...settings, compactGlossaries: enabled };
+  }
+
   function moveLocalAudioSource(source: string, direction: -1 | 1) {
     localAudioEvents = [...localAudioEvents, `move:${source}:${direction}`];
     const sources = [...localAudioStatus.sources];
@@ -194,6 +201,7 @@
     onSetAudioConfig={setAudioConfig}
     onSetForceSyncAfterAdd={setForceSyncAfterAdd}
     onSetNoteOptions={setNoteOptions}
+    onSetCompactGlossaries={setCompactGlossaries}
     {localAudioStatus}
     onSetLocalAudioEnabled={setLocalAudioEnabled}
     onImportLocalAudio={() => localImportClicks += 1}
@@ -208,6 +216,7 @@
     data-save-clicks={saveClicks}
     data-sync-events={syncEvents.join(",")}
     data-note-option-events={noteOptionEvents.join("|")}
+    data-compact-glossary-events={compactGlossaryEvents.join(",")}
     data-deck-events={deckEvents.join(",")}
     data-note-type-events={noteTypeEvents.join(",")}
     data-field-template-events={fieldTemplateEvents.join(",")}
@@ -224,6 +233,7 @@
     data-allow-duplicates={settings?.allowDuplicates ?? false}
     data-duplicate-scope={settings?.duplicateScope ?? ""}
     data-check-all-models={settings?.checkDuplicatesAcrossAllModels ?? false}
+    data-compact-glossaries={settings?.compactGlossaries ?? false}
     data-local-audio-enabled={settings?.localAudioEnabled ? "true" : "false"}
     data-local-audio-events={localAudioEvents.join("|")}
     data-local-import-clicks={localImportClicks}

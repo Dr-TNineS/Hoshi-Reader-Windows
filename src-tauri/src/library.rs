@@ -189,6 +189,44 @@ fn library_book_path_for_open(root: &Path, book_id: &str) -> Result<String, Stri
     Ok(record.library_path.clone())
 }
 
+pub(crate) fn library_cover_path(
+    app: &AppHandle,
+    book_id: &str,
+) -> Result<Option<PathBuf>, String> {
+    let root = library_root(app)?;
+    library_cover_path_from_root(&root, book_id)
+}
+
+fn library_cover_path_from_root(root: &Path, book_id: &str) -> Result<Option<PathBuf>, String> {
+    if book_id.trim().is_empty() {
+        return Err("Library book id is empty.".into());
+    }
+    let manifest = read_manifest(root)?;
+    let record = manifest
+        .books
+        .iter()
+        .find(|book| book.book_id == book_id)
+        .ok_or_else(|| format!("Library book not found: {book_id}"))?;
+    let Some(cover_path) = record.cover_path.as_deref() else {
+        return Ok(None);
+    };
+    let cover = Path::new(cover_path);
+    if !cover.is_file() {
+        return Ok(None);
+    }
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve library root: {e}"))?;
+    let expected_book_dir = canonical_root.join("books").join(book_id);
+    let canonical_cover = cover
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve library cover: {e}"))?;
+    if !canonical_cover.starts_with(&expected_book_dir) {
+        return Err("Library cover path escapes the app-owned book directory.".into());
+    }
+    Ok(Some(canonical_cover))
+}
+
 fn forget_library_book(root: &Path, book_id: &str) -> Result<Vec<LibraryBookRecord>, String> {
     if book_id.is_empty() {
         return Err("Cannot forget library book without a book id.".into());
@@ -698,6 +736,45 @@ mod tests {
         assert!(error.contains("Missing Book"));
         assert!(error.contains("Re-import the book"));
 
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn library_cover_lookup_is_book_id_scoped_and_contained() {
+        let root = temp_root("cover_lookup");
+        let book_dir = root.join("books").join("abc");
+        fs::create_dir_all(&book_dir).unwrap();
+        let cover = book_dir.join("cover.jpg");
+        fs::write(&cover, [0xff, 0xd8, 0xff, 0xd9]).unwrap();
+        let mut manifest = LibraryManifest {
+            version: MANIFEST_VERSION,
+            books: vec![LibraryBookRecord {
+                book_id: "abc".into(),
+                title: Some("Cover Book".into()),
+                source_path: "source.epub".into(),
+                library_path: book_dir.join("book.epub").to_string_lossy().into_owned(),
+                cover_path: Some(cover.to_string_lossy().into_owned()),
+                content_hash: "abc".into(),
+                size_bytes: 1,
+                imported_at: 1,
+            }],
+        };
+        write_manifest(&root, &manifest).unwrap();
+        assert_eq!(
+            library_cover_path_from_root(&root, "abc").unwrap(),
+            Some(cover.canonicalize().unwrap())
+        );
+        assert!(library_cover_path_from_root(&root, "missing")
+            .unwrap_err()
+            .contains("not found"));
+
+        let outside = root.join("outside.jpg");
+        fs::write(&outside, [0xff, 0xd8, 0xff, 0xd9]).unwrap();
+        manifest.books[0].cover_path = Some(outside.to_string_lossy().into_owned());
+        write_manifest(&root, &manifest).unwrap();
+        assert!(library_cover_path_from_root(&root, "abc")
+            .unwrap_err()
+            .contains("escapes"));
         let _ = fs::remove_dir_all(root);
     }
 

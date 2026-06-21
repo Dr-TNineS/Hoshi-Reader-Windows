@@ -50,6 +50,7 @@ pub fn run() {
             anki::anki_add_note,
             anki::anki_store_dictionary_media,
             anki::anki_store_remote_audio,
+            anki::anki_store_book_cover,
             local_audio::anki_local_audio_status,
             local_audio::anki_import_local_audio,
             local_audio::anki_remove_local_audio,

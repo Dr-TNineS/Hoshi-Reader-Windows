@@ -22,6 +22,7 @@
     onSetAudioConfig = (_enabled: boolean, _sources: AnkiAudioSource[], _timeoutMs: number) => {},
     onSetForceSyncAfterAdd = (_enabled: boolean) => {},
     onSetNoteOptions = (_tags: string, _allowDuplicates: boolean, _duplicateScope: AnkiSettings["duplicateScope"], _checkAllModels: boolean) => {},
+    onSetCompactGlossaries = (_enabled: boolean) => {},
     localAudioStatus = { imported: false, sizeBytes: null, sources: [] },
     onSetLocalAudioEnabled = (_enabled: boolean) => {},
     onImportLocalAudio = () => {},
@@ -44,6 +45,7 @@
     onSetAudioConfig?: (enabled: boolean, sources: AnkiAudioSource[], timeoutMs: number) => void;
     onSetForceSyncAfterAdd?: (enabled: boolean) => void;
     onSetNoteOptions?: (tags: string, allowDuplicates: boolean, duplicateScope: AnkiSettings["duplicateScope"], checkAllModels: boolean) => void;
+    onSetCompactGlossaries?: (enabled: boolean) => void;
     localAudioStatus?: LocalAudioStatus;
     onSetLocalAudioEnabled?: (enabled: boolean) => void;
     onImportLocalAudio?: () => void;
@@ -247,6 +249,15 @@
         />
         <label for="anki-check-all-models">Check all note types</label>
       </div>
+    </div>
+    <div class="audio-toggle">
+      <UiSwitch
+        id="anki-compact-glossaries"
+        checked={settings?.compactGlossaries ?? false}
+        disabled={busy}
+        onCheckedChange={onSetCompactGlossaries}
+      />
+      <label for="anki-compact-glossaries">Compact glossary cards</label>
     </div>
   </div>
 

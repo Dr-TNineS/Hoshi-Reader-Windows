@@ -1,13 +1,13 @@
 <script lang="ts">
   import { invoke, isTauri } from "@tauri-apps/api/core";
-  import { ankiDictionaryMediaRefs, buildAnkiNoteRequest, isAnkiPreviewConfigured, payloadWithStoredDictionaryMedia, payloadWithStoredRemoteAudio, renderAnkiFieldPreview } from "./anki-field-renderer";
+  import { ankiDictionaryMediaRefs, buildAnkiNoteRequest, isAnkiPreviewConfigured, payloadWithStoredBookCover, payloadWithStoredDictionaryMedia, payloadWithStoredRemoteAudio, renderAnkiFieldPreview } from "./anki-field-renderer";
   import { loadCachedDictionaryStyles, type DictionaryStyleResource } from "./dictionary-style-cache";
   import { scopeDictionaryCss, type LookupPitchGroup, type LookupState } from "./lookup-popup";
   import { createLookupPopupViewModels, popupResultDictionaries } from "./lookup-popup-view-model";
   import { clearLookupHighlight, POPUP_LOOKUP_HIGHLIGHT } from "./lookup-highlight";
   import { markLookupPerformance } from "./lookup-performance";
   import { selectPopupTextFromPoint } from "./popup-selection";
-  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiRemoteAudioRequest, AnkiSettings, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LocalAudioStoreRequest, LocalAudioStoreResult, LookupAnkiPayload, ReaderSelection } from "./types";
+  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiRemoteAudioRequest, AnkiSettings, AnkiStoreBookCoverResult, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LocalAudioStoreRequest, LocalAudioStoreResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
   let {
     popupId,
@@ -33,6 +33,7 @@
     ankiSettings = null,
     buildAnkiPayload,
     onStoreAnkiMedia,
+    onStoreAnkiBookCover,
     onStoreAnkiRemoteAudio,
     onStoreAnkiLocalAudio,
     onAddAnkiNote,
@@ -60,6 +61,7 @@
     ankiSettings?: AnkiSettings | null;
     buildAnkiPayload?: (result: DictResult, resultIndex: number) => LookupAnkiPayload;
     onStoreAnkiMedia?: (media: AnkiDictionaryMediaRef[]) => Promise<AnkiStoreMediaResult>;
+    onStoreAnkiBookCover?: (bookId: string) => Promise<AnkiStoreBookCoverResult>;
     onStoreAnkiRemoteAudio?: (request: AnkiRemoteAudioRequest) => Promise<AnkiStoreRemoteAudioResult>;
     onStoreAnkiLocalAudio?: (request: LocalAudioStoreRequest) => Promise<LocalAudioStoreResult>;
     onAddAnkiNote?: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
@@ -338,6 +340,13 @@
         : payload;
       ankiMediaWarnings = storeResult?.warnings ?? [];
       let notePreviewFields = renderAnkiFieldPreview(notePayload, ankiSettings);
+      const coverResult = await storeAnkiCoverForPayload(notePayload, notePreviewFields);
+      if (ankiActionKey !== key) return;
+      if (coverResult) {
+        notePayload = payloadWithStoredBookCover(notePayload, coverResult.filename);
+        ankiMediaWarnings = [...ankiMediaWarnings, ...coverResult.warnings];
+        notePreviewFields = renderAnkiFieldPreview(notePayload, ankiSettings);
+      }
       const audioResult = await storeAnkiAudioForPayload(notePayload, notePreviewFields);
       if (ankiActionKey !== key) return;
       if (audioResult) {
@@ -365,6 +374,16 @@
   async function storeAnkiMediaForPayload(payload: LookupAnkiPayload): Promise<AnkiStoreMediaResult | null> {
     if (!onStoreAnkiMedia || payload.media.length === 0) return null;
     return onStoreAnkiMedia(ankiDictionaryMediaRefs(payload.media));
+  }
+
+  async function storeAnkiCoverForPayload(
+    payload: LookupAnkiPayload,
+    fields: AnkiFieldPreview[],
+  ): Promise<AnkiStoreBookCoverResult | null> {
+    if (!fields.some((field) => field.template.toLowerCase().includes("{book-cover}"))) return null;
+    const bookId = payload.sourceBook.bookId?.trim();
+    if (!bookId || !onStoreAnkiBookCover) return null;
+    return onStoreAnkiBookCover(bookId);
   }
 
   async function storeAnkiAudioForPayload(

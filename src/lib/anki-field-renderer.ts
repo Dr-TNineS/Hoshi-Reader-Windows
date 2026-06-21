@@ -127,7 +127,7 @@ export function renderAnkiFieldPreview(
     return {
       field,
       template,
-      value: renderTemplate(template, payload),
+      value: renderTemplate(template, payload, settings?.compactGlossaries ?? false),
     };
   });
 }
@@ -155,14 +155,14 @@ export function buildAnkiNoteRequest(
   };
 }
 
-export function renderTemplate(template: string, payload: LookupAnkiPayload): string {
-  return template.replace(TOKEN_PATTERN, (_match, token: string) => tokenValue(token, payload));
+export function renderTemplate(template: string, payload: LookupAnkiPayload, compactGlossaries = false): string {
+  return template.replace(TOKEN_PATTERN, (_match, token: string) => tokenValue(token, payload, compactGlossaries));
 }
 
-function tokenValue(token: string, payload: LookupAnkiPayload): string {
+function tokenValue(token: string, payload: LookupAnkiPayload, compactGlossaries: boolean): string {
   const normalized = token.toLowerCase();
   if (normalized.startsWith(SINGLE_GLOSSARY_PREFIX)) {
-    return glossaryTextForDictionary(token.slice(SINGLE_GLOSSARY_PREFIX.length), payload);
+    return glossaryTextForDictionary(token.slice(SINGLE_GLOSSARY_PREFIX.length), payload, compactGlossaries);
   }
   switch (normalized) {
     case "expression":
@@ -172,9 +172,9 @@ function tokenValue(token: string, payload: LookupAnkiPayload): string {
     case "popup-selection-text":
       return payload.selectedText;
     case "glossary-first":
-      return payload.glossary[0] ? renderAnkiGlossaryEntries([payload.glossary[0]]) : "";
+      return payload.glossary[0] ? renderAnkiGlossaryEntries([payload.glossary[0]], compactGlossaries) : "";
     case "glossary":
-      return renderAnkiGlossaryEntries(payload.glossary);
+      return renderAnkiGlossaryEntries(payload.glossary, compactGlossaries);
     case "sentence":
       return payload.sentence;
     case "document-title":
@@ -187,6 +187,8 @@ function tokenValue(token: string, payload: LookupAnkiPayload): string {
       return renderDictionaryMedia(payload.media);
     case "audio":
       return payload.audioFilename ? `[sound:${payload.audioFilename}]` : "";
+    case "book-cover":
+      return payload.coverFilename ? `<img src="${escapeHtml(payload.coverFilename)}">` : "";
     default:
       return "";
   }
@@ -285,12 +287,12 @@ function defaultTemplateForField(field: string): string {
   return "";
 }
 
-function glossaryTextForDictionary(dictionary: string, payload: LookupAnkiPayload): string {
+function glossaryTextForDictionary(dictionary: string, payload: LookupAnkiPayload, compactGlossaries: boolean): string {
   const exact = payload.glossary.filter((entry) => entry.dict === dictionary);
-  if (exact.length > 0) return renderAnkiGlossaryEntries(exact);
+  if (exact.length > 0) return renderAnkiGlossaryEntries(exact, compactGlossaries);
 
   const normalized = normalizeDictionaryName(dictionary);
-  return renderAnkiGlossaryEntries(payload.glossary.filter((entry) => normalizeDictionaryName(entry.dict) === normalized));
+  return renderAnkiGlossaryEntries(payload.glossary.filter((entry) => normalizeDictionaryName(entry.dict) === normalized), compactGlossaries);
 }
 
 export function payloadWithStoredRemoteAudio(
@@ -300,10 +302,20 @@ export function payloadWithStoredRemoteAudio(
   return { ...payload, audioFilename: filename };
 }
 
-function renderAnkiGlossaryEntries(entries: GlossaryEntry[]): string {
+export function payloadWithStoredBookCover(
+  payload: LookupAnkiPayload,
+  filename: string | null,
+): LookupAnkiPayload {
+  return { ...payload, coverFilename: filename };
+}
+
+const COMPACT_GLOSSARY_STYLE = "<style>.yomitan-glossary ol,.yomitan-glossary ul{margin:.2em 0;padding-left:1.25em}.yomitan-glossary li{margin:.1em 0}.yomitan-glossary p{margin:.15em 0}</style>";
+
+function renderAnkiGlossaryEntries(entries: GlossaryEntry[], compactGlossaries = false): string {
   const items = entries.map((entry, index) => renderAnkiGlossaryEntry(entry, index)).filter(Boolean).join("");
   if (!items) return "";
-  return `<div style="text-align: left;" class="yomitan-glossary"><ol>${items}</ol></div>`;
+  const style = compactGlossaries ? COMPACT_GLOSSARY_STYLE : "";
+  return `${style}<div style="text-align: left;" class="yomitan-glossary"><ol>${items}</ol></div>`;
 }
 
 function renderAnkiGlossaryEntry(entry: GlossaryEntry, index: number): string {

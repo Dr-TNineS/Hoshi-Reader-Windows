@@ -89,6 +89,8 @@ async function panelMetrics(page) {
       allowDuplicates: state?.getAttribute("data-allow-duplicates") ?? "",
       duplicateScope: state?.getAttribute("data-duplicate-scope") ?? "",
       checkAllModels: state?.getAttribute("data-check-all-models") ?? "",
+      compactGlossaries: state?.getAttribute("data-compact-glossaries") ?? "",
+      compactGlossaryEvents: state?.getAttribute("data-compact-glossary-events") ?? "",
       localAudioEnabled: state?.getAttribute("data-local-audio-enabled") ?? "",
       localAudioEvents: state?.getAttribute("data-local-audio-events") ?? "",
       localImportClicks: Number(state?.getAttribute("data-local-import-clicks") ?? 0),
@@ -161,6 +163,9 @@ async function main() {
     assert(metrics.tags === "hoshi-reader mined" && metrics.allowDuplicates === "true", "Note tags and allow-duplicates should update through the panel boundary.", metrics);
     assert(metrics.duplicateScope === "deckRoot" && metrics.checkAllModels === "true", "Duplicate scope and all-model checking should update through the panel boundary.", metrics);
     assert(metrics.noteOptionEvents.includes("deckRoot"), "Note option changes should emit settings events.", metrics);
+    await page.getByLabel("Compact glossary cards").click();
+    metrics = await panelMetrics(page);
+    assert(metrics.compactGlossaries === "true" && metrics.compactGlossaryEvents.includes("true"), "Compact glossary toggle should persist through the panel boundary.", metrics);
     assert(metrics.fieldMappings.includes("Front:{expression}") && metrics.fieldMappings.includes("Back:{glossary-first}"), "Ready panel should expose saved field templates.", metrics);
     assert(metrics.handlebarButtonCount === 3, "Ready panel should show a handlebar picker for each field template.", metrics);
     await page.locator(".field-template-row").filter({ hasText: "Front" }).locator(".handlebar-trigger").click();
