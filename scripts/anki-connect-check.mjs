@@ -82,6 +82,8 @@ async function panelMetrics(page) {
       audioSource: state?.getAttribute("data-audio-source") ?? "",
       audioUrl: state?.getAttribute("data-audio-url") ?? "",
       audioTimeout: Number(state?.getAttribute("data-audio-timeout") ?? 0),
+      forceSyncAfterAdd: state?.getAttribute("data-force-sync-after-add") ?? "",
+      syncEvents: state?.getAttribute("data-sync-events") ?? "",
       localAudioEnabled: state?.getAttribute("data-local-audio-enabled") ?? "",
       localAudioEvents: state?.getAttribute("data-local-audio-events") ?? "",
       localImportClicks: Number(state?.getAttribute("data-local-import-clicks") ?? 0),
@@ -139,6 +141,10 @@ async function main() {
     assert(metrics.text.includes("Basic"), "Ready panel should show note type names.", metrics);
     assert(metrics.text.includes("Front") && metrics.text.includes("Back"), "Ready panel should show note fields.", metrics);
     assert(metrics.text.includes("Word Audio") && metrics.text.includes("Audio export disabled"), "Ready panel should expose word audio settings boundary.", metrics);
+    assert(metrics.text.includes("Sync after add"), "Ready panel should expose optional post-add sync.", metrics);
+    await page.getByLabel("Sync after add").click();
+    metrics = await panelMetrics(page);
+    assert(metrics.forceSyncAfterAdd === "true" && metrics.syncEvents.includes("true"), "Sync toggle should update settings through the panel boundary.", metrics);
     assert(metrics.fieldMappings.includes("Front:{expression}") && metrics.fieldMappings.includes("Back:{glossary-first}"), "Ready panel should expose saved field templates.", metrics);
     assert(metrics.handlebarButtonCount === 3, "Ready panel should show a handlebar picker for each field template.", metrics);
     await page.locator(".field-template-row").filter({ hasText: "Front" }).locator(".handlebar-trigger").click();

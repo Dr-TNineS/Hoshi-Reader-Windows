@@ -137,12 +137,12 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - HSA-compatible local audio database import is implemented under app data `audio/android.db`, with staged replacement, SQLite/schema validation, app-owned storage, source ordering, reading-first matching, and blob-only MP3/Opus/OGG loading.
   - Local audio is attempted before remote audio for Anki fields; local misses and ordinary read warnings fall back to the configured remote source without blocking text-note creation.
   - Local audio import/removal, enable state, source ordering, matching, fallback, and narrow-window UI are covered by Rust and frontend probes.
+  - Anki settings include a default-off post-add sync option. A successful note remains `added` when AnkiConnect sync fails, with the failure returned and displayed as a secondary warning; duplicate and failed note creation do not sync.
 
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata and reading state are still JSON.
-- Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; real remote-audio-plus-AnkiConnect and real HSA local-audio database runtime validation are also not verified. Sync remains unimplemented.
-- No sync implementation.
+- Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; real remote-audio-plus-AnkiConnect, real HSA local-audio database, and real post-add sync runtime validation are also not verified.
 - No full settings surface; only the minimal bookshelf Appearance and Advanced startup-behavior panels are implemented.
 - No verified app-owned cover thumbnail cache.
 - Runtime validation with a normal media-bearing Yomitan dictionary is not verified; on 2026-06-16, `HSW_MEDIA_YOMITAN_ZIP` was unset, `OALDPE10.zip` had `mediaCount=0`, and `MK3Fix0213.zip` remained unsuitable because compatibility import intentionally skips media.

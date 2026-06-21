@@ -377,6 +377,7 @@
       localAudioEnabled: false,
       audioSources: defaultAnkiAudioSources(),
       audioDownloadTimeoutMs: 5000,
+      forceSyncAfterAdd: false,
       lastFetchedAt: null,
     };
   }
@@ -502,6 +503,13 @@
     if (ankiBusy) return;
     const base = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft };
     ankiSettings = { ...base, localAudioEnabled: enabled };
+    await saveAnkiSettings();
+  }
+
+  async function setAnkiForceSyncAfterAdd(enabled: boolean) {
+    if (ankiBusy) return;
+    const base = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft };
+    ankiSettings = { ...base, forceSyncAfterAdd: enabled };
     await saveAnkiSettings();
   }
 
@@ -1175,6 +1183,7 @@
       onSetAnkiFieldTemplate={setAnkiFieldTemplate}
       onSetAnkiAudioConfig={setAnkiAudioConfig}
       onSetAnkiLocalAudioEnabled={setAnkiLocalAudioEnabled}
+      onSetAnkiForceSyncAfterAdd={setAnkiForceSyncAfterAdd}
       onImportLocalAudio={importLocalAudio}
       onRemoveLocalAudio={removeLocalAudio}
       onMoveLocalAudioSource={moveLocalAudioSource}

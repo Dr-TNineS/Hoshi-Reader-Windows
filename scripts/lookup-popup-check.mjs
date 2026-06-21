@@ -50,6 +50,7 @@ async function openProbe(page, state, options = {}) {
   if (options.mediaMode) params.set("mediaMode", options.mediaMode);
   if (options.ankiMode) params.set("ankiMode", options.ankiMode);
   if (options.ankiAddMode) params.set("ankiAddMode", options.ankiAddMode);
+  if (options.forceSync) params.set("forceSync", "enabled");
   if (options.ankiStoreMode) params.set("ankiStoreMode", options.ankiStoreMode);
   if (options.ankiAudioStoreMode) params.set("ankiAudioStoreMode", options.ankiAudioStoreMode);
   if (options.localAudioStoreMode) params.set("localAudioStoreMode", options.localAudioStoreMode);
@@ -339,6 +340,12 @@ async function main() {
     assert(ankiAdded.ankiLastFields.Media.includes("<img src=\"stored_hsw_") && ankiAdded.ankiLastFields.Media.includes(".svg"), "Add Anki should include stored dictionary media filenames.", ankiAdded);
     assert(ankiAdded.text.includes("Added Anki note 4242."), "Added state should show the Anki note id message.", ankiAdded);
     assert(ankiAdded.text.includes("Word audio stored as hsw_audio_probe.mp3"), "Add state should expose stored word audio.", ankiAdded);
+
+    await openProbe(page, "ready", { ankiMode: "configured", ankiAddMode: "syncWarning", forceSync: true });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiSyncWarning = await popupMetrics(page);
+    assert(ankiSyncWarning.ankiAddCount === 1 && ankiSyncWarning.text.includes("Added Anki note 4242."), "Sync failure should preserve the added note state.", ankiSyncWarning);
+    assert(ankiSyncWarning.text.includes("Anki sync failed: probe failure"), "Sync failure should be shown as a secondary warning.", ankiSyncWarning);
 
     await openProbe(page, "ready", { ankiMode: "configured", localAudio: true });
     await page.getByRole("button", { name: "Add to Anki" }).click();

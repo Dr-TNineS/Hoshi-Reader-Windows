@@ -124,6 +124,7 @@
       localAudioEnabled: params.get("localAudio") === "enabled",
       audioSources: [{ name: "Probe Audio", url: "https://example.invalid/audio?term={term}&reading={reading}", enabled: true }],
       audioDownloadTimeoutMs: 5000,
+      forceSyncAfterAdd: params.get("forceSync") === "enabled",
       lastFetchedAt: 1780000000000,
     }
     : null;
@@ -346,9 +347,14 @@
     ankiAddRequests = [...ankiAddRequests, note];
     if (ankiAddMode === "error") throw new Error("Probe AnkiConnect failure");
     if (ankiAddMode === "duplicate") {
-      return { status: "duplicate", noteId: null, message: "cannot create note because it is a duplicate" };
+      return { status: "duplicate", noteId: null, message: "cannot create note because it is a duplicate", warnings: [] };
     }
-    return { status: "added", noteId: 4242, message: "Added Anki note 4242." };
+    return {
+      status: "added",
+      noteId: 4242,
+      message: "Added Anki note 4242.",
+      warnings: ankiAddMode === "syncWarning" ? ["Anki sync failed: probe failure"] : [],
+    };
   }
 
   async function storeAnkiMedia(media: AnkiDictionaryMediaRef[]): Promise<AnkiStoreMediaResult> {

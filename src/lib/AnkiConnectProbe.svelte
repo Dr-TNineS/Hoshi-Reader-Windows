@@ -88,6 +88,7 @@
     localAudioEnabled: false,
     audioSources: [{ name: "Default", url: "", enabled: false }],
     audioDownloadTimeoutMs: 5000,
+    forceSyncAfterAdd: false,
     lastFetchedAt: 1780000000000,
   };
 
@@ -101,6 +102,7 @@
   let fieldTemplateEvents = $state<string[]>([]);
   let audioEvents = $state<string[]>([]);
   let localAudioEvents = $state<string[]>([]);
+  let syncEvents = $state<string[]>([]);
   let localImportClicks = $state(0);
   let localRemoveClicks = $state(0);
   let localAudioStatus = $state<LocalAudioStatus>({
@@ -148,6 +150,11 @@
     if (settings) settings = { ...settings, localAudioEnabled: enabled };
   }
 
+  function setForceSyncAfterAdd(enabled: boolean) {
+    syncEvents = [...syncEvents, String(enabled)];
+    if (settings) settings = { ...settings, forceSyncAfterAdd: enabled };
+  }
+
   function moveLocalAudioSource(source: string, direction: -1 | 1) {
     localAudioEvents = [...localAudioEvents, `move:${source}:${direction}`];
     const sources = [...localAudioStatus.sources];
@@ -175,6 +182,7 @@
     onSelectNoteType={selectNoteType}
     onSetFieldTemplate={setFieldTemplate}
     onSetAudioConfig={setAudioConfig}
+    onSetForceSyncAfterAdd={setForceSyncAfterAdd}
     {localAudioStatus}
     onSetLocalAudioEnabled={setLocalAudioEnabled}
     onImportLocalAudio={() => localImportClicks += 1}
@@ -187,6 +195,7 @@
     data-ping-clicks={pingClicks}
     data-fetch-clicks={fetchClicks}
     data-save-clicks={saveClicks}
+    data-sync-events={syncEvents.join(",")}
     data-deck-events={deckEvents.join(",")}
     data-note-type-events={noteTypeEvents.join(",")}
     data-field-template-events={fieldTemplateEvents.join(",")}
@@ -198,6 +207,7 @@
     data-audio-source={settings?.audioSources[0]?.name ?? ""}
     data-audio-url={settings?.audioSources[0]?.url ?? ""}
     data-audio-timeout={settings?.audioDownloadTimeoutMs ?? 0}
+    data-force-sync-after-add={settings?.forceSyncAfterAdd ?? false}
     data-local-audio-enabled={settings?.localAudioEnabled ? "true" : "false"}
     data-local-audio-events={localAudioEvents.join("|")}
     data-local-import-clicks={localImportClicks}

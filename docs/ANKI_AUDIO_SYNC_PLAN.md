@@ -5,9 +5,10 @@ Last updated: 2026-06-21
 This document defines the next Anki scope after text note creation and
 dictionary image media export.
 
-Implementation status as of 2026-06-21: Slice 5A word-audio settings and Slice
-5B remote word-audio fetch/store and Slice 5C HSA-compatible local word audio
-are implemented. Sasayaki audio and sync are not implemented.
+Implementation status as of 2026-06-21: Slice 5A word-audio settings, Slice 5B
+remote word-audio fetch/store, Slice 5C HSA-compatible local word audio, and
+Slice 5D optional AnkiConnect sync are implemented. Sasayaki audio is not
+implemented.
 
 ## Current Baseline
 
@@ -169,11 +170,15 @@ Validation:
 
 Goal: optionally call AnkiConnect `sync` after a successful addNote.
 
+Status: implemented on 2026-06-21. Automated Rust, Anki panel, lookup popup,
+and production build validation passes; real sync runtime validation is not
+verified.
+
 Key changes:
 
 - Add `forceSyncAfterAdd: boolean` to Anki settings, default `false`.
-- Add Rust command or extend add-note result path to call AnkiConnect `sync`
-  only after `addNote` returns success.
+- Extend the add-note result with secondary warnings and call AnkiConnect
+  `sync` only after `addNote` returns success.
 - Sync failure should not rewrite the note result from added to failed; show a
   secondary warning.
 
@@ -206,5 +211,5 @@ HSW should first decide whether Sasayaki itself is in scope for Windows.
 
 ## Recommended Next Step
 
-Implement Slice 5D optional AnkiConnect sync next. Keep it default-off and
-secondary to a successful note result.
+Implement Slice 5E tags and duplicate-request policy. Keep the post-add sync
+setting default-off and preserve successful note status when sync fails.

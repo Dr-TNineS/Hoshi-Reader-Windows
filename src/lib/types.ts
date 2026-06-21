@@ -261,6 +261,7 @@ export interface AnkiSettings {
   localAudioEnabled: boolean;
   audioSources: AnkiAudioSource[];
   audioDownloadTimeoutMs: number;
+  forceSyncAfterAdd: boolean;
   lastFetchedAt: number | null;
 }
 
@@ -293,6 +294,7 @@ export interface AnkiNoteRequest {
   modelName: string;
   fields: Record<string, string>;
   tags: string[];
+  forceSyncAfterAdd: boolean;
 }
 
 export interface AnkiNoteCheckResult {
@@ -305,4 +307,5 @@ export interface AnkiAddNoteResult {
   status: "added" | "duplicate" | "error";
   noteId: number | null;
   message: string;
+  warnings: string[];
 }

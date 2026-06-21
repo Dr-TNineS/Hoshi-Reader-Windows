@@ -20,6 +20,7 @@
     onSelectNoteType = (_noteType: string) => {},
     onSetFieldTemplate = (_field: string, _template: string) => {},
     onSetAudioConfig = (_enabled: boolean, _sources: AnkiAudioSource[], _timeoutMs: number) => {},
+    onSetForceSyncAfterAdd = (_enabled: boolean) => {},
     localAudioStatus = { imported: false, sizeBytes: null, sources: [] },
     onSetLocalAudioEnabled = (_enabled: boolean) => {},
     onImportLocalAudio = () => {},
@@ -40,6 +41,7 @@
     onSelectNoteType?: (noteType: string) => void;
     onSetFieldTemplate?: (field: string, template: string) => void;
     onSetAudioConfig?: (enabled: boolean, sources: AnkiAudioSource[], timeoutMs: number) => void;
+    onSetForceSyncAfterAdd?: (enabled: boolean) => void;
     localAudioStatus?: LocalAudioStatus;
     onSetLocalAudioEnabled?: (enabled: boolean) => void;
     onImportLocalAudio?: () => void;
@@ -181,6 +183,24 @@
     {:else}
       <p class="empty">Fetch AnkiConnect config to edit field templates.</p>
     {/if}
+  </div>
+
+  <div class="audio-row">
+    <div class="audio-head">
+      <div>
+        <p class="fields-title">Sync</p>
+        <p class="audio-summary">Run AnkiConnect sync only after a note is added successfully.</p>
+      </div>
+      <div class="audio-toggle">
+        <UiSwitch
+          id="anki-force-sync-after-add"
+          checked={settings?.forceSyncAfterAdd ?? false}
+          disabled={busy}
+          onCheckedChange={onSetForceSyncAfterAdd}
+        />
+        <label for="anki-force-sync-after-add">Sync after add</label>
+      </div>
+    </div>
   </div>
 
   <div class="audio-row">

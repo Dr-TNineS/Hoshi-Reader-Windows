@@ -148,6 +148,7 @@ export function buildAnkiNoteRequest(
     modelName: noteType.name,
     fields,
     tags: ["hoshi-reader"],
+    forceSyncAfterAdd: settings.forceSyncAfterAdd,
   };
 }
 

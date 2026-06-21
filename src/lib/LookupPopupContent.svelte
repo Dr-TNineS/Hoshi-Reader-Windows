@@ -352,6 +352,7 @@
       if (!note) return;
       const result = await onAddAnkiNote(note);
       if (ankiActionKey !== key) return;
+      ankiMediaWarnings = [...ankiMediaWarnings, ...result.warnings];
       ankiActionState = result.status === "added" ? "added" : "duplicate";
       ankiActionMessage = result.message;
     } catch (error) {

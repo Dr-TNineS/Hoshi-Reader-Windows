@@ -49,6 +49,7 @@
     onSelectAnkiNoteType,
     onSetAnkiFieldTemplate,
     onSetAnkiAudioConfig,
+    onSetAnkiForceSyncAfterAdd = (_enabled: boolean) => {},
     onSetAnkiLocalAudioEnabled = (_enabled: boolean) => {},
     onImportLocalAudio = () => {},
     onRemoveLocalAudio = () => {},
@@ -91,6 +92,7 @@
     onSelectAnkiNoteType: (noteType: string) => void;
     onSetAnkiFieldTemplate: (field: string, template: string) => void;
     onSetAnkiAudioConfig: (audioEnabled: boolean, audioSources: AnkiAudioSource[], audioDownloadTimeoutMs: number) => void;
+    onSetAnkiForceSyncAfterAdd?: (enabled: boolean) => void;
     onSetAnkiLocalAudioEnabled?: (enabled: boolean) => void;
     onImportLocalAudio?: () => void;
     onRemoveLocalAudio?: () => void;
@@ -272,6 +274,7 @@
         onSelectNoteType={onSelectAnkiNoteType}
         onSetFieldTemplate={onSetAnkiFieldTemplate}
         onSetAudioConfig={onSetAnkiAudioConfig}
+        onSetForceSyncAfterAdd={onSetAnkiForceSyncAfterAdd}
         {localAudioStatus}
         onSetLocalAudioEnabled={onSetAnkiLocalAudioEnabled}
         onImportLocalAudio={onImportLocalAudio}

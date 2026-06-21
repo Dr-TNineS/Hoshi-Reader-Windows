@@ -73,6 +73,8 @@ pub struct AnkiSettings {
     pub audio_sources: Vec<AnkiAudioSource>,
     #[serde(default = "default_audio_download_timeout_ms")]
     pub audio_download_timeout_ms: u32,
+    #[serde(default)]
+    pub force_sync_after_add: bool,
     pub last_fetched_at: Option<u64>,
 }
 
@@ -90,6 +92,7 @@ impl Default for AnkiSettings {
             local_audio_enabled: false,
             audio_sources: default_audio_sources(),
             audio_download_timeout_ms: default_audio_download_timeout_ms(),
+            force_sync_after_add: false,
             last_fetched_at: None,
         }
     }
@@ -112,6 +115,8 @@ pub struct AnkiNoteRequest {
     pub fields: BTreeMap<String, String>,
     #[serde(default)]
     pub tags: Vec<String>,
+    #[serde(default)]
+    pub force_sync_after_add: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -128,6 +133,7 @@ pub struct AnkiAddNoteResult {
     pub status: String,
     pub note_id: Option<i64>,
     pub message: String,
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -241,6 +247,7 @@ pub fn anki_fetch_config(endpoint: String, app: AppHandle) -> Result<AnkiSetting
         local_audio_enabled: current.local_audio_enabled,
         audio_sources: current.audio_sources,
         audio_download_timeout_ms: current.audio_download_timeout_ms,
+        force_sync_after_add: current.force_sync_after_add,
         last_fetched_at: Some(now_millis()?),
     });
     write_settings(&root, &next)?;
@@ -254,17 +261,32 @@ pub fn anki_check_note(note: AnkiNoteRequest) -> Result<AnkiNoteCheckResult, Str
 
 #[tauri::command]
 pub fn anki_add_note(note: AnkiNoteRequest) -> Result<AnkiAddNoteResult, String> {
-    let check = check_note(&note)?;
+    add_note_with_request(&note, anki_request)
+}
+
+fn add_note_with_request<F>(
+    note: &AnkiNoteRequest,
+    mut request: F,
+) -> Result<AnkiAddNoteResult, String>
+where
+    F: FnMut(&str, &str, Option<Value>) -> Result<Value, String>,
+{
+    let endpoint = normalize_endpoint(&note.endpoint)?;
+    let check = parse_note_check_result(request(
+        &endpoint,
+        "canAddNotesWithErrorDetail",
+        Some(json!({ "notes": [note_json(note)?] })),
+    )?)?;
     if !check.can_add {
         return Ok(AnkiAddNoteResult {
             status: "duplicate".into(),
             note_id: None,
             message: check.message,
+            warnings: Vec::new(),
         });
     }
 
-    let endpoint = normalize_endpoint(&note.endpoint)?;
-    let result = anki_request(
+    let result = request(
         &endpoint,
         "addNote",
         Some(json!({ "note": note_json(&note)? })),
@@ -272,10 +294,17 @@ pub fn anki_add_note(note: AnkiNoteRequest) -> Result<AnkiAddNoteResult, String>
     let note_id = result
         .as_i64()
         .ok_or_else(|| "AnkiConnect addNote returned an unexpected response.".to_string())?;
+    let mut warnings = Vec::new();
+    if note.force_sync_after_add {
+        if let Err(error) = request(&endpoint, "sync", None) {
+            warnings.push(format!("Anki sync failed: {error}"));
+        }
+    }
     Ok(AnkiAddNoteResult {
         status: "added".into(),
         note_id: Some(note_id),
         message: format!("Added Anki note {note_id}."),
+        warnings,
     })
 }
 
@@ -1489,6 +1518,7 @@ mod tests {
             model_name: "Basic".into(),
             fields,
             tags: vec!["hoshi-reader".into()],
+            force_sync_after_add: false,
         };
         let value = note_json(&note).unwrap();
         assert_eq!(value["deckName"], "Mining");
@@ -1524,6 +1554,59 @@ mod tests {
         assert!(duplicate.message.contains("duplicate"));
 
         assert!(parse_note_check_result(json!({ "bad": true })).is_err());
+    }
+
+    #[test]
+    fn sync_runs_only_after_success_and_failure_is_a_warning() {
+        let mut fields = BTreeMap::new();
+        fields.insert("Expression".into(), "probe".into());
+        let note = AnkiNoteRequest {
+            endpoint: DEFAULT_ENDPOINT.into(),
+            deck_name: "Mining".into(),
+            model_name: "Basic".into(),
+            fields,
+            tags: vec!["hoshi-reader".into()],
+            force_sync_after_add: true,
+        };
+        let mut actions = Vec::new();
+        let result = add_note_with_request(&note, |_endpoint, action, _params| {
+            actions.push(action.to_string());
+            match action {
+                "canAddNotesWithErrorDetail" => Ok(json!([{ "canAdd": true, "error": null }])),
+                "addNote" => Ok(json!(42)),
+                "sync" => Err("probe sync failure".into()),
+                _ => unreachable!(),
+            }
+        })
+        .unwrap();
+        assert_eq!(actions, ["canAddNotesWithErrorDetail", "addNote", "sync"]);
+        assert_eq!(result.status, "added");
+        assert_eq!(result.note_id, Some(42));
+        assert_eq!(result.warnings.len(), 1);
+        assert!(result.warnings[0].contains("probe sync failure"));
+    }
+
+    #[test]
+    fn duplicate_never_runs_sync() {
+        let mut fields = BTreeMap::new();
+        fields.insert("Expression".into(), "probe".into());
+        let note = AnkiNoteRequest {
+            endpoint: DEFAULT_ENDPOINT.into(),
+            deck_name: "Mining".into(),
+            model_name: "Basic".into(),
+            fields,
+            tags: Vec::new(),
+            force_sync_after_add: true,
+        };
+        let mut actions = Vec::new();
+        let result = add_note_with_request(&note, |_endpoint, action, _params| {
+            actions.push(action.to_string());
+            Ok(json!([{ "canAdd": false, "error": "duplicate" }]))
+        })
+        .unwrap();
+        assert_eq!(actions, ["canAddNotesWithErrorDetail"]);
+        assert_eq!(result.status, "duplicate");
+        assert!(result.warnings.is_empty());
     }
 
     fn test_manifest(root: &Path) -> DictionaryManifest {
@@ -1640,6 +1723,7 @@ mod tests {
             model_name: model_name.clone(),
             fields,
             tags: vec!["hoshi-reader-runtime-validation".into()],
+            force_sync_after_add: false,
         };
 
         let added = anki_add_note(note.clone()).unwrap();
