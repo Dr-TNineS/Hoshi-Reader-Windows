@@ -16,7 +16,11 @@
 - 修改范围应贴合当前任务。除非用户明确要求一个完整切片，否则不要把 reader、storage、dictionary、settings、packaging 改动混在一起。
 - 如果实现改动导致 `docs/` 下的状态、路线图或行为基线不准确，应在同一任务里同步更新最小相关文档；`STATUS.md` 只保留索引级信息。
 - 文档里不确定或未验证的项目事实必须标注为 `unknown` / `not verified`，不要猜。
-- 做长任务时自动把任务拆分为slice，按照slice依次做，每做完一个slice就commit下，并根据当前情况重新审视下个slice是否需要调整
+- 对包含多个可独立交付 slice 的功能，在修改实现前必须先在 `docs/` 创建或更新一个专门的计划文档；可复用既有 feature plan/roadmap，但禁止只把完整路线留在聊天、临时 Todo 或 agent 上下文里。
+- 计划文档至少记录目标/非目标、前置条件、按依赖排序的完整 slice 列表、每个 slice 的验收与验证方式，以及已完成/当前/待做状态。该文档是功能跨会话恢复时的路线图真源。
+- `docs/TODO.md` 只记录当前工作和紧接着一个可执行的 next slice，并明确指向对应计划文档；不要把完整长期路线复制进 TODO。
+- 实施时一次只推进一个 slice。开始编码前先把该 slice 写进 `docs/TODO.md`；完成后更新计划文档的状态，记录相关 commit 和验证结果，重新审视后再将下一个 slice 放进 TODO。
+- 新会话或中断恢复时，先读相关计划文档、`docs/TODO.md` 和当前代码/commit 状态，确认当前 slice 后再改动；此前聊天记录不能取代仓库中的计划记录。
 
 ## 架构基线
 
@@ -75,7 +79,7 @@
 ## 文档规则
 
 - `docs/PROJECT_STATUS.md` 记录当前工程状态：已实现功能、stub、known issues、risk areas 和 validation commands。
-- `docs/TODO.md` 记录短交接和下一步；`docs/LOOKUP_ROADMAP.md` 记录 lookup 切片；`docs/READER_ENTRY_CHARACTERIZATION.md` 和 `docs/reader-layout-baseline.md` 记录 reader 行为基线。
+- `docs/TODO.md` 记录短交接、当前工作和下一个可执行 slice，并指向对应的 feature plan；`docs/LOOKUP_ROADMAP.md` 记录 lookup 切片；`docs/READER_ENTRY_CHARACTERIZATION.md` 和 `docs/reader-layout-baseline.md` 记录 reader 行为基线。
 - `STATUS.md` 只保留文档索引和当前优先级提示；如与 `docs/` 内容重合，保留 `docs/` 下的详细版本。
 - `AGENTS.md` 记录未来 agent 需要长期遵守的仓库级规则。
 - 长调查日志、临时 debugging 细节、一次性决策不应写入 `AGENTS.md`。
