@@ -198,16 +198,178 @@ Validation:
 - `cd src-tauri; cargo test --lib`
 - `cd src-tauri; cargo check`
 
-### Slice 5E: Sasayaki Sentence Audio Evaluation
+### Slice 5E: Tags And Duplicate Request Policy
 
-Goal: evaluate sentence-audio export only after HSW has a reader audio/Sasayaki
-model.
+Goal: align the note request with HSA's configurable tags and AnkiConnect
+duplicate options.
 
-Status: blocked by missing HSW Sasayaki playback/cue subsystem.
+Key changes:
 
-Do not implement in the Anki path first. HSA's `{sasayaki-audio}` depends on
-cue matching, playback source management, clipping/export, and reader controls.
-HSW should first decide whether Sasayaki itself is in scope for Windows.
+- Add editable tags, allow duplicates, all-model checking, and Collection,
+  Deck, or Deck Root duplicate scopes.
+- Skip the blocking duplicate preflight when duplicates are allowed.
+- Generate exact AnkiConnect `allowDuplicate`, `duplicateScope`, and
+  `duplicateScopeOptions` values.
+- Introduce the versioned settings normalizer used by later settings slices.
+
+### Slice 5F: Compact Glossary And Book Cover
+
+Goal: align exported glossary presentation and implement `{book-cover}`.
+
+Key changes:
+
+- Add default-off compact glossary styling for exported Anki HTML.
+- Accept only `bookId` from the frontend; resolve the cover through the
+  app-owned library manifest in Rust.
+- Validate the resolved path, signature, type, and size, then store a stable
+  `hsw_cover_<hash>.<ext>` filename.
+- Keep ordinary missing-cover failures non-fatal and security violations hard.
+- Do not add an `embedMedia` toggle: configured AnkiConnect media remains
+  embedded, matching HSA's effective behavior.
+
+### Slice 5G: Multiple Remote Audio Sources
+
+Goal: finish the remote source model and ordered fallback behavior.
+
+Key changes:
+
+- Give each remote source a stable id and support add, remove, edit, enable,
+  and reorder actions.
+- Resolve local audio first, then each enabled remote source in saved order.
+- Continue after ordinary source warnings, stop after the first hit, and abort
+  immediately on a security error.
+- Migrate legacy sources without relying on editable names or array indexes.
+
+### Slice 5H: Shared Word Audio Resolver And Playback
+
+Goal: enable popup playback without duplicating the Anki export resolver.
+
+Key changes:
+
+- Move local-first and remote-fallback resolution into a shared Rust
+  `WordAudioResolver` that returns verified bytes, type, digest, source, and
+  warnings.
+- Use the same resolver for Anki media storage and bounded temporary playback
+  cache output.
+- Enable the popup play/stop action, cancellation, lookup cleanup, and
+  autoplay. Persist playback mode for Slice 5N.
+
+### Slice 5I-0: Audio Clipping Capability Spike
+
+Goal: prove the Windows-native clipping stack before building Sasayaki UI.
+
+Key changes:
+
+- Test MP3, M4A/AAC, OGG/Opus, and WAV decoding plus deterministic WAV cue
+  output in development, release, and packaged environments.
+- Validate timing, limits, corrupt input, long files, Unicode paths, and real
+  AnkiConnect playback.
+- Prefer a pure Rust stack and do not assume a system FFmpeg installation.
+- Require verified MP3 and WAV support before Slice 5I. Unsupported AAC or
+  Opus combinations remain explicitly out of scope until proven.
+
+### Slice 5I: Sasayaki Sidecar And Import
+
+Goal: establish book-owned Sasayaki metadata and safe audio/SRT import.
+
+Key changes:
+
+- Address Sasayaki data by `bookId`, never by an arbitrary frontend path.
+- Store audio location or an optional app-owned copy, UTF-8 SRT, cues, match
+  data, and playback state in a per-book sidecar.
+- Use staged validation and atomic replacement; deleting a book removes only
+  app-owned Sasayaki data.
+- Accept only formats verified by Slice 5I-0.
+
+### Slice 5J: Cue Parsing, Matching, And Correction
+
+Goal: map subtitle cues onto stable EPUB chapter text positions.
+
+Key changes:
+
+- Validate SRT numbering, time ranges, and text and assign stable cue ids.
+- Port HSA text normalization and ordered matching to
+  `chapterIndex + offset + length`.
+- Show match rate and unmatched cues and provide rematch and manual correction.
+- Cover ruby, Japanese punctuation, repeated sentences, DOM node boundaries,
+  and chapter boundaries.
+
+### Slice 5K: Sasayaki Playback
+
+Goal: add the first reader audiobook playback loop.
+
+Key changes:
+
+- Add play/pause, progress, cue/seconds navigation, rate, and delay controls.
+- Persist and restore the source, position, rate, and delay.
+- Support relinking a missing external source and correct teardown across
+  chapter, book, shelf, session restore, and application lifecycle changes.
+
+### Slice 5L: Cue Presentation And Reader Coordination
+
+Goal: connect the active cue to vertical pagination without changing layout
+measurements.
+
+Key changes:
+
+- Highlight the active cue without introducing reflow.
+- Support automatic page/chapter navigation, auto-scroll, and auto-pause.
+- Add skip behavior and light/dark cue colors.
+- Revalidate normal pages, final pages, image pages, chapter boundaries, and
+  narrow windows.
+
+### Slice 5M: Sasayaki Sentence Audio Export
+
+Goal: implement `{sasayaki-audio}` from the current matched cue.
+
+Key changes:
+
+- Pass only `bookId + cueId` from lookup; resolve paths and time ranges from the
+  Rust-owned sidecar.
+- Clip using the Slice 5I-0 stack, write deterministic WAV, store
+  `hsw_sasayaki_<hash>.wav`, and render `[sound:filename]`.
+- Keep missing/unmatched/ordinary decoding failures non-fatal; reject tampered
+  sidecars, path escapes, invalid ranges, and oversized output.
+
+### Slice 5N: Word And Sasayaki Playback Coordination
+
+Goal: complete the HSA-visible word-audio playback modes inside HSW.
+
+Key changes:
+
+- Interrupt pauses and conditionally resumes Sasayaki, Duck temporarily lowers
+  its volume, and Mix plays both.
+- Apply the same rules to autoplay and handle rapid lookups, failures, manual
+  pauses, chapter changes, and shutdown.
+- Coordinate HSW audio only; do not promise Windows-wide audio focus control.
+
+### Slice 5O: Runtime Validation And Alignment Closure
+
+Goal: validate the complete chain against real data and record remaining facts
+without overstating them.
+
+Key changes:
+
+- Exercise tags, duplicate scopes, cover media, multiple sources, a real HSA
+  database, playback, Sasayaki clipping, and sync with real AnkiConnect.
+- Verify the final order: dictionary images, cover, word audio, Sasayaki audio,
+  render, duplicate/addNote, optional sync.
+- Compare HSA defaults, status text, warnings, hard errors, and fallback
+  behavior. Mark unavailable fixture coverage as `not verified`.
+
+## Media Ordering Tradeoff
+
+HSW stores optional media before duplicate checking and `addNote`. A duplicate
+may therefore leave an unreferenced content-hash media file in Anki. HSW does
+not delete it automatically because another note may already share that file.
+
+## Roadmap Maintenance
+
+- `docs/ANKI_AUDIO_SYNC_PLAN.md` is the durable source for the full Slice
+  5A-5O route.
+- `docs/TODO.md` names only the current or next executable slice.
+- After each slice, update its status here, move TODO to the next slice, and
+  revise only unimplemented slices when runtime findings require it.
 
 ## Recommended Next Step
 
