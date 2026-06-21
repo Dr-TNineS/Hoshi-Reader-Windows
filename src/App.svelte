@@ -46,6 +46,9 @@
     DictionaryStatus,
     EpubMeta,
     LookupAnkiPayload,
+    LocalAudioStatus,
+    LocalAudioStoreRequest,
+    LocalAudioStoreResult,
     ReaderProgress,
     ReaderSelection,
   } from "./lib/types";
@@ -81,6 +84,7 @@
   let ankiStatus = $state("");
   let ankiError = $state("");
   let ankiBusy = $state(false);
+  let localAudioStatus = $state<LocalAudioStatus>({ imported: false, sizeBytes: null, sources: [] });
   let bookImportBusy = $state(false);
   let debug = $state("");
   let triedStartup = false;
@@ -139,6 +143,7 @@
     triedAnkiSettings = true;
     if (!isTauriRuntime()) return;
     void loadAnkiSettings();
+    void refreshLocalAudioStatus();
   });
 
   function saveProgress(
@@ -369,6 +374,7 @@
       noteTypes: [],
       fieldMappings: [],
       audioEnabled: false,
+      localAudioEnabled: false,
       audioSources: defaultAnkiAudioSources(),
       audioDownloadTimeoutMs: 5000,
       lastFetchedAt: null,
@@ -490,6 +496,82 @@
       audioDownloadTimeoutMs,
     };
     await saveAnkiSettings();
+  }
+
+  async function setAnkiLocalAudioEnabled(enabled: boolean) {
+    if (ankiBusy) return;
+    const base = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft };
+    ankiSettings = { ...base, localAudioEnabled: enabled };
+    await saveAnkiSettings();
+  }
+
+  async function refreshLocalAudioStatus() {
+    if (!isTauriRuntime()) return;
+    try {
+      localAudioStatus = await invoke<LocalAudioStatus>("anki_local_audio_status");
+    } catch (e) {
+      ankiError = String(e);
+    }
+  }
+
+  async function importLocalAudio() {
+    if (!isTauriRuntime() || ankiBusy) return;
+    const selected = await open({
+      multiple: false,
+      filters: [{ name: "HSA Local Audio Database", extensions: ["db"] }],
+    });
+    if (!selected || Array.isArray(selected)) return;
+    ankiBusy = true;
+    ankiError = "";
+    ankiStatus = "Importing local audio database...";
+    try {
+      localAudioStatus = await invoke<LocalAudioStatus>("anki_import_local_audio", { databasePath: selected });
+      const next = {
+        ...(ankiSettings ?? defaultAnkiSettings()),
+        endpoint: ankiEndpointDraft,
+        audioEnabled: true,
+        localAudioEnabled: true,
+      };
+      ankiSettings = await invoke<AnkiSettings>("anki_save_settings", { settings: next });
+      ankiStatus = `Imported local audio database with ${localAudioStatus.sources.length} sources.`;
+    } catch (e) {
+      ankiError = String(e);
+    } finally {
+      ankiBusy = false;
+    }
+  }
+
+  async function removeLocalAudio() {
+    if (!isTauriRuntime() || ankiBusy) return;
+    ankiBusy = true;
+    ankiError = "";
+    try {
+      localAudioStatus = await invoke<LocalAudioStatus>("anki_remove_local_audio");
+      const next = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft, localAudioEnabled: false };
+      ankiSettings = await invoke<AnkiSettings>("anki_save_settings", { settings: next });
+      ankiStatus = "Removed local audio database.";
+    } catch (e) {
+      ankiError = String(e);
+    } finally {
+      ankiBusy = false;
+    }
+  }
+
+  async function moveLocalAudioSource(source: string, direction: -1 | 1) {
+    if (ankiBusy) return;
+    const order = localAudioStatus.sources.map((item) => item.name);
+    const index = order.indexOf(source);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= order.length) return;
+    [order[index], order[target]] = [order[target], order[index]];
+    ankiBusy = true;
+    try {
+      localAudioStatus = await invoke<LocalAudioStatus>("anki_set_local_audio_source_order", { sourceOrder: order });
+    } catch (e) {
+      ankiError = String(e);
+    } finally {
+      ankiBusy = false;
+    }
   }
 
   function closeReaderSelection() {
@@ -686,6 +768,13 @@
     const endpoint = ankiSettings?.endpoint;
     if (!endpoint) throw new Error("Anki endpoint is not configured.");
     return invoke<AnkiStoreRemoteAudioResult>("anki_store_remote_audio", { endpoint, request });
+  }
+
+  async function storeAnkiLocalAudio(request: LocalAudioStoreRequest): Promise<LocalAudioStoreResult> {
+    if (!isTauriRuntime()) throw new Error("Anki local audio storage requires Tauri runtime.");
+    const endpoint = ankiSettings?.endpoint;
+    if (!endpoint) throw new Error("Anki endpoint is not configured.");
+    return invoke<LocalAudioStoreResult>("anki_store_local_audio", { endpoint, request });
   }
 
   async function setDictionaryEnabled(dictionary: DictionaryManifestEntry, enabled: boolean) {
@@ -1065,6 +1154,7 @@
       {ankiError}
       {ankiBusy}
       {ankiTemplateOptions}
+      {localAudioStatus}
       onOpenBook={openBook}
       onContinueBook={continueBook}
       onForgetBook={forgetBook}
@@ -1084,6 +1174,10 @@
       onSelectAnkiNoteType={selectAnkiNoteType}
       onSetAnkiFieldTemplate={setAnkiFieldTemplate}
       onSetAnkiAudioConfig={setAnkiAudioConfig}
+      onSetAnkiLocalAudioEnabled={setAnkiLocalAudioEnabled}
+      onImportLocalAudio={importLocalAudio}
+      onRemoveLocalAudio={removeLocalAudio}
+      onMoveLocalAudioSource={moveLocalAudioSource}
     />
   {:else}
     <Reader
@@ -1118,6 +1212,7 @@
       {buildAnkiPayload}
       onStoreAnkiMedia={storeAnkiMedia}
       onStoreAnkiRemoteAudio={storeAnkiRemoteAudio}
+      onStoreAnkiLocalAudio={storeAnkiLocalAudio}
       onAddAnkiNote={addAnkiNote}
     />
     {#if showToc}

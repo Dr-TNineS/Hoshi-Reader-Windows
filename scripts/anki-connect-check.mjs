@@ -82,6 +82,11 @@ async function panelMetrics(page) {
       audioSource: state?.getAttribute("data-audio-source") ?? "",
       audioUrl: state?.getAttribute("data-audio-url") ?? "",
       audioTimeout: Number(state?.getAttribute("data-audio-timeout") ?? 0),
+      localAudioEnabled: state?.getAttribute("data-local-audio-enabled") ?? "",
+      localAudioEvents: state?.getAttribute("data-local-audio-events") ?? "",
+      localImportClicks: Number(state?.getAttribute("data-local-import-clicks") ?? 0),
+      localRemoveClicks: Number(state?.getAttribute("data-local-remove-clicks") ?? 0),
+      localSources: state?.getAttribute("data-local-sources") ?? "",
       horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
       panel: {
         x: rect.x,
@@ -201,6 +206,10 @@ async function main() {
     await page.getByLabel("Audio URL Template").blur();
     await page.getByLabel("Timeout Ms").fill("7000");
     await page.getByLabel("Timeout Ms").blur();
+    await page.getByLabel("Local first").check();
+    await page.getByRole("button", { name: "Replace Database" }).click();
+    await page.getByRole("button", { name: "Move forvo up" }).click();
+    await page.getByRole("button", { name: "Remove" }).click();
     const deckSelect = page.getByRole("button", { name: "Deck", exact: true });
     await deckSelect.click();
     await page.keyboard.press("ArrowDown");
@@ -219,6 +228,9 @@ async function main() {
     assert(metrics.audioSource === "Probe Audio", "Audio source name should update visible state.", metrics);
     assert(metrics.audioUrl.includes("{term}") && metrics.audioTimeout === 7000, "Audio URL and timeout should update visible state.", metrics);
     assert(metrics.audioEvents.includes("true:"), "Audio settings edits should emit changes.", metrics);
+    assert(metrics.localAudioEnabled === "true" && metrics.localAudioEvents.includes("enabled:true"), "Local audio enable should update settings.", metrics);
+    assert(metrics.localImportClicks === 1 && metrics.localRemoveClicks === 1, "Local audio import and remove actions should be wired.", metrics);
+    assert(metrics.localSources.startsWith("forvo,nhk16") && metrics.localAudioEvents.includes("move:forvo:-1"), "Local audio source ordering should update visible state.", metrics);
     assert(metrics.selectedDeck === "Japanese::Reading", "Deck select should update visible state.", metrics);
     assert(metrics.selectedNoteType === "Hoshi Vocabulary", "Note type select should update visible state.", metrics);
 

@@ -52,6 +52,9 @@ async function openProbe(page, state, options = {}) {
   if (options.ankiAddMode) params.set("ankiAddMode", options.ankiAddMode);
   if (options.ankiStoreMode) params.set("ankiStoreMode", options.ankiStoreMode);
   if (options.ankiAudioStoreMode) params.set("ankiAudioStoreMode", options.ankiAudioStoreMode);
+  if (options.localAudioStoreMode) params.set("localAudioStoreMode", options.localAudioStoreMode);
+  if (options.localAudio) params.set("localAudio", "enabled");
+  if (options.audioEnabled === false) params.set("audioEnabled", "disabled");
   if (options.audioField === false) params.set("audioField", "disabled");
   if (options.emptyExpression) params.set("emptyExpression", "1");
   await page.goto(`${origin}/?${params}`);
@@ -98,6 +101,8 @@ async function popupMetrics(page) {
       ankiStoreCount: Number(state?.getAttribute("data-anki-store-count") ?? 0),
       ankiAudioStoreCount: Number(state?.getAttribute("data-anki-audio-store-count") ?? 0),
       ankiLastAudioRequest: JSON.parse(state?.getAttribute("data-anki-last-audio-request") ?? "null"),
+      localAudioStoreCount: Number(state?.getAttribute("data-local-audio-store-count") ?? 0),
+      localAudioLastRequest: JSON.parse(state?.getAttribute("data-local-audio-last-request") ?? "null"),
       ankiLastMedia: JSON.parse(state?.getAttribute("data-anki-last-media") ?? "[]"),
       ankiLastDeck: state?.getAttribute("data-anki-last-deck") ?? "",
       ankiLastModel: state?.getAttribute("data-anki-last-model") ?? "",
@@ -334,6 +339,36 @@ async function main() {
     assert(ankiAdded.ankiLastFields.Media.includes("<img src=\"stored_hsw_") && ankiAdded.ankiLastFields.Media.includes(".svg"), "Add Anki should include stored dictionary media filenames.", ankiAdded);
     assert(ankiAdded.text.includes("Added Anki note 4242."), "Added state should show the Anki note id message.", ankiAdded);
     assert(ankiAdded.text.includes("Word audio stored as hsw_audio_probe.mp3"), "Add state should expose stored word audio.", ankiAdded);
+
+    await openProbe(page, "ready", { ankiMode: "configured", localAudio: true });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiLocalAudio = await popupMetrics(page);
+    assert(ankiLocalAudio.localAudioStoreCount === 1, "Enabled local audio should be attempted first.", ankiLocalAudio);
+    assert(ankiLocalAudio.ankiAudioStoreCount === 0, "A local audio hit should skip remote audio.", ankiLocalAudio);
+    assert(ankiLocalAudio.localAudioLastRequest.expression === "school", "Local audio should receive the lookup expression.", ankiLocalAudio);
+    assert(ankiLocalAudio.ankiLastFields.Audio === "[sound:hsw_audio_local.ogg]", "A local audio hit should render into the audio field.", ankiLocalAudio);
+
+    await openProbe(page, "ready", { ankiMode: "configured", localAudio: true, localAudioStoreMode: "missing" });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiLocalMissing = await popupMetrics(page);
+    assert(ankiLocalMissing.localAudioStoreCount === 1 && ankiLocalMissing.ankiAudioStoreCount === 1, "A local miss should fall back to remote audio.", ankiLocalMissing);
+    assert(ankiLocalMissing.ankiLastFields.Audio === "[sound:hsw_audio_probe.mp3]", "Remote fallback should populate the audio field.", ankiLocalMissing);
+
+    await openProbe(page, "ready", { ankiMode: "configured", localAudio: true, localAudioStoreMode: "error" });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiLocalError = await popupMetrics(page);
+    assert(ankiLocalError.ankiAudioStoreCount === 1 && ankiLocalError.ankiAddCount === 1, "A local read warning should fall back and preserve note creation.", ankiLocalError);
+    assert(ankiLocalError.text.includes("Probe database read failure"), "Local audio warnings should remain visible after remote fallback.", ankiLocalError);
+
+    await openProbe(page, "ready", { ankiMode: "configured", localAudio: true, localAudioStoreMode: "missing", ankiAudioStoreMode: "missing" });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiAllAudioMissing = await popupMetrics(page);
+    assert(ankiAllAudioMissing.ankiAddCount === 1 && ankiAllAudioMissing.ankiLastFields.Audio === "", "Missing local and remote audio should still create a text note.", ankiAllAudioMissing);
+
+    await openProbe(page, "ready", { ankiMode: "configured", localAudio: true, audioEnabled: false });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiAudioDisabled = await popupMetrics(page);
+    assert(ankiAudioDisabled.localAudioStoreCount === 0 && ankiAudioDisabled.ankiAudioStoreCount === 0, "The master audio switch should skip local and remote audio.", ankiAudioDisabled);
 
     await openProbe(page, "ready", { ankiMode: "configured", ankiAudioStoreMode: "missing" });
     await page.getByRole("button", { name: "Add to Anki" }).click();

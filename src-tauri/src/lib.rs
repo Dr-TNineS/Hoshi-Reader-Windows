@@ -2,6 +2,7 @@ mod anki;
 mod dict;
 mod epub;
 mod library;
+mod local_audio;
 mod storage;
 
 use dict::commands::DictState;
@@ -49,6 +50,11 @@ pub fn run() {
             anki::anki_add_note,
             anki::anki_store_dictionary_media,
             anki::anki_store_remote_audio,
+            local_audio::anki_local_audio_status,
+            local_audio::anki_import_local_audio,
+            local_audio::anki_remove_local_audio,
+            local_audio::anki_set_local_audio_source_order,
+            local_audio::anki_store_local_audio,
         ])
         .setup(|app| {
             app.state::<DictState>().initialize(app.handle());

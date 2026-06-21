@@ -133,12 +133,15 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Remote word audio resolves `{term}` and `{reading}` against the first enabled public HTTP/HTTPS source, enforces redirect/address/timeout/format/size boundaries, stores successful audio through AnkiConnect, and renders `[sound:filename]` through `{audio}`.
   - Ordinary remote-audio failures show warnings and preserve text-note creation; unsafe targets and oversized responses block the current add operation.
   - `npm run check:lookup-popup` covers remote-audio success, missing/unsupported warnings, security failure, no-audio-field and missing-expression behavior.
-  - Local audio, Sasayaki audio, and sync remain planned in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
+  - Sasayaki audio and sync remain planned in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
+  - HSA-compatible local audio database import is implemented under app data `audio/android.db`, with staged replacement, SQLite/schema validation, app-owned storage, source ordering, reading-first matching, and blob-only MP3/Opus/OGG loading.
+  - Local audio is attempted before remote audio for Anki fields; local misses and ordinary read warnings fall back to the configured remote source without blocking text-note creation.
+  - Local audio import/removal, enable state, source ordering, matching, fallback, and narrow-window UI are covered by Rust and frontend probes.
 
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata and reading state are still JSON.
-- Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; real remote-audio-plus-AnkiConnect runtime validation is also not verified. Local audio and sync remain unimplemented.
+- Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; real remote-audio-plus-AnkiConnect and real HSA local-audio database runtime validation are also not verified. Sync remains unimplemented.
 - No sync implementation.
 - No full settings surface; only the minimal bookshelf Appearance and Advanced startup-behavior panels are implemented.
 - No verified app-owned cover thumbnail cache.

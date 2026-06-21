@@ -1,7 +1,7 @@
 <script lang="ts">
   import AnkiConnectPanel from "./AnkiConnectPanel.svelte";
   import { ankiHandlebarOptions } from "./anki-field-renderer";
-  import type { AnkiSettings } from "./types";
+  import type { AnkiSettings, LocalAudioStatus } from "./types";
 
   const params = new URLSearchParams(window.location.search);
   const mode = params.get("ankiConnectMode") ?? "ready";
@@ -85,6 +85,7 @@
           { field: "Back", template: "{glossary-first}" },
         ],
     audioEnabled: false,
+    localAudioEnabled: false,
     audioSources: [{ name: "Default", url: "", enabled: false }],
     audioDownloadTimeoutMs: 5000,
     lastFetchedAt: 1780000000000,
@@ -99,6 +100,14 @@
   let noteTypeEvents = $state<string[]>([]);
   let fieldTemplateEvents = $state<string[]>([]);
   let audioEvents = $state<string[]>([]);
+  let localAudioEvents = $state<string[]>([]);
+  let localImportClicks = $state(0);
+  let localRemoveClicks = $state(0);
+  let localAudioStatus = $state<LocalAudioStatus>({
+    imported: mode !== "empty",
+    sizeBytes: mode === "empty" ? null : 24 * 1024 * 1024,
+    sources: mode === "empty" ? [] : [{ name: "nhk16", order: 0 }, { name: "forvo", order: 1 }],
+  });
   const handlebarOptions = ankiHandlebarOptions(["JMdict", "明鏡国語辞典 第三版", "JMdict"]);
 
   function selectDeck(deck: string) {
@@ -133,6 +142,21 @@
       audioDownloadTimeoutMs: timeoutMs,
     };
   }
+
+  function setLocalAudioEnabled(enabled: boolean) {
+    localAudioEvents = [...localAudioEvents, `enabled:${enabled}`];
+    if (settings) settings = { ...settings, localAudioEnabled: enabled };
+  }
+
+  function moveLocalAudioSource(source: string, direction: -1 | 1) {
+    localAudioEvents = [...localAudioEvents, `move:${source}:${direction}`];
+    const sources = [...localAudioStatus.sources];
+    const index = sources.findIndex((item) => item.name === source);
+    const target = index + direction;
+    if (index < 0 || target < 0 || target >= sources.length) return;
+    [sources[index], sources[target]] = [sources[target], sources[index]];
+    localAudioStatus = { ...localAudioStatus, sources: sources.map((item, order) => ({ ...item, order })) };
+  }
 </script>
 
 <main class="probe" data-ui-portal-root>
@@ -151,6 +175,11 @@
     onSelectNoteType={selectNoteType}
     onSetFieldTemplate={setFieldTemplate}
     onSetAudioConfig={setAudioConfig}
+    {localAudioStatus}
+    onSetLocalAudioEnabled={setLocalAudioEnabled}
+    onImportLocalAudio={() => localImportClicks += 1}
+    onRemoveLocalAudio={() => localRemoveClicks += 1}
+    onMoveLocalAudioSource={moveLocalAudioSource}
   />
   <div
     class="probe-state"
@@ -169,6 +198,11 @@
     data-audio-source={settings?.audioSources[0]?.name ?? ""}
     data-audio-url={settings?.audioSources[0]?.url ?? ""}
     data-audio-timeout={settings?.audioDownloadTimeoutMs ?? 0}
+    data-local-audio-enabled={settings?.localAudioEnabled ? "true" : "false"}
+    data-local-audio-events={localAudioEvents.join("|")}
+    data-local-import-clicks={localImportClicks}
+    data-local-remove-clicks={localRemoveClicks}
+    data-local-sources={localAudioStatus.sources.map((source) => source.name).join(",")}
     aria-hidden="true"
   ></div>
 </main>

@@ -180,6 +180,27 @@ export interface AnkiStoreRemoteAudioResult {
   warnings: string[];
 }
 
+export interface LocalAudioSourceStatus {
+  name: string;
+  order: number;
+}
+
+export interface LocalAudioStatus {
+  imported: boolean;
+  sizeBytes: number | null;
+  sources: LocalAudioSourceStatus[];
+}
+
+export interface LocalAudioStoreRequest {
+  expression: string;
+  reading: string;
+}
+
+export interface LocalAudioStoreResult {
+  filename: string | null;
+  warnings: string[];
+}
+
 export interface DictImportFailure {
   path: string;
   error: string;
@@ -237,6 +258,7 @@ export interface AnkiSettings {
   noteTypes: AnkiNoteType[];
   fieldMappings: AnkiFieldMapping[];
   audioEnabled: boolean;
+  localAudioEnabled: boolean;
   audioSources: AnkiAudioSource[];
   audioDownloadTimeoutMs: number;
   lastFetchedAt: number | null;

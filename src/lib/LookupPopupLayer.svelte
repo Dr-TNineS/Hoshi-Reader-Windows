@@ -12,6 +12,8 @@
     AnkiStoreRemoteAudioResult,
     DictResult,
     LookupAnkiPayload,
+    LocalAudioStoreRequest,
+    LocalAudioStoreResult,
     ReaderSelection,
   } from "./types";
 
@@ -48,6 +50,7 @@
     buildAnkiPayload,
     onStoreAnkiMedia,
     onStoreAnkiRemoteAudio,
+    onStoreAnkiLocalAudio,
     onAddAnkiNote,
   }: {
     popups?: LookupPopupItem[];
@@ -63,6 +66,7 @@
     buildAnkiPayload: (selection: ReaderSelection, result: DictResult, resultIndex: number) => LookupAnkiPayload;
     onStoreAnkiMedia: (media: AnkiDictionaryMediaRef[]) => Promise<AnkiStoreMediaResult>;
     onStoreAnkiRemoteAudio: (request: AnkiRemoteAudioRequest) => Promise<AnkiStoreRemoteAudioResult>;
+    onStoreAnkiLocalAudio: (request: LocalAudioStoreRequest) => Promise<LocalAudioStoreResult>;
     onAddAnkiNote: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
   } = $props();
 
@@ -149,6 +153,7 @@
       buildAnkiPayload={(result, resultIndex) => buildAnkiPayload(popup.selection, result, resultIndex)}
       onStoreAnkiMedia={onStoreAnkiMedia}
       onStoreAnkiRemoteAudio={onStoreAnkiRemoteAudio}
+      onStoreAnkiLocalAudio={onStoreAnkiLocalAudio}
       onAddAnkiNote={onAddAnkiNote}
     />
   </aside>

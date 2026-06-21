@@ -1,6 +1,6 @@
 <script lang="ts">
   import { effectiveTemplateForField } from "./anki-field-renderer";
-  import type { AnkiAudioSource, AnkiSettings } from "./types";
+  import type { AnkiAudioSource, AnkiSettings, LocalAudioStatus } from "./types";
   import UiDropdownMenu from "./ui/DropdownMenu.svelte";
   import UiSelect from "./ui/Select.svelte";
   import UiSwitch from "./ui/Switch.svelte";
@@ -20,6 +20,11 @@
     onSelectNoteType = (_noteType: string) => {},
     onSetFieldTemplate = (_field: string, _template: string) => {},
     onSetAudioConfig = (_enabled: boolean, _sources: AnkiAudioSource[], _timeoutMs: number) => {},
+    localAudioStatus = { imported: false, sizeBytes: null, sources: [] },
+    onSetLocalAudioEnabled = (_enabled: boolean) => {},
+    onImportLocalAudio = () => {},
+    onRemoveLocalAudio = () => {},
+    onMoveLocalAudioSource = (_source: string, _direction: -1 | 1) => {},
   }: {
     settings?: AnkiSettings | null;
     endpoint?: string;
@@ -35,6 +40,11 @@
     onSelectNoteType?: (noteType: string) => void;
     onSetFieldTemplate?: (field: string, template: string) => void;
     onSetAudioConfig?: (enabled: boolean, sources: AnkiAudioSource[], timeoutMs: number) => void;
+    localAudioStatus?: LocalAudioStatus;
+    onSetLocalAudioEnabled?: (enabled: boolean) => void;
+    onImportLocalAudio?: () => void;
+    onRemoveLocalAudio?: () => void;
+    onMoveLocalAudioSource?: (source: string, direction: -1 | 1) => void;
   } = $props();
 
   const selectedNote = $derived(
@@ -74,6 +84,15 @@
 
   function selectHandlebar(field: string, option: string) {
     onSetFieldTemplate(field, option === "-" ? "" : option);
+  }
+
+  function localAudioSizeLabel(): string {
+    if (!localAudioStatus.imported) return "No HSA local audio database imported";
+    const bytes = localAudioStatus.sizeBytes ?? 0;
+    const size = bytes >= 1024 * 1024
+      ? `${(bytes / 1024 / 1024).toFixed(1)} MiB`
+      : `${Math.max(1, Math.round(bytes / 1024))} KiB`;
+    return `${size}, ${localAudioStatus.sources.length} sources`;
   }
 </script>
 
@@ -169,7 +188,7 @@
       <div>
         <p class="fields-title">Word Audio</p>
         <p class="audio-summary">
-          {settings?.audioEnabled ? "Remote audio export enabled" : "Audio export disabled"}
+          {settings?.audioEnabled ? "Word audio export enabled" : "Audio export disabled"}
         </p>
       </div>
       <div class="audio-toggle">
@@ -215,6 +234,45 @@
         onchange={(event) => updateAudioSource({ url: event.currentTarget.value })}
       />
     </label>
+
+    <div class="local-audio-card">
+      <div class="audio-head">
+        <div>
+          <p class="fields-title">HSA Local Audio</p>
+          <p class="audio-summary">{localAudioSizeLabel()}</p>
+        </div>
+        <label class="audio-toggle">
+          <input
+            type="checkbox"
+            checked={settings?.localAudioEnabled ?? false}
+            disabled={busy || !localAudioStatus.imported}
+            onchange={(event) => onSetLocalAudioEnabled(event.currentTarget.checked)}
+          />
+          <span>Local first</span>
+        </label>
+      </div>
+      <div class="local-audio-actions">
+        <button class="compact-action" disabled={busy} onclick={onImportLocalAudio}>
+          {localAudioStatus.imported ? "Replace Database" : "Import Database"}
+        </button>
+        {#if localAudioStatus.imported}
+          <button class="compact-action danger" disabled={busy} onclick={onRemoveLocalAudio}>Remove</button>
+        {/if}
+      </div>
+      {#if localAudioStatus.sources.length > 0}
+        <div class="local-source-list" aria-label="Local audio source order">
+          {#each localAudioStatus.sources as source, index}
+            <div class="local-source-row">
+              <span>{source.name}</span>
+              <div class="local-source-actions">
+                <button aria-label={`Move ${source.name} up`} disabled={busy || index === 0} onclick={() => onMoveLocalAudioSource(source.name, -1)}>↑</button>
+                <button aria-label={`Move ${source.name} down`} disabled={busy || index === localAudioStatus.sources.length - 1} onclick={() => onMoveLocalAudioSource(source.name, 1)}>↓</button>
+              </div>
+            </div>
+          {/each}
+        </div>
+      {/if}
+    </div>
   </div>
 
   <p class="fetched-at">{fetchedLabel(settings?.lastFetchedAt)}</p>
@@ -236,6 +294,14 @@
   .fields-row { display: flex; flex-direction: column; gap: 7px; }
   .fields-title { color: var(--app-muted, #999999); font-size: 11px; font-weight: 600; text-transform: uppercase; }
   .audio-row { display: flex; flex-direction: column; gap: 8px; padding-top: 2px; }
+  .local-audio-card { display: flex; flex-direction: column; gap: 8px; margin-top: 4px; padding-top: 10px; border-top: 1px solid var(--app-border, #333333); }
+  .local-audio-actions, .local-source-actions { display: flex; align-items: center; gap: 6px; }
+  .local-source-list { overflow: hidden; border: 1px solid var(--app-border, #333333); border-radius: 5px; }
+  .local-source-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 7px 8px; color: var(--app-text, #fff); font-size: 12px; }
+  .local-source-row + .local-source-row { border-top: 1px solid var(--app-border, #333333); }
+  .local-source-actions button { width: 26px; height: 24px; background: var(--app-control, #1b1b1b); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 4px; cursor: pointer; }
+  .local-source-actions button:disabled { color: var(--app-muted, #999999); cursor: default; }
+  .danger { color: #ffb4ab; }
   .audio-head { display: flex; justify-content: space-between; gap: 12px; align-items: center; }
   .audio-summary { margin-top: 3px; color: var(--app-muted, #999999); font-size: 12px; line-height: 1.35; }
   .audio-toggle { display: inline-flex; align-items: center; gap: 6px; color: var(--app-text, #fff); font-size: 12px; }

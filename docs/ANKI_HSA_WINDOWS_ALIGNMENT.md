@@ -8,7 +8,8 @@ integration.
 
 Implementation status as of 2026-06-21: Slice 1 readiness/configuration,
 Slice 2 field mapping/preview, Slice 3 minimal duplicate-check/add-note
-plumbing, dictionary image media export, and remote word-audio export are
+plumbing, dictionary image media export, remote word-audio export, and
+HSA-compatible local word-audio database import are
 implemented. Real desktop Anki runtime add-note validation passed against
 AnkiConnect v6 on localhost. Follow-up media/audio work is tracked in
 `docs/ANKI_MEDIA_EXPORT_PLAN.md` and `docs/ANKI_AUDIO_SYNC_PLAN.md`.
@@ -37,8 +38,8 @@ document.
     `canAddNotesWithErrorDetail` before calling AnkiConnect `addNote`.
 - Real Anki runtime add-note validation with a throwaway deck/model passed on
   2026-06-18 using `HSW_ANKI_RUNTIME_VALIDATE=1`.
-- Dictionary image media export is implemented for add-note; sync and word audio
-  export remain unimplemented.
+- Dictionary image media plus remote and HSA-compatible local word-audio export
+  are implemented for add-note; sync remains unimplemented.
 - Existing lookup popup probes cover that disabled Anki/audio boundaries remain
   visible/click-safe and cannot be styled away by dictionary CSS.
 
@@ -192,11 +193,11 @@ store-media runtime validation passed; combined add-note-plus-media validation
 with a real media-bearing dictionary is not verified. Audio and sync follow-up
 slices are planned in `docs/ANKI_AUDIO_SYNC_PLAN.md`; remote word-audio
 download/storage and `{audio}` rendering are implemented at automated-validation
-level, while local audio and sync remain unimplemented.
+level. Local audio is implemented at automated-validation level; sync remains
+unimplemented.
 
 Deferred items:
 
-- Local word audio export.
 - Sasayaki sentence audio.
 - Optional AnkiConnect `sync`.
 - Advanced duplicate scopes and all-model duplicate behavior.

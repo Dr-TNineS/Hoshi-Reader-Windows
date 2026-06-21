@@ -3,7 +3,7 @@
   import { extractDictionaryMediaReferences } from "./anki-field-renderer";
   import type { LookupState } from "./lookup-popup";
   import { lookupPopupStyle } from "./lookup-popup-position";
-  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiNoteRequest, AnkiRemoteAudioRequest, AnkiSettings, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
+  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiNoteRequest, AnkiRemoteAudioRequest, AnkiSettings, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LocalAudioStoreRequest, LocalAudioStoreResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
   const params = new URLSearchParams(window.location.search);
   const allowedStates: LookupState[] = ["loading", "noDictionaries", "engineUnavailable", "empty", "error", "ready"];
@@ -16,6 +16,7 @@
   const ankiAddMode = params.get("ankiAddMode") ?? "added";
   const ankiStoreMode = params.get("ankiStoreMode") ?? "success";
   const ankiAudioStoreMode = params.get("ankiAudioStoreMode") ?? "success";
+  const localAudioStoreMode = params.get("localAudioStoreMode") ?? "success";
   const audioFieldEnabled = params.get("audioField") !== "disabled";
   const emptyExpression = params.has("emptyExpression");
 
@@ -119,7 +120,8 @@
         { field: "Pitch", template: "{pitch-accent-positions}" },
         { field: "Unknown", template: "before{not-a-token}after" },
       ],
-      audioEnabled: true,
+      audioEnabled: params.get("audioEnabled") !== "disabled",
+      localAudioEnabled: params.get("localAudio") === "enabled",
       audioSources: [{ name: "Probe Audio", url: "https://example.invalid/audio?term={term}&reading={reading}", enabled: true }],
       audioDownloadTimeoutMs: 5000,
       lastFetchedAt: 1780000000000,
@@ -155,6 +157,7 @@
   let ankiAddRequests = $state<AnkiNoteRequest[]>([]);
   let ankiStoreRequests = $state<AnkiDictionaryMediaRef[][]>([]);
   let ankiAudioStoreRequests = $state<AnkiRemoteAudioRequest[]>([]);
+  let localAudioStoreRequests = $state<LocalAudioStoreRequest[]>([]);
   let popupSizes = $state<Record<string, { width: number; height: number }>>({});
 
   function readerBottomBoundary(): number {
@@ -379,6 +382,13 @@
     return { filename: "hsw_audio_probe.mp3", warnings: [] };
   }
 
+  async function storeAnkiLocalAudio(request: LocalAudioStoreRequest): Promise<LocalAudioStoreResult> {
+    localAudioStoreRequests = [...localAudioStoreRequests, request];
+    if (localAudioStoreMode === "missing") return { filename: null, warnings: [] };
+    if (localAudioStoreMode === "error") return { filename: null, warnings: ["Local word audio: Probe database read failure."] };
+    return { filename: "hsw_audio_local.ogg", warnings: [] };
+  }
+
   async function loadDictionaryStyles(dictionary: string) {
     if (dictionary !== "Jitendex.org [probe]") return { source: dictionary, css: "" };
     return {
@@ -444,6 +454,7 @@
         buildAnkiPayload={(result, resultIndex) => buildAnkiPayload(popup.selection, result, resultIndex)}
         onStoreAnkiMedia={storeAnkiMedia}
         onStoreAnkiRemoteAudio={storeAnkiRemoteAudio}
+        onStoreAnkiLocalAudio={storeAnkiLocalAudio}
         onAddAnkiNote={addAnkiNote}
       />
     </aside>
@@ -462,6 +473,8 @@
     data-anki-store-count={ankiStoreRequests.length}
     data-anki-audio-store-count={ankiAudioStoreRequests.length}
     data-anki-last-audio-request={JSON.stringify(ankiAudioStoreRequests[ankiAudioStoreRequests.length - 1] ?? null)}
+    data-local-audio-store-count={localAudioStoreRequests.length}
+    data-local-audio-last-request={JSON.stringify(localAudioStoreRequests[localAudioStoreRequests.length - 1] ?? null)}
     data-anki-last-media={JSON.stringify(ankiStoreRequests[ankiStoreRequests.length - 1] ?? [])}
     data-anki-last-deck={ankiAddRequests[ankiAddRequests.length - 1]?.deckName ?? ""}
     data-anki-last-model={ankiAddRequests[ankiAddRequests.length - 1]?.modelName ?? ""}

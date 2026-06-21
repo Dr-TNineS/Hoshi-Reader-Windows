@@ -67,6 +67,8 @@ pub struct AnkiSettings {
     pub field_mappings: Vec<AnkiFieldMapping>,
     #[serde(default)]
     pub audio_enabled: bool,
+    #[serde(default)]
+    pub local_audio_enabled: bool,
     #[serde(default = "default_audio_sources")]
     pub audio_sources: Vec<AnkiAudioSource>,
     #[serde(default = "default_audio_download_timeout_ms")]
@@ -85,6 +87,7 @@ impl Default for AnkiSettings {
             note_types: Vec::new(),
             field_mappings: Vec::new(),
             audio_enabled: false,
+            local_audio_enabled: false,
             audio_sources: default_audio_sources(),
             audio_download_timeout_ms: default_audio_download_timeout_ms(),
             last_fetched_at: None,
@@ -235,6 +238,7 @@ pub fn anki_fetch_config(endpoint: String, app: AppHandle) -> Result<AnkiSetting
         note_types,
         field_mappings,
         audio_enabled: current.audio_enabled,
+        local_audio_enabled: current.local_audio_enabled,
         audio_sources: current.audio_sources,
         audio_download_timeout_ms: current.audio_download_timeout_ms,
         last_fetched_at: Some(now_millis()?),
@@ -328,23 +332,33 @@ pub fn anki_store_remote_audio(
             )],
         });
     };
-    let filename = remote_audio_filename(&bytes, extension);
+    let stored_filename = store_audio_bytes(&endpoint, &bytes, extension)?;
+    Ok(AnkiStoreRemoteAudioResult {
+        filename: Some(stored_filename),
+        warnings: Vec::new(),
+    })
+}
+
+pub(crate) fn store_audio_bytes(
+    endpoint: &str,
+    bytes: &[u8],
+    extension: &str,
+) -> Result<String, String> {
+    let endpoint = normalize_endpoint(endpoint)?;
+    ensure_remote_audio_size(bytes.len())?;
+    let filename = remote_audio_filename(bytes, extension);
     let stored_filename = anki_request(
         &endpoint,
         "storeMediaFile",
         Some(json!({
             "filename": filename,
-            "data": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, &bytes),
+            "data": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes),
         })),
     )?
     .as_str()
     .ok_or_else(|| "AnkiConnect storeMediaFile returned an unexpected response.".to_string())?
     .to_string();
-    let stored_filename = validate_anki_media_filename(&stored_filename)?;
-    Ok(AnkiStoreRemoteAudioResult {
-        filename: Some(stored_filename),
-        warnings: Vec::new(),
-    })
+    validate_anki_media_filename(&stored_filename)
 }
 
 #[derive(Debug)]
@@ -651,7 +665,7 @@ fn remote_audio_status_warning(status: StatusCode) -> Option<String> {
     }
 }
 
-fn ensure_remote_audio_size(length: usize) -> Result<(), String> {
+pub(crate) fn ensure_remote_audio_size(length: usize) -> Result<(), String> {
     if length > MAX_REMOTE_AUDIO_BYTES {
         return Err(format!(
             "Remote audio exceeds the {} MiB size limit.",
@@ -661,7 +675,7 @@ fn ensure_remote_audio_size(length: usize) -> Result<(), String> {
     Ok(())
 }
 
-fn detect_audio_extension(
+pub(crate) fn detect_audio_extension(
     bytes: &[u8],
     content_type: Option<&str>,
     path: &str,
@@ -1241,6 +1255,7 @@ mod tests {
         let loaded = read_settings(&root).unwrap();
         assert!(loaded.field_mappings.is_empty());
         assert!(!loaded.audio_enabled);
+        assert!(!loaded.local_audio_enabled);
         assert_eq!(loaded.audio_sources, default_audio_sources());
         assert_eq!(
             loaded.audio_download_timeout_ms,

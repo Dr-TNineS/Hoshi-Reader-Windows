@@ -1,7 +1,7 @@
 <script lang="ts">
   import { convertFileSrc } from "@tauri-apps/api/core";
   import AnkiConnectPanel from "./AnkiConnectPanel.svelte";
-  import type { AnkiAudioSource, AnkiSettings, DictionaryManifestEntry, DictionaryStatus } from "./types";
+  import type { AnkiAudioSource, AnkiSettings, DictionaryManifestEntry, DictionaryStatus, LocalAudioStatus } from "./types";
   import AppearancePanel from "./AppearancePanel.svelte";
   import type { ReaderAppearance, ReaderTheme } from "./appearance";
   import DictionaryManagementPanel from "./DictionaryManagementPanel.svelte";
@@ -29,6 +29,7 @@
     ankiError = "",
     ankiBusy = false,
     ankiTemplateOptions = [],
+    localAudioStatus = { imported: false, sizeBytes: null, sources: [] },
     onOpenBook,
     onContinueBook,
     onForgetBook,
@@ -48,6 +49,10 @@
     onSelectAnkiNoteType,
     onSetAnkiFieldTemplate,
     onSetAnkiAudioConfig,
+    onSetAnkiLocalAudioEnabled = (_enabled: boolean) => {},
+    onImportLocalAudio = () => {},
+    onRemoveLocalAudio = () => {},
+    onMoveLocalAudioSource = (_source: string, _direction: -1 | 1) => {},
   }: {
     books: BookRecord[];
     error?: string;
@@ -66,6 +71,7 @@
     ankiError?: string;
     ankiBusy?: boolean;
     ankiTemplateOptions?: string[];
+    localAudioStatus?: LocalAudioStatus;
     onOpenBook: () => void;
     onContinueBook: (book: BookRecord) => void;
     onForgetBook: (book: BookRecord) => void;
@@ -85,6 +91,10 @@
     onSelectAnkiNoteType: (noteType: string) => void;
     onSetAnkiFieldTemplate: (field: string, template: string) => void;
     onSetAnkiAudioConfig: (audioEnabled: boolean, audioSources: AnkiAudioSource[], audioDownloadTimeoutMs: number) => void;
+    onSetAnkiLocalAudioEnabled?: (enabled: boolean) => void;
+    onImportLocalAudio?: () => void;
+    onRemoveLocalAudio?: () => void;
+    onMoveLocalAudioSource?: (source: string, direction: -1 | 1) => void;
   } = $props();
 
   type ShelfPanel = "library" | "dictionaries" | "anki" | "appearance" | "advanced" | "shortcuts";
@@ -262,6 +272,11 @@
         onSelectNoteType={onSelectAnkiNoteType}
         onSetFieldTemplate={onSetAnkiFieldTemplate}
         onSetAudioConfig={onSetAnkiAudioConfig}
+        {localAudioStatus}
+        onSetLocalAudioEnabled={onSetAnkiLocalAudioEnabled}
+        onImportLocalAudio={onImportLocalAudio}
+        onRemoveLocalAudio={onRemoveLocalAudio}
+        onMoveLocalAudioSource={onMoveLocalAudioSource}
       />
     {:else if activePanel === "appearance"}
       <AppearancePanel

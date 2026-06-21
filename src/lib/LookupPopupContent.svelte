@@ -7,7 +7,7 @@
   import { clearLookupHighlight, POPUP_LOOKUP_HIGHLIGHT } from "./lookup-highlight";
   import { markLookupPerformance } from "./lookup-performance";
   import { selectPopupTextFromPoint } from "./popup-selection";
-  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiRemoteAudioRequest, AnkiSettings, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LookupAnkiPayload, ReaderSelection } from "./types";
+  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiRemoteAudioRequest, AnkiSettings, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LocalAudioStoreRequest, LocalAudioStoreResult, LookupAnkiPayload, ReaderSelection } from "./types";
 
   let {
     popupId,
@@ -34,6 +34,7 @@
     buildAnkiPayload,
     onStoreAnkiMedia,
     onStoreAnkiRemoteAudio,
+    onStoreAnkiLocalAudio,
     onAddAnkiNote,
   }: {
     popupId: string;
@@ -60,6 +61,7 @@
     buildAnkiPayload?: (result: DictResult, resultIndex: number) => LookupAnkiPayload;
     onStoreAnkiMedia?: (media: AnkiDictionaryMediaRef[]) => Promise<AnkiStoreMediaResult>;
     onStoreAnkiRemoteAudio?: (request: AnkiRemoteAudioRequest) => Promise<AnkiStoreRemoteAudioResult>;
+    onStoreAnkiLocalAudio?: (request: LocalAudioStoreRequest) => Promise<LocalAudioStoreResult>;
     onAddAnkiNote?: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
   } = $props();
 
@@ -368,23 +370,30 @@
     payload: LookupAnkiPayload,
     fields: AnkiFieldPreview[],
   ): Promise<AnkiStoreRemoteAudioResult | null> {
-    if (!onStoreAnkiRemoteAudio || !ankiSettings?.audioEnabled || !payload.expression.trim()) return null;
+    if (!ankiSettings?.audioEnabled || !payload.expression.trim()) return null;
     if (!fields.some((field) => field.template.toLowerCase().includes("{audio}"))) return null;
+    const warnings: string[] = [];
+    if (ankiSettings.localAudioEnabled && onStoreAnkiLocalAudio) {
+      const localResult = await onStoreAnkiLocalAudio({ expression: payload.expression, reading: payload.reading });
+      warnings.push(...localResult.warnings);
+      if (localResult.filename) return { filename: localResult.filename, warnings };
+    }
     const source = ankiSettings.audioSources.find((item) => item.enabled && item.url.trim());
-    if (!source) return null;
-    return onStoreAnkiRemoteAudio({
+    if (!source || !onStoreAnkiRemoteAudio) return warnings.length > 0 ? { filename: null, warnings } : null;
+    const remoteResult = await onStoreAnkiRemoteAudio({
       sourceName: source.name,
       urlTemplate: source.url,
       expression: payload.expression,
       reading: payload.reading,
       timeoutMs: ankiSettings.audioDownloadTimeoutMs,
     });
+    return { filename: remoteResult.filename, warnings: [...warnings, ...remoteResult.warnings] };
   }
 
   function audioBoundaryHint(payload: LookupAnkiPayload, fields: AnkiFieldPreview[]): string {
     if (!fields.some((field) => field.template.toLowerCase().includes("{audio}"))) return "";
     const source = ankiSettings?.audioSources.find((item) => item.enabled && item.url.trim());
-    if (!ankiSettings?.audioEnabled || !source) return "Word audio token present; no enabled audio source is configured.";
+    if (!ankiSettings?.audioEnabled || (!ankiSettings.localAudioEnabled && !source)) return "Word audio token present; no enabled audio source is configured.";
     if (!payload.expression.trim()) return "Word audio token present; this lookup has no expression to resolve.";
     if (payload.audioFilename) return `Word audio stored as ${payload.audioFilename}.`;
     return "Word audio will be fetched when this note is added.";

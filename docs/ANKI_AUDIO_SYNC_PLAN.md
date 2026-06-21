@@ -6,8 +6,8 @@ This document defines the next Anki scope after text note creation and
 dictionary image media export.
 
 Implementation status as of 2026-06-21: Slice 5A word-audio settings and Slice
-5B remote word-audio fetch/store are implemented. Local audio, Sasayaki audio,
-and sync are not implemented.
+5B remote word-audio fetch/store and Slice 5C HSA-compatible local word audio
+are implemented. Sasayaki audio and sync are not implemented.
 
 ## Current Baseline
 
@@ -22,6 +22,9 @@ and sync are not implemented.
   supported audio through AnkiConnect, and renders `[sound:filename]` into
   `{audio}`. Ordinary source failures remain non-fatal; unsafe or oversized
   responses block the add operation.
+- HSW can import an HSA-compatible `android.db`, order its audio sources, match
+  reading before source priority, and fall back to remote audio when local
+  audio is unavailable.
 - Real store-media runtime validation passed with a throwaway SVG media file.
 - Real combined add-note-plus-dictionary-media validation with a normal
   media-bearing Yomitan dictionary is not verified because no suitable local
@@ -51,7 +54,8 @@ and sync are not implemented.
 - Implement AnkiConnect `sync` only as an explicit user setting after add-note
   behavior remains stable; never force sync by default.
 - Do not implement AnkiDroid providers, Android permissions, Android
-  FileProvider, Media3, or Android local audio database flows.
+  FileProvider, Media3, or Android URI/provider flows; HSW reads compatible
+  database content through Windows-native SQLite code.
 
 ## Implementation Slices
 
@@ -132,16 +136,22 @@ Validation:
 
 ### Slice 5C: Local Word Audio
 
-Goal: add Windows local audio lookup without importing HSA Android database or
-URI behavior directly.
+Goal: add Windows local audio lookup by importing the HSA-compatible SQLite
+database while excluding Android URI/provider behavior.
+
+Status: implemented on 2026-06-21 using the HSA-compatible SQLite database
+shape while keeping Android URI/provider behavior out of HSW. Automated Rust,
+Anki panel, and lookup-popup validation passes; a real HSA database runtime
+import is not verified.
 
 Key changes:
 
-- Define a Windows local audio index format under Tauri app data, or import a
-  user-selected folder/index as a separate explicit design.
+- Import the HSA-compatible SQLite database into app data `audio/android.db`
+  through staged replacement and validate its required tables/columns.
 - Resolve by expression/reading with the same HSA preference: exact reading
   match first, then source order.
-- Restrict reads to the configured local audio root.
+- Read audio only from the imported database's `android.data` blobs; never
+  resolve database `file` values as filesystem paths.
 - Store matching audio through the same AnkiConnect media path as remote audio.
 
 Acceptance:
@@ -196,6 +206,5 @@ HSW should first decide whether Sasayaki itself is in scope for Windows.
 
 ## Recommended Next Step
 
-Design Slice 5C's Windows local-audio index/import boundary before
-implementation. Keep Slice 5D optional sync independent so it can be selected
-instead if local-audio source data is unavailable.
+Implement Slice 5D optional AnkiConnect sync next. Keep it default-off and
+secondary to a successful note result.
