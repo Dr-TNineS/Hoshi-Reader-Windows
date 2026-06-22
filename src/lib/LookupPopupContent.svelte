@@ -4,9 +4,9 @@
   import { loadCachedDictionaryStyles, type DictionaryStyleResource } from "./dictionary-style-cache";
   import { scopeDictionaryCss, type LookupPitchGroup, type LookupState } from "./lookup-popup";
   import { createLookupPopupViewModels, popupResultDictionaries } from "./lookup-popup-view-model";
-  import { clearLookupHighlight, POPUP_LOOKUP_HIGHLIGHT } from "./lookup-highlight";
+  import { clearLookupHighlight, POPUP_LOOKUP_HIGHLIGHT, setLookupHighlightRange } from "./lookup-highlight";
   import { markLookupPerformance } from "./lookup-performance";
-  import { selectPopupTextFromPoint } from "./popup-selection";
+  import { popupSelectionPrefixRange, popupTextHitAtPoint, selectPopupTextFromHit, selectPopupTextFromPoint, type PopupTextHit, type PopupTextSelection } from "./popup-selection";
   import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, AnkiStoreBookCoverResult, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LookupAnkiPayload, ReaderSelection, WordAudioPlaybackResult, WordAudioResolveRequest } from "./types";
 
   let {
@@ -17,6 +17,8 @@
     error = "",
     results = [],
     clearSelectionSignal = 0,
+    selectionHighlightCount = 0,
+    selectionHighlightSignal = 0,
     onClose = () => {},
     onImportDictionary = () => {},
     onNestedLookup = () => {},
@@ -45,6 +47,8 @@
     error?: string;
     results?: DictResult[];
     clearSelectionSignal?: number;
+    selectionHighlightCount?: number;
+    selectionHighlightSignal?: number;
     onClose?: (popupId: string) => void;
     onImportDictionary?: () => void;
     onNestedLookup?: (popupId: string, selection: ReaderSelection) => void;
@@ -67,9 +71,11 @@
     onAddAnkiNote?: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
   } = $props();
 
-  let shiftHoverLastX = -1;
-  let shiftHoverLastY = -1;
-  let lastNestedLookupKey = "";
+  let shiftHoverPoint: { x: number; y: number } | null = null;
+  let shiftHoverFrame: number | null = null;
+  let lastShiftHoverHit: PopupTextHit | null = null;
+  let activeSelectionRange: Range | null = null;
+  let lastAppliedSelectionHighlightCount = -1;
   let suppressNextScrollAfterNestedLookup = false;
   let previousClearSelectionSignal: number | null = null;
   let previousRestoreScrollSignal: number | null = null;
@@ -98,9 +104,48 @@
     dataBase64: string;
   }
 
+  function cancelShiftHoverFrame() {
+    if (shiftHoverFrame === null) return;
+    window.cancelAnimationFrame(shiftHoverFrame);
+    shiftHoverFrame = null;
+  }
+
   function resetShiftHover() {
-    shiftHoverLastX = -1;
-    shiftHoverLastY = -1;
+    cancelShiftHoverFrame();
+    shiftHoverPoint = null;
+    lastShiftHoverHit = null;
+  }
+
+  function clearActiveSelectionRange() {
+    activeSelectionRange?.detach();
+    activeSelectionRange = null;
+    lastAppliedSelectionHighlightCount = -1;
+    clearLookupHighlight(POPUP_LOOKUP_HIGHLIGHT);
+  }
+
+  function applySelectionHighlight(characterCount: number) {
+    if (!activeSelectionRange || characterCount === lastAppliedSelectionHighlightCount) return;
+    if (characterCount <= 0) {
+      clearLookupHighlight(POPUP_LOOKUP_HIGHLIGHT);
+      lastAppliedSelectionHighlightCount = 0;
+      return;
+    }
+    const prefix = popupSelectionPrefixRange(activeSelectionRange, characterCount);
+    if (!prefix) {
+      clearLookupHighlight(POPUP_LOOKUP_HIGHLIGHT);
+      lastAppliedSelectionHighlightCount = characterCount;
+      return;
+    }
+    setLookupHighlightRange(POPUP_LOOKUP_HIGHLIGHT, prefix);
+    prefix.detach();
+    lastAppliedSelectionHighlightCount = characterCount;
+  }
+
+  function activatePopupSelection(result: PopupTextSelection) {
+    clearActiveSelectionRange();
+    activeSelectionRange = result.range;
+    lastAppliedSelectionHighlightCount = 0;
+    clearLookupHighlight(POPUP_LOOKUP_HIGHLIGHT);
   }
 
   function suppressImmediateNestedLookupScroll() {
@@ -112,9 +157,8 @@
 
   $effect(() => {
     return () => {
-      requestAnimationFrame(() => {
-        if (!document.querySelector(".lookup-pop")) clearLookupHighlight(POPUP_LOOKUP_HIGHLIGHT);
-      });
+      resetShiftHover();
+      clearActiveSelectionRange();
     };
   });
 
@@ -126,9 +170,13 @@
     if (clearSelectionSignal === previousClearSelectionSignal) return;
     previousClearSelectionSignal = clearSelectionSignal;
     window.getSelection()?.removeAllRanges();
-    clearLookupHighlight(POPUP_LOOKUP_HIGHLIGHT);
+    clearActiveSelectionRange();
     resetShiftHover();
-    lastNestedLookupKey = "";
+  });
+
+  $effect(() => {
+    selectionHighlightSignal;
+    applySelectionHighlight(selectionHighlightCount);
   });
 
   $effect(() => {
@@ -146,7 +194,7 @@
 
   $effect(() => {
     if (lookupState !== "ready") {
-      clearLookupHighlight(POPUP_LOOKUP_HIGHLIGHT);
+      clearActiveSelectionRange();
       dictionaryStyleCss = "";
       ankiPreviewKey = "";
       ankiActionKey = "";
@@ -190,20 +238,26 @@
       return;
     }
 
-    const dx = event.clientX - shiftHoverLastX;
-    const dy = event.clientY - shiftHoverLastY;
-    if (dx * dx + dy * dy < 64) return;
-
-    shiftHoverLastX = event.clientX;
-    shiftHoverLastY = event.clientY;
-    const nestedSelection = selectPopupTextFromPoint(event.clientX, event.clientY, selection.chapterIndex);
-    if (!nestedSelection) return;
-
-    const nestedKey = `${nestedSelection.text}:${Math.round(nestedSelection.rect.x)}:${Math.round(nestedSelection.rect.y)}`;
-    if (nestedKey === lastNestedLookupKey) return;
-    lastNestedLookupKey = nestedKey;
-    suppressImmediateNestedLookupScroll();
-    onNestedLookup(popupId, nestedSelection);
+    shiftHoverPoint = { x: event.clientX, y: event.clientY };
+    if (shiftHoverFrame !== null) return;
+    shiftHoverFrame = window.requestAnimationFrame(() => {
+      shiftHoverFrame = null;
+      if (!shiftHoverPoint) return;
+      const { x, y } = shiftHoverPoint;
+      const hit = popupTextHitAtPoint(x, y);
+      if (!hit) {
+        lastShiftHoverHit = null;
+        return;
+      }
+      if (lastShiftHoverHit?.node === hit.node && lastShiftHoverHit.offset === hit.offset) return;
+      lastShiftHoverHit = hit;
+      const result = selectPopupTextFromHit(hit, x, y, selection.chapterIndex);
+      if (!result) return;
+      const nestedSelection = result.selection;
+      activatePopupSelection(result);
+      suppressImmediateNestedLookupScroll();
+      onNestedLookup(popupId, nestedSelection);
+    });
   }
 
   function handleResultsScroll() {
@@ -220,11 +274,12 @@
       : null;
     if (!target) {
       if (event.button !== 0) return;
-      const nestedSelection = selectPopupTextFromPoint(event.clientX, event.clientY, selection.chapterIndex);
-      if (!nestedSelection) return;
+      const result = selectPopupTextFromPoint(event.clientX, event.clientY, selection.chapterIndex);
+      if (!result) return;
 
+      activatePopupSelection(result);
       suppressImmediateNestedLookupScroll();
-      onNestedLookup(popupId, nestedSelection);
+      onNestedLookup(popupId, result.selection);
       return;
     }
 
@@ -380,6 +435,10 @@
   async function storeAnkiMediaForPayload(payload: LookupAnkiPayload): Promise<AnkiStoreMediaResult | null> {
     if (!onStoreAnkiMedia || payload.media.length === 0) return null;
     return onStoreAnkiMedia(ankiDictionaryMediaRefs(payload.media));
+  }
+
+  function handleWindowKeyUp(event: KeyboardEvent) {
+    if (event.key === "Shift") resetShiftHover();
   }
 
   async function storeAnkiCoverForPayload(
@@ -543,6 +602,8 @@
     return moras.length > 0 && group.positions.length > 0;
   }
 </script>
+
+<svelte:window onkeyup={handleWindowKeyUp} onblur={resetShiftHover} />
 
 <svelte:head>
   <svelte:element this={styleTag}>{dictionaryStyleCss}</svelte:element>

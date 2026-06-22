@@ -31,6 +31,8 @@
     results: DictResult[];
     requestId: number;
     clearSelectionSignal: number;
+    selectionHighlightCount: number;
+    selectionHighlightSignal: number;
     historyBack: LookupPopupHistoryEntry[];
     historyForward: LookupPopupHistoryEntry[];
     restoreScrollTop: number;
@@ -122,6 +124,8 @@
       error={popup.error}
       results={popup.results}
       clearSelectionSignal={popup.clearSelectionSignal}
+      selectionHighlightCount={popup.selectionHighlightCount}
+      selectionHighlightSignal={popup.selectionHighlightSignal}
       onClose={onClose}
       onImportDictionary={onImportDictionary}
       onNestedLookup={onNestedLookup}

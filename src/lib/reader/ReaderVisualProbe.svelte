@@ -1,10 +1,12 @@
 <script lang="ts">
   import Reader from "./Reader.svelte";
+  import { readerAppearancePalette } from "../appearance";
   import { lookupHighlightText as renderedLookupHighlightTextFor, READER_LOOKUP_HIGHLIGHT } from "../lookup-highlight";
   import type { ReaderProgress, ReaderSelection } from "../types";
 
   const params = new URLSearchParams(window.location.search);
   const lookupHighlightMode = params.get("lookupHighlightMode") ?? "";
+  const appearancePalette = readerAppearancePalette({ theme: params.get("theme") === "light" ? "light" : "dark" });
 
   const imageSvg = encodeURIComponent(`
     <svg xmlns="http://www.w3.org/2000/svg" width="360" height="520" viewBox="0 0 360 520">
@@ -48,20 +50,29 @@
   let lastProgress = $state<ReaderProgress | null>(null);
   let lastSelection = $state<ReaderSelection | null>(null);
   let lookupHighlightText = $state("");
+  let lookupHighlightSignal = $state(0);
   let visibleSelectionText = $state("");
   let renderedLookupHighlightText = $state("");
   let selectionCount = $state(0);
+  let lookupGeneration = 0;
 
   function recordProgress(progress: ReaderProgress) {
     lastProgress = progress;
   }
 
   function recordSelection(selection: ReaderSelection | null) {
+    const generation = ++lookupGeneration;
     lastSelection = selection;
     if (selection) selectionCount += 1;
-    lookupHighlightText = selection && lookupHighlightMode === "prefix2"
-      ? Array.from(selection.text.replace(/\s+/g, "")).slice(0, 2).join("")
-      : "";
+    lookupHighlightText = "";
+    lookupHighlightSignal += 1;
+    if (selection && lookupHighlightMode === "prefix2") {
+      window.setTimeout(() => {
+        if (generation !== lookupGeneration) return;
+        lookupHighlightText = Array.from(selection.text).slice(0, 2).join("");
+        lookupHighlightSignal += 1;
+      }, 120);
+    }
   }
 
   function nextChapter() {
@@ -109,12 +120,14 @@
   {chapterIndex}
   totalBookChars={3600}
   {startAtEnd}
+  {appearancePalette}
   onNextChapter={nextChapter}
   onPrevChapter={previousChapterAtEnd}
   onPrevChapterDirect={previousChapterDirect}
   onProgressChange={recordProgress}
   onSelectionChange={recordSelection}
-  {lookupHighlightText}
+  lookupHighlightCount={Array.from(lookupHighlightText).length}
+  {lookupHighlightSignal}
 />
 
 <div
@@ -128,6 +141,8 @@
   data-rendered-highlight-text={renderedLookupHighlightText}
   data-sentence={lastSelection?.sentence ?? ""}
   data-selection-count={selectionCount}
+  data-anchor-x={lastSelection?.anchorRect?.x ?? lastSelection?.rect.x ?? -1}
+  data-anchor-y={lastSelection?.anchorRect?.y ?? lastSelection?.rect.y ?? -1}
 >
   {lastProgress?.chapterReadChars ?? 0}:{lastSelection?.text ?? ""}
 </div>

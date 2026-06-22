@@ -1,5 +1,4 @@
 import type { ReaderSelection, ReaderSelectionRect } from "./types";
-import { POPUP_LOOKUP_HIGHLIGHT, setLookupHighlightRange } from "./lookup-highlight";
 
 const POPUP_SCAN_BOUNDARIES = new Set(Array.from("。、！？…‥「」『』（）()【】〈〉《》〔〕｛｝{}［］[]・：；:;，,.─"));
 
@@ -10,13 +9,20 @@ type CaretDocument = Document & {
   caretRangeFromPoint?: (x: number, y: number) => Range | null;
 };
 
-interface TextHit {
+export interface PopupTextHit {
   node: Text;
   offset: number;
   rect: ReaderSelectionRect;
+  root: HTMLElement;
 }
 
-export function selectPopupTextFromPoint(x: number, y: number, chapterIndex: number): ReaderSelection | null {
+export interface PopupTextSelection {
+  selection: ReaderSelection;
+  range: Range;
+  hit: PopupTextHit;
+}
+
+export function popupTextHitAtPoint(x: number, y: number): PopupTextHit | null {
   const target = document.elementFromPoint(x, y);
   if (!(target instanceof Element)) return null;
 
@@ -38,23 +44,73 @@ export function selectPopupTextFromPoint(x: number, y: number, chapterIndex: num
   ].join(","))) return null;
 
   const hit = characterAtPoint(x, y, glossaryRoot);
-  if (!hit) return null;
+  return hit ? { ...hit, root: glossaryRoot } : null;
+}
 
-  const selection = buildSelection(hit, glossaryRoot, x, y, chapterIndex);
-  if (!selection) return null;
-
-  setLookupHighlightRange(POPUP_LOOKUP_HIGHLIGHT, selection.range);
-  selection.range.detach();
+export function selectPopupTextFromHit(
+  hit: PopupTextHit,
+  x: number,
+  y: number,
+  chapterIndex: number,
+): PopupTextSelection | null {
+  const built = buildSelection(hit, hit.root, x, y, chapterIndex);
+  if (!built) return null;
 
   return {
-    text: selection.text,
-    rect: selection.rect,
-    anchorRect: selection.anchorRect,
-    chapterIndex,
+    selection: {
+      text: built.text,
+      rect: built.rect,
+      anchorRect: built.anchorRect,
+      chapterIndex,
+    },
+    range: built.range,
+    hit,
   };
 }
 
-function characterAtPoint(x: number, y: number, root: HTMLElement): TextHit | null {
+export function selectPopupTextFromPoint(x: number, y: number, chapterIndex: number): PopupTextSelection | null {
+  const hit = popupTextHitAtPoint(x, y);
+  return hit ? selectPopupTextFromHit(hit, x, y, chapterIndex) : null;
+}
+
+export function popupSelectionPrefixRange(range: Range, characterCount: number): Range | null {
+  if (characterCount <= 0 || !range.startContainer.parentElement?.isConnected) return null;
+  const commonRoot = range.commonAncestorContainer;
+  const walkerRoot = commonRoot.nodeType === Node.TEXT_NODE ? commonRoot.parentElement : commonRoot;
+  if (!(walkerRoot instanceof HTMLElement)) return null;
+
+  const walker = textWalker(walkerRoot);
+  if (range.startContainer.nodeType === Node.TEXT_NODE) walker.currentNode = range.startContainer;
+  let node: Text | null = range.startContainer.nodeType === Node.TEXT_NODE
+    ? range.startContainer as Text
+    : walker.nextNode() as Text | null;
+  let remaining = characterCount;
+
+  while (node) {
+    if (!range.intersectsNode(node)) {
+      node = walker.nextNode() as Text | null;
+      continue;
+    }
+    const start = node === range.startContainer ? range.startOffset : 0;
+    const end = node === range.endContainer ? range.endOffset : node.data.length;
+    let offset = start;
+    while (offset < end) {
+      offset += codeUnitLengthAt(node.data, offset);
+      remaining -= 1;
+      if (remaining === 0) {
+        const prefix = document.createRange();
+        prefix.setStart(range.startContainer, range.startOffset);
+        prefix.setEnd(node, offset);
+        return prefix;
+      }
+    }
+    if (node === range.endContainer) break;
+    node = walker.nextNode() as Text | null;
+  }
+  return null;
+}
+
+function characterAtPoint(x: number, y: number, root: HTMLElement): Omit<PopupTextHit, "root"> | null {
   const range = caretRangeAtPoint(x, y, root);
   if (!range) return fallbackCharacterAtPoint(x, y, root);
 
@@ -102,7 +158,7 @@ function caretRangeAtPoint(x: number, y: number, root: HTMLElement): Range | nul
   return null;
 }
 
-function fallbackCharacterAtPoint(x: number, y: number, root: HTMLElement): TextHit | null {
+function fallbackCharacterAtPoint(x: number, y: number, root: HTMLElement): Omit<PopupTextHit, "root"> | null {
   const walker = textWalker(root);
   let node: Text | null;
   while ((node = walker.nextNode() as Text | null)) {
@@ -123,7 +179,7 @@ function fallbackCharacterAtPoint(x: number, y: number, root: HTMLElement): Text
   return null;
 }
 
-function buildSelection(hit: TextHit, root: HTMLElement, x: number, y: number, chapterIndex: number) {
+function buildSelection(hit: PopupTextHit, root: HTMLElement, x: number, y: number, chapterIndex: number) {
   const ranges: Range[] = [];
   const walker = textWalker(root);
   walker.currentNode = hit.node;
