@@ -15,7 +15,10 @@ This file is the short operational handoff for future agents. Keep detailed stat
 
 ## Current Priorities
 
-1. Treat the current reader lookup implementation slices in `docs/LOOKUP_ROADMAP.md` as complete.
+1. Follow `docs/DICTIONARY_POPUP_DESKTOP_ALIGNMENT_PLAN.md` for the active desktop popup alignment work.
+   - Current: Slice 1, persisted width/height/scale settings and responsive fixed popup sizing.
+   - Next: Slice 2, Windows popup typography and content scaling.
+2. Treat the current reader lookup implementation slices in `docs/LOOKUP_ROADMAP.md` as complete.
    - Slice 6 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including a passing VS developer-shell linked build.
    - Slice 7 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including a real JMdict Yomitan import, manifest verification, and linked runtime lookup check.
    - Slice 8 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including direct Tauri file-dialog import and reader popup lookup with real EPUB/dictionary data.
@@ -29,14 +32,14 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Bookshelf/import hardening is complete for staged EPUB imports, duplicate EPUB reuse, missing app-owned EPUB errors, dictionary replacement preservation, import busy guards, and bookshelf Forget cleanup.
    - Final linked real dictionary validation with local `MK3Fix0213.zip` passed on 2026-06-12: `dict_id=93e8e532b599ba4a`, `term=140821`, `media=0`, `lookup_results=2`.
    - Anki HSA/Windows alignment is documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`; AnkiConnect readiness/configuration, field preview, minimal duplicate-check/add-note plumbing, and real AnkiConnect runtime add-note validation are complete.
-2. Treat the storage/model migration as complete at the JSON-store level: reading progress, recent books, and session now live in Tauri app data `reading/state.json`, with one-time legacy `localStorage` import and browser fallback.
-3. Follow the complete Anki/audio route in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
+3. Treat the storage/model migration as complete at the JSON-store level: reading progress, recent books, and session now live in Tauri app data `reading/state.json`, with one-time legacy `localStorage` import and browser fallback.
+4. Follow the complete Anki/audio route in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
    - Current: Slice 5I-0, Windows audio decode/clipping capability spike.
    - Next: Slice 5I, per-book Sasayaki sidecar and import.
    - Slices 5A-5H are complete at their documented validation levels. Do not promote automated results to real runtime verification.
-4. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
-5. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
-6. Reader chrome should continue to avoid user-visible spine totals (`Ch.x/y`) or per-spine page totals (`P.x/y`); use whole-book character progress instead unless a future documented slice deliberately changes the chapter model.
+5. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
+6. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
+7. Reader chrome should continue to avoid user-visible spine totals (`Ch.x/y`) or per-spine page totals (`P.x/y`); use whole-book character progress instead unless a future documented slice deliberately changes the chapter model.
 
 ## Active Blockers
 
