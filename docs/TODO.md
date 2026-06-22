@@ -31,9 +31,9 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Anki HSA/Windows alignment is documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`; AnkiConnect readiness/configuration, field preview, minimal duplicate-check/add-note plumbing, and real AnkiConnect runtime add-note validation are complete.
 2. Treat the storage/model migration as complete at the JSON-store level: reading progress, recent books, and session now live in Tauri app data `reading/state.json`, with one-time legacy `localStorage` import and browser fallback.
 3. Follow the complete Anki/audio route in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
-   - Current: Slice 5H, shared word-audio resolver, bounded preview cache, and popup playback.
-   - Next: Slice 5I-0, Windows audio decode/clipping capability spike.
-   - Slices 5A-5G are complete at their documented validation levels. Do not promote automated results to real runtime verification.
+   - Current: Slice 5I-0, Windows audio decode/clipping capability spike.
+   - Next: Slice 5I, per-book Sasayaki sidecar and import.
+   - Slices 5A-5H are complete at their documented validation levels. Do not promote automated results to real runtime verification.
 4. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 5. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
 

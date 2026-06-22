@@ -129,8 +129,8 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Rust `anki_store_dictionary_media` stores imported dictionary image media through AnkiConnect `storeMediaFile`; missing media returns warnings, while unsafe paths and unsupported types are blocked.
   - `npm run check:lookup-popup` covers Anki media store success, missing-media warnings with text-card creation, and hard media-store failure without note creation.
   - Real AnkiConnect store-media runtime validation passed on 2026-06-18 with a throwaway SVG media file.
-  - Anki word-audio settings store an enable flag, editable remote source, and timeout.
-  - Remote word audio resolves `{term}` and `{reading}` against the first enabled public HTTP/HTTPS source, enforces redirect/address/timeout/format/size boundaries, stores successful audio through AnkiConnect, and renders `[sound:filename]` through `{audio}`.
+  - Anki word-audio settings store an enable flag, ordered remote sources, timeout, autoplay, and the future Interrupt/Duck/Mix coordination mode.
+  - Remote word audio resolves `{term}` and `{reading}` against enabled public HTTP/HTTPS sources in saved order, enforces redirect/address/timeout/format/size boundaries, stores successful audio through AnkiConnect, and renders `[sound:filename]` through `{audio}`.
   - Ordinary remote-audio failures show warnings and preserve text-note creation; unsafe targets and oversized responses block the current add operation.
   - `npm run check:lookup-popup` covers remote-audio success, missing/unsupported warnings, security failure, no-audio-field and missing-expression behavior.
   - Sasayaki audio and sync remain planned in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
@@ -142,11 +142,12 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Anki settings include default-off compact glossary card CSS. `{book-cover}` resolves only an app-owned `bookId` through the Rust library manifest, validates containment/signature/size, stores deterministic cover media, and renders the stored image filename.
   - The media pipeline stores dictionary images, then book cover, then word audio before rendering and addNote. Duplicate notes may leave shared content-hash media; HSW does not automatically delete it.
   - Remote word-audio sources have stable ids and support add/remove/edit/enable/reorder. Export tries local audio first, then every enabled remote source in saved order; ordinary warnings fall through and security errors stop immediately.
+  - Anki export and popup playback now share the Rust local-first/ordered-remote word-audio resolver. Popup audio supports play, stop, logical request cancellation, lookup cleanup, and optional autoplay through a content-hash cache bounded to 20 files and 50 MiB.
 
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata and reading state are still JSON.
-- Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; real remote-audio-plus-AnkiConnect, real HSA local-audio database, and real post-add sync runtime validation are also not verified.
+- Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; real remote-audio-plus-AnkiConnect, real HSA local-audio database, real popup word-audio playback, and real post-add sync runtime validation are also not verified.
 - No full settings surface; only the minimal bookshelf Appearance and Advanced startup-behavior panels are implemented.
 - No verified app-owned cover thumbnail cache.
 - Runtime validation with a normal media-bearing Yomitan dictionary is not verified; on 2026-06-16, `HSW_MEDIA_YOMITAN_ZIP` was unset, `OALDPE10.zip` had `mediaCount=0`, and `MK3Fix0213.zip` remained unsuitable because compatibility import intentionally skips media.
