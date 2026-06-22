@@ -141,6 +141,14 @@ and non-Tauri fallback behavior. Runtime validation with a normal media-bearing
 Yomitan dictionary is still blocked/not verified; on 2026-06-16 no suitable
 local media-bearing Yomitan zip was available.
 
+Current note: Slice 2B is implemented at the command/probe level.
+`dictionary_media` reads hoshidicts packed media from `media.idx`/`media.bin`
+before falling back to extracted files, so media-preserving imports can render
+gaiji SVG paths such as `gaiji/参考.svg`. Structured image detection also
+recognizes Yomitan-style `type: "image"` records. Manual popup runtime
+validation with a media-preserving 明鏡 import remains not verified because the
+current local app-data 明鏡 import has no `media.idx`/`media.bin`.
+
 ## Follow-Up Implementation Slices
 
 ### Slice 1: HSA-Style Renderer Parity
@@ -209,6 +217,47 @@ Validation:
 - `npm run build`
 - `npm run check:lookup-popup`
 - Manual runtime check with a dictionary containing media.
+
+### Slice 2B: Packed Dictionary Media and Gaiji SVGs
+
+Status: implemented on 2026-06-23.
+
+Goal: render imported hoshidicts packed media such as 明鏡国語辞典 第三版
+`gaiji/参考.svg` in the existing popup media path.
+
+Key changes:
+
+- Keep `dictionary_media(dictionary, path) -> { mimeType, dataBase64 }`.
+- Validate media paths before lookup, then read from `media.idx`/`media.bin`
+  when present and fall back to legacy extracted files.
+- Match dictionaries by id/import id/manifest title and restored imported title.
+- Recognize structured images from both `tag: "img" | "image"` and
+  `type: "image"` records.
+- Extend popup probes with a gaiji SVG fixture.
+
+Acceptance:
+
+- 明鏡 gaiji SVG media hydrates as an inline image instead of `Media unavailable`.
+- Missing media remains non-fatal and text lookup still renders.
+- Existing extracted media tests and popup probe behavior remain valid.
+
+Validation:
+
+- `cd src-tauri; cargo check`
+- `cd src-tauri; cargo test --lib`
+- `npm run check`
+- `npm run build`
+- `npm run check:lookup-popup`
+- Manual runtime check with 明鏡国語辞典 第三版 entry `声`: not verified; current
+  local app-data import lacks `media.idx`/`media.bin`.
+
+Completed validation on 2026-06-23:
+
+- `npm run check`
+- `npm run build`
+- `npm run check:lookup-popup`
+- `cd src-tauri; cargo test --lib`
+- VS developer-shell `cd /d D:\Hoshi-Reader-Windows\src-tauri && cargo check`
 
 ### Slice 3: HSA-Style Redirect History
 

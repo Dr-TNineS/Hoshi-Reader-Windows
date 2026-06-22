@@ -78,6 +78,7 @@
           ],
         },
         { tag: "img", path: "images/school.svg", alt: "school icon" },
+        { type: "image", path: "gaiji/参考.svg", alt: "reference gaiji" },
       ],
     },
   ]);

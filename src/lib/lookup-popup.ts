@@ -141,7 +141,7 @@ function renderStructuredContent(value: unknown, parentTag = "", dictionary = ""
   }
 
   const tag = typeof record.tag === "string" ? record.tag.toLowerCase() : "";
-  if (tag === "img" || tag === "image") return renderStructuredImage(record, dictionary);
+  if (isStructuredImageRecord(record)) return renderStructuredImage(record, dictionary);
   const safeTag = safeStructuredTag(tag);
   if (safeTag === "br") return "<br>";
 
@@ -154,6 +154,12 @@ function renderStructuredContent(value: unknown, parentTag = "", dictionary = ""
   const html = `<${safeTag}${attributes}>${content}</${safeTag}>`;
   if (safeTag === "table") return `<div class="gloss-sc-table-container">${html}</div>`;
   return html;
+}
+
+function isStructuredImageRecord(record: Record<string, unknown>): boolean {
+  const tag = typeof record.tag === "string" ? record.tag.toLowerCase() : "";
+  const type = typeof record.type === "string" ? record.type.toLowerCase() : "";
+  return tag === "img" || tag === "image" || type === "image";
 }
 
 function renderStructuredImage(record: Record<string, unknown>, dictionary: string): string {

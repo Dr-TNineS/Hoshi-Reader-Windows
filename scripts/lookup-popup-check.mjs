@@ -372,7 +372,7 @@ async function main() {
     });
     await scrollFirstMediaPlaceholderIntoView(page);
     await page.waitForFunction(() => (
-      document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='loaded']").length >= 1
+      document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='loaded']").length >= 2
     ));
     const ready = await popupMetrics(page);
     assert(Math.abs(ready.popup.width - 320) <= 1 && Math.abs(ready.popup.height - 250) <= 1, "Default popup outer frame should be 320 x 250.", ready);
@@ -391,8 +391,8 @@ async function main() {
     assert(ready.structuredListItems >= 2 && ready.structuredBreaks >= 1, "Ready popup should preserve structured glossary list and line breaks.", ready);
     assert(ready.structuredTables >= 1, "Ready popup should preserve structured glossary tables.", ready);
     assert(ready.structuredRuby >= 1, "Ready popup should preserve structured glossary ruby.", ready);
-    assert(ready.mediaPlaceholders >= 1, "Ready popup should render safe placeholders for dictionary media.", ready);
-    assert(ready.mediaLoaded >= 1 && ready.mediaImages >= 1, "Ready popup should lazy-load dictionary media into an image.", ready);
+    assert(ready.mediaPlaceholders >= 2, "Ready popup should render safe placeholders for dictionary media.", ready);
+    assert(ready.mediaLoaded >= 2 && ready.mediaImages >= 2, "Ready popup should lazy-load tag and type dictionary media into images.", ready);
     assert(ready.mediaErrors === 0 && ready.mediaLoading === 0, "Successful dictionary media should not remain loading or error.", ready);
     assert(ready.mediaImageMaxHeight === "180px", "Dictionary media image should be constrained inside the popup.", ready);
     assert(ready.glossaryGroups >= 2, "Ready popup should group glossary entries by dictionary.", ready);
@@ -433,7 +433,8 @@ async function main() {
     const ankiAdded = await popupMetrics(page);
     assert(ankiAdded.ankiAddCount === 1, "Add Anki should call the note creation callback once.", ankiAdded);
     assert(ankiAdded.ankiStoreCount === 1, "Add Anki should store dictionary media before note creation.", ankiAdded);
-    assert(ankiAdded.ankiLastMedia.length === 1 && ankiAdded.ankiLastMedia[0].filename.startsWith("hsw_"), "Stored media request should use deterministic HSW filenames.", ankiAdded);
+    assert(ankiAdded.ankiLastMedia.length === 2 && ankiAdded.ankiLastMedia.every((item) => item.filename.startsWith("hsw_")), "Stored media request should use deterministic HSW filenames.", ankiAdded);
+    assert(ankiAdded.ankiLastMedia.some((item) => item.path === "gaiji/参考.svg"), "Stored media request should include Yomitan type:image gaiji references.", ankiAdded);
     assert(ankiAdded.ankiLastDeck === "Mining" && ankiAdded.ankiLastModel === "Hoshi Vocabulary", "Add Anki should send selected deck and note type.", ankiAdded);
     assert(ankiAdded.ankiLastRequest.tags.join(" ") === "hoshi-reader mining", "Add Anki should send configured whitespace-separated tags.", ankiAdded);
     assert(ankiAdded.ankiLastRequest.allowDuplicates === false && ankiAdded.ankiLastRequest.duplicateScope === "collection", "Add Anki should send default duplicate policy.", ankiAdded);
@@ -631,7 +632,7 @@ async function main() {
     await openProbe(page, "ready", { longResult: true });
     await scrollFirstMediaPlaceholderIntoView(page);
     await page.waitForFunction(() => (
-      document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='loaded']").length >= 1
+      document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='loaded']").length >= 2
     ));
 
     await page.locator(".lookup-pop[data-popup-id='root'] a[data-lookup-redirect]").first().evaluate((link) => {
@@ -781,7 +782,7 @@ async function main() {
     await openProbe(page, "ready", { longResult: true, popupScale: 1.5, showReading: true });
     await scrollFirstMediaPlaceholderIntoView(page);
     await page.waitForFunction(() => (
-      document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='loaded']").length >= 1
+      document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='loaded']").length >= 2
     ));
     const scaled = await popupMetrics(page);
     assert(scaled.popup.width === 320 && scaled.popup.height === 250, "Content scale should not change the popup outer frame.", scaled);

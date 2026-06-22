@@ -1115,7 +1115,20 @@ fn find_dictionary_entry<'a>(
                 .filter(|entry| entry.title == needle)
                 .min_by_key(|entry| entry.order)
         })
+        .or_else(|| {
+            manifest
+                .dictionaries
+                .iter()
+                .filter(|entry| imported_dictionary_title_matches(entry, needle))
+                .min_by_key(|entry| entry.order)
+        })
         .ok_or_else(|| format!("Dictionary not found for {request_kind} request: {needle}"))
+}
+
+fn imported_dictionary_title_matches(entry: &DictionaryManifestEntry, title: &str) -> bool {
+    read_imported_dictionary_title(&PathBuf::from(&entry.internal_path))
+        .map(|imported_title| imported_title == title)
+        .unwrap_or(false)
 }
 
 pub(crate) fn load_dictionary_media(
@@ -1124,10 +1137,18 @@ pub(crate) fn load_dictionary_media(
     path: &str,
 ) -> Result<DictionaryMediaResource, String> {
     let entry = find_dictionary_entry(manifest, dictionary, "media")?;
-    let media_path = resolve_dictionary_media_path(Path::new(&entry.internal_path), path)?;
-    let mime_type = dictionary_media_mime_type(&media_path)?;
-    let data =
-        fs::read(&media_path).map_err(|e| format!("Cannot read dictionary media '{path}': {e}"))?;
+    let relative_path = validate_dictionary_media_relative_path(path)?;
+    let mime_type = dictionary_media_mime_type(&relative_path)?;
+    let data = match read_packed_dictionary_media(Path::new(&entry.internal_path), &relative_path)?
+    {
+        Some(data) => data,
+        None => {
+            let media_path =
+                resolve_dictionary_media_path(Path::new(&entry.internal_path), &relative_path)?;
+            fs::read(&media_path)
+                .map_err(|e| format!("Cannot read dictionary media '{relative_path}': {e}"))?
+        }
+    };
 
     Ok(DictionaryMediaResource {
         mime_type: mime_type.into(),
@@ -1163,22 +1184,8 @@ fn load_dictionary_styles(
 }
 
 fn resolve_dictionary_media_path(root: &Path, relative_path: &str) -> Result<PathBuf, String> {
-    let relative_path = relative_path.trim();
-    if relative_path.is_empty() {
-        return Err("Dictionary media path is empty.".into());
-    }
-
-    let relative = Path::new(relative_path);
-    if relative.is_absolute()
-        || relative.components().any(|component| {
-            matches!(
-                component,
-                Component::ParentDir | Component::Prefix(_) | Component::RootDir
-            )
-        })
-    {
-        return Err("Dictionary media path must stay inside the imported dictionary.".into());
-    }
+    let relative_path = validate_dictionary_media_relative_path(relative_path)?;
+    let relative = Path::new(&relative_path);
 
     let root = root
         .canonicalize()
@@ -1198,8 +1205,145 @@ fn resolve_dictionary_media_path(root: &Path, relative_path: &str) -> Result<Pat
     Ok(media_path)
 }
 
-fn dictionary_media_mime_type(path: &Path) -> Result<&'static str, String> {
-    let extension = path
+fn validate_dictionary_media_relative_path(relative_path: &str) -> Result<String, String> {
+    let relative_path = relative_path.trim();
+    if relative_path.is_empty() {
+        return Err("Dictionary media path is empty.".into());
+    }
+
+    let relative = Path::new(relative_path);
+    if relative.is_absolute()
+        || relative.components().any(|component| {
+            matches!(
+                component,
+                Component::ParentDir | Component::Prefix(_) | Component::RootDir
+            )
+        })
+    {
+        return Err("Dictionary media path must stay inside the imported dictionary.".into());
+    }
+
+    Ok(relative_path.into())
+}
+
+fn read_packed_dictionary_media(
+    root: &Path,
+    relative_path: &str,
+) -> Result<Option<Vec<u8>>, String> {
+    let media_path = root.join("media.bin");
+    let index_path = root.join("media.idx");
+    if !media_path.is_file() || !index_path.is_file() {
+        return Ok(None);
+    }
+
+    let index =
+        fs::read(&index_path).map_err(|e| format!("Cannot read dictionary media index: {e}"))?;
+    let media =
+        fs::read(&media_path).map_err(|e| format!("Cannot read dictionary media archive: {e}"))?;
+    packed_dictionary_media(&index, &media, relative_path)
+}
+
+fn packed_dictionary_media(
+    index: &[u8],
+    media: &[u8],
+    relative_path: &str,
+) -> Result<Option<Vec<u8>>, String> {
+    let count = read_u32_le(index, 0)
+        .ok_or_else(|| "Dictionary media index is truncated.".to_string())?
+        as usize;
+    let offsets_end = 4usize
+        .checked_add(
+            count
+                .checked_mul(8)
+                .ok_or_else(|| "Dictionary media index is too large.".to_string())?,
+        )
+        .ok_or_else(|| "Dictionary media index is too large.".to_string())?;
+    if index.len() < offsets_end {
+        return Err("Dictionary media index is truncated.".into());
+    }
+
+    let mut left = 0usize;
+    let mut right = count;
+    while left < right {
+        let mid = left + (right - left) / 2;
+        let offset = read_u64_le(index, 4 + mid * 8)
+            .ok_or_else(|| "Dictionary media index is truncated.".to_string())?
+            as usize;
+        let Some((indexed_path, data)) = packed_dictionary_media_record(media, offset)? else {
+            return Err("Dictionary media archive is truncated.".into());
+        };
+        match indexed_path.as_str().cmp(relative_path) {
+            std::cmp::Ordering::Less => left = mid + 1,
+            std::cmp::Ordering::Greater => right = mid,
+            std::cmp::Ordering::Equal => return Ok(Some(data)),
+        }
+    }
+
+    Ok(None)
+}
+
+fn packed_dictionary_media_record(
+    media: &[u8],
+    offset: usize,
+) -> Result<Option<(String, Vec<u8>)>, String> {
+    let Some(path_len) = read_u16_le(media, offset).map(|value| value as usize) else {
+        return Ok(None);
+    };
+    let path_start = offset
+        .checked_add(2)
+        .ok_or_else(|| "Dictionary media archive offset is too large.".to_string())?;
+    let path_end = path_start
+        .checked_add(path_len)
+        .ok_or_else(|| "Dictionary media archive path is too large.".to_string())?;
+    let size_start = path_end;
+    let size_end = size_start
+        .checked_add(4)
+        .ok_or_else(|| "Dictionary media archive path is too large.".to_string())?;
+    if media.len() < size_end {
+        return Ok(None);
+    }
+    let path = std::str::from_utf8(&media[path_start..path_end])
+        .map_err(|e| format!("Dictionary media path is not UTF-8: {e}"))?
+        .to_string();
+    let blob_size = read_u32_le(media, size_start)
+        .ok_or_else(|| "Dictionary media archive is truncated.".to_string())?
+        as usize;
+    let blob_start = size_end;
+    let blob_end = blob_start
+        .checked_add(blob_size)
+        .ok_or_else(|| "Dictionary media blob is too large.".to_string())?;
+    if media.len() < blob_end {
+        return Ok(None);
+    }
+
+    Ok(Some((path, media[blob_start..blob_end].to_vec())))
+}
+
+fn read_u16_le(bytes: &[u8], offset: usize) -> Option<u16> {
+    let end = offset.checked_add(2)?;
+    bytes
+        .get(offset..end)
+        .map(|chunk| u16::from_le_bytes([chunk[0], chunk[1]]))
+}
+
+fn read_u32_le(bytes: &[u8], offset: usize) -> Option<u32> {
+    let end = offset.checked_add(4)?;
+    bytes
+        .get(offset..end)
+        .map(|chunk| u32::from_le_bytes([chunk[0], chunk[1], chunk[2], chunk[3]]))
+}
+
+fn read_u64_le(bytes: &[u8], offset: usize) -> Option<u64> {
+    let end = offset.checked_add(8)?;
+    bytes.get(offset..end).map(|chunk| {
+        u64::from_le_bytes([
+            chunk[0], chunk[1], chunk[2], chunk[3], chunk[4], chunk[5], chunk[6], chunk[7],
+        ])
+    })
+}
+
+fn dictionary_media_mime_type(path: &str) -> Result<&'static str, String> {
+    let extension = Path::new(path)
         .extension()
         .and_then(|extension| extension.to_str())
         .map(|extension| extension.to_ascii_lowercase())
@@ -1213,10 +1357,7 @@ fn dictionary_media_mime_type(path: &Path) -> Result<&'static str, String> {
         "avif" => Ok("image/avif"),
         "heic" | "heif" => Ok("image/heic"),
         "svg" => Ok("image/svg+xml"),
-        _ => Err(format!(
-            "Unsupported dictionary media type: {}",
-            path.display()
-        )),
+        _ => Err(format!("Unsupported dictionary media type: {}", path)),
     }
 }
 
@@ -2062,6 +2203,30 @@ mod tests {
         dir
     }
 
+    fn write_packed_media(dir: &Path, records: &[(&str, &[u8])]) {
+        let mut sorted = records.to_vec();
+        sorted.sort_by_key(|(path, _)| *path);
+
+        let mut media = Vec::new();
+        let mut offsets = Vec::new();
+        for (path, data) in sorted {
+            offsets.push(media.len() as u64);
+            media.extend_from_slice(&(path.len() as u16).to_le_bytes());
+            media.extend_from_slice(path.as_bytes());
+            media.extend_from_slice(&(data.len() as u32).to_le_bytes());
+            media.extend_from_slice(data);
+        }
+
+        let mut index = Vec::new();
+        index.extend_from_slice(&(offsets.len() as u32).to_le_bytes());
+        for offset in offsets {
+            index.extend_from_slice(&offset.to_le_bytes());
+        }
+
+        fs::write(dir.join("media.bin"), media).unwrap();
+        fs::write(dir.join("media.idx"), index).unwrap();
+    }
+
     #[test]
     fn prepares_ascii_dictionary_import_source_from_non_ascii_filename() {
         let root = temp_path("ascii_import_source");
@@ -2255,10 +2420,48 @@ mod tests {
     }
 
     #[test]
+    fn dictionary_media_loads_packed_svg_by_imported_title() {
+        let root = temp_path("packed_media_lookup");
+        let dict_dir = root.join("dict");
+        fs::create_dir_all(&dict_dir).unwrap();
+        fs::write(
+            dict_dir.join("index.json"),
+            r#"{"title":"明鏡国語辞典 第三版","format":3}"#,
+        )
+        .unwrap();
+        write_packed_media(
+            &dict_dir,
+            &[
+                ("gaiji/参考.svg", br#"<svg><text>ref</text></svg>"#),
+                ("gaiji/参考1.svg", br#"<svg><text>ref1</text></svg>"#),
+            ],
+        );
+
+        let mut entry = manifest_entry("abc", 0);
+        entry.title = "mojibake-title".into();
+        entry.media_count = 0;
+        entry.internal_path = dict_dir.to_string_lossy().into_owned();
+        let manifest = DictionaryManifest {
+            dictionaries: vec![entry],
+        };
+
+        let media =
+            load_dictionary_media(&manifest, "明鏡国語辞典 第三版", "gaiji/参考.svg").unwrap();
+        assert_eq!(media.mime_type, "image/svg+xml");
+        assert_eq!(
+            media.data_base64,
+            general_purpose::STANDARD.encode(br#"<svg><text>ref</text></svg>"#)
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn dictionary_media_rejects_path_escape() {
         let root = temp_path("media_escape");
         let dict_dir = root.join("dict");
         fs::create_dir_all(&dict_dir).unwrap();
+        write_packed_media(&dict_dir, &[("safe.png", b"safe")]);
         fs::write(root.join("outside.png"), b"outside").unwrap();
 
         let mut entry = manifest_entry("abc", 0);
@@ -2299,6 +2502,25 @@ mod tests {
         assert!(unsupported.starts_with("Unsupported dictionary media type:"));
         let unknown = load_dictionary_media(&manifest, "missing", "entry.png").unwrap_err();
         assert!(unknown.starts_with("Dictionary not found for media request:"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dictionary_media_reports_missing_packed_media() {
+        let root = temp_path("packed_media_missing");
+        let dict_dir = root.join("dict");
+        fs::create_dir_all(&dict_dir).unwrap();
+        write_packed_media(&dict_dir, &[("gaiji/参考.svg", b"<svg></svg>")]);
+
+        let mut entry = manifest_entry("abc", 0);
+        entry.internal_path = dict_dir.to_string_lossy().into_owned();
+        let manifest = DictionaryManifest {
+            dictionaries: vec![entry],
+        };
+
+        let missing = load_dictionary_media(&manifest, "abc", "gaiji/missing.svg").unwrap_err();
+        assert!(missing.starts_with("Dictionary media not found:"));
 
         let _ = fs::remove_dir_all(root);
     }

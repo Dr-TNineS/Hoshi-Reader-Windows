@@ -81,16 +81,16 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Enabled term-dictionary styles are prewarmed after dictionary state becomes ready, popup style loads run in parallel, and popup results use one-pass view models for match/rules/frequency/pitch/glossary rendering.
   - Popup distinguishes loading, no dictionary, engine unavailable, empty, error, and ready states.
   - Popup renders the full backend lookup result set, up to the current backend max results, with expression, reading, source dictionary, matched/deinflected text, rules, HSA-style frequency/pitch metadata groups, grouped glossary content, dictionary media, and scoped dictionary `styles.css`.
-  - Dictionary media loads lazily inside popup glossary content; loaded, unavailable, and non-Tauri fallback states are covered by the lookup popup probe.
+  - Dictionary media loads lazily inside popup glossary content; loaded, unavailable, non-Tauri fallback, and Yomitan `type: "image"` gaiji SVG states are covered by the lookup popup probe.
   - Popup glossary text supports frame-coalesced Shift hover nested lookup as a popup stack: root lookup stays open, child popups anchor to glossary text, the parent owns the pending selection range, the child result narrows it to the first `matched` range, closing a child preserves the parent, and parent scroll closes children.
   - Popup has a disabled Anki boundary affordance and can build a typed lookup-to-Anki payload from the selected result and current book/chapter context.
-  - Lookup popup probe and `npm run check:lookup-popup` cover popup states, frame-coalesced glossary Shift hover, pending/matched parent highlighting, stale child-result rejection, child close parent preservation, parent-scroll child dismissal, redirect history, scoped dictionary CSS behavior, fixed/default/maximum/narrow sizing, upstream typography tiers, scale `1.0`/`1.5`, long-result internal scrolling, HSA-style header action/frequency/pitch layout, disabled Anki/audio boundaries, import/close actions, and narrow-window overflow.
+  - Lookup popup probe and `npm run check:lookup-popup` cover popup states, frame-coalesced glossary Shift hover, pending/matched parent highlighting, stale child-result rejection, child close parent preservation, parent-scroll child dismissal, redirect history, scoped dictionary CSS behavior, fixed/default/maximum/narrow sizing, upstream typography tiers, scale `1.0`/`1.5`, long-result internal scrolling, HSA-style header action/frequency/pitch layout, dictionary media including `tag: "img"` and `type: "image"` records, disabled Anki/audio boundaries, import/close actions, and narrow-window overflow.
   - Popup clears on page/chapter changes, TOC jumps, shelf return, close, and Escape.
 - Dictionary backend:
   - `dict_status` returns structured dictionary status: ready, no dictionaries, engine unavailable, or error.
   - `dict_lookup` command exists.
   - `dictionary_list` returns imported dictionaries from the manifest.
-  - `dictionary_media` and `dictionary_styles` expose imported dictionary media and `styles.css` to the popup through read-only commands.
+  - `dictionary_media` and `dictionary_styles` expose imported dictionary media and `styles.css` to the popup through read-only commands. `dictionary_media` reads hoshidicts packed `media.idx`/`media.bin` first, falls back to legacy extracted files, and validates paths before either lookup.
   - On startup, dictionary state reads enabled term, frequency, and pitch role entries from the manifest.
   - Dictionary enabled/order/delete changes are persisted and rebuild dictionary runtime state.
   - Imported dictionary manifest entries are role-based: a single imported dictionary can appear as separate Term, Frequency, and Pitch entries that share one import id and app-owned directory.
@@ -153,7 +153,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; real remote-audio-plus-AnkiConnect, real HSA local-audio database, real popup word-audio playback, and real post-add sync runtime validation are also not verified.
 - No full settings surface; only the minimal bookshelf Appearance (theme plus dictionary popup sizing/scale) and Advanced startup-behavior panels are implemented.
 - No verified app-owned cover thumbnail cache.
-- Runtime validation with a normal media-bearing Yomitan dictionary is not verified; on 2026-06-16, `HSW_MEDIA_YOMITAN_ZIP` was unset, `OALDPE10.zip` had `mediaCount=0`, and `MK3Fix0213.zip` remained unsuitable because compatibility import intentionally skips media.
+- Runtime validation with a normal media-bearing Yomitan dictionary is not verified; on 2026-06-16, `HSW_MEDIA_YOMITAN_ZIP` was unset, `OALDPE10.zip` had `mediaCount=0`, and `MK3Fix0213.zip` remained unsuitable because compatibility import intentionally skipped media. Packed-media command tests now cover `media.idx`/`media.bin` reads, but full popup runtime validation with a media-preserving import is still not verified.
 - No verified release packaging flow.
 
 ## Known Issues
@@ -163,7 +163,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - On shells without CMake/C++ build tools in `PATH`, the hoshidicts backend and importer remain unavailable.
 - On this machine, linked hoshidicts checks require a VS developer shell or equivalent `PATH` containing CMake and MSVC tools.
 - Without imported dictionaries in the app data manifest, `dict_status` reports `noDictionaries`.
-- Compatibility dictionary imports that hit Windows code-page failures skip media entries, so affected dictionaries such as `MK3Fix0213.zip` currently import with `mediaCount=0`.
+- Compatibility dictionary imports that hit Windows code-page failures may still lack packed media files, so affected dictionaries such as the current app-data `MK3Fix0213.zip` import can remain media-unavailable until reimported with `media.idx`/`media.bin`.
 - Reader layout correctness for arbitrary EPUBs is not fully verified.
 - Rust-side character counts and frontend DOM-based progress need further cross-validation.
 - Cover/image rendering depends on temporary extraction path mapping and asset URL rewriting.

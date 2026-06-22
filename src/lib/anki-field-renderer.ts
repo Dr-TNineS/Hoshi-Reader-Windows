@@ -487,7 +487,8 @@ function extractMediaRecords(text: string): Array<{ path: string; alt: string; t
   const records: Array<{ path: string; alt: string; title: string }> = [];
   visitStructuredContent(parsed, (record) => {
     const tag = typeof record.tag === "string" ? record.tag.toLowerCase() : "";
-    if (tag !== "img" && tag !== "image") return;
+    const type = typeof record.type === "string" ? record.type.toLowerCase() : "";
+    if (tag !== "img" && tag !== "image" && type !== "image") return;
     const path = typeof record.path === "string"
       ? record.path
       : typeof record.src === "string"
