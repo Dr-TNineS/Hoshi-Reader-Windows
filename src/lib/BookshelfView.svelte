@@ -4,6 +4,7 @@
   import type { AnkiAudioSource, AnkiSettings, DictionaryManifestEntry, DictionaryStatus, LocalAudioStatus } from "./types";
   import AppearancePanel from "./AppearancePanel.svelte";
   import type { ReaderAppearance, ReaderTheme } from "./appearance";
+  import type { LookupPopupSettings } from "./lookup-popup-settings";
   import DictionaryManagementPanel from "./DictionaryManagementPanel.svelte";
   import ShortcutsPanel from "./ShortcutsPanel.svelte";
   import AdvancedPanel from "./AdvancedPanel.svelte";
@@ -20,6 +21,7 @@
     readerAppearance,
     readerThemeLabels,
     advancedSettings,
+    lookupPopupSettings,
     dictionaryList = [],
     dictionaryListStatus = null,
     dictionaryListError = "",
@@ -35,6 +37,9 @@
     onForgetBook,
     onSetReaderTheme,
     onSetReopenLastBookOnStartup,
+    onSetLookupPopupWidth,
+    onSetLookupPopupHeight,
+    onSetLookupPopupScale,
     onRefreshDictionaries,
     onImportDictionary,
     onImportDictionaryFolder,
@@ -66,6 +71,7 @@
     readerAppearance: ReaderAppearance;
     readerThemeLabels: Record<ReaderTheme, string>;
     advancedSettings: AdvancedSettings;
+    lookupPopupSettings: LookupPopupSettings;
     dictionaryList?: DictionaryManifestEntry[];
     dictionaryListStatus?: DictionaryStatus | null;
     dictionaryListError?: string;
@@ -81,6 +87,9 @@
     onForgetBook: (book: BookRecord) => void;
     onSetReaderTheme: (theme: ReaderTheme) => void;
     onSetReopenLastBookOnStartup: (enabled: boolean) => void;
+    onSetLookupPopupWidth: (width: number) => void;
+    onSetLookupPopupHeight: (height: number) => void;
+    onSetLookupPopupScale: (scale: number) => void;
     onRefreshDictionaries: () => void;
     onImportDictionary: () => void;
     onImportDictionaryFolder: () => void;
@@ -295,6 +304,10 @@
         appearance={readerAppearance}
         themeLabels={readerThemeLabels}
         onThemeChange={onSetReaderTheme}
+        popupSettings={lookupPopupSettings}
+        onPopupWidthChange={onSetLookupPopupWidth}
+        onPopupHeightChange={onSetLookupPopupHeight}
+        onPopupScaleChange={onSetLookupPopupScale}
       />
     {:else if activePanel === "advanced"}
       <AdvancedPanel

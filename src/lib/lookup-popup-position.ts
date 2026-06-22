@@ -20,7 +20,6 @@ export function lookupPopupStyle(
   viewport: LookupPopupViewport,
 ): string {
   const anchor = selection.anchorRect ?? selection.rect;
-  const contentWidth = 280;
   const margin = 12;
   const gap = 10;
   const topMargin = 44;
@@ -42,20 +41,20 @@ export function lookupPopupStyle(
       left = rightSpace >= leftSpace ? anchor.x + anchor.width + gap : anchor.x - size.width - gap;
     }
     const top = clampPopupValue(anchor.y, topMargin, maxTop);
-    return `left:${clampPopupValue(left, margin, maxLeft)}px;top:${top}px;width:${contentWidth}px`;
+    return `left:${clampPopupValue(left, margin, maxLeft)}px;top:${top}px`;
   }
 
   if (canFitLeft || canFitRight) {
     const placeRight = canFitRight && (!canFitLeft || rightSpace >= leftSpace);
     left = placeRight ? anchor.x + anchor.width + gap : anchor.x - size.width - gap;
     const top = clampPopupValue(anchor.y, topMargin, maxTop);
-    return `left:${clampPopupValue(left, margin, maxLeft)}px;top:${top}px;width:${contentWidth}px`;
+    return `left:${clampPopupValue(left, margin, maxLeft)}px;top:${top}px`;
   }
 
   if (Math.max(leftSpace, rightSpace) >= size.width * 0.6) {
     left = rightSpace >= leftSpace ? anchor.x + anchor.width + gap : anchor.x - size.width - gap;
     const top = clampPopupValue(anchor.y, topMargin, maxTop);
-    return `left:${clampPopupValue(left, margin, maxLeft)}px;top:${top}px;width:${contentWidth}px`;
+    return `left:${clampPopupValue(left, margin, maxLeft)}px;top:${top}px`;
   }
 
   left = clampPopupValue(anchor.x + anchor.width / 2 - size.width / 2, margin, maxLeft);
@@ -64,5 +63,5 @@ export function lookupPopupStyle(
   const topCandidate = below <= maxTop ? below : above;
   const top = clampPopupValue(topCandidate, topMargin, maxTop);
 
-  return `left:${left}px;top:${top}px;width:${contentWidth}px`;
+  return `left:${left}px;top:${top}px`;
 }

@@ -1192,6 +1192,7 @@
       readerAppearance={settings.readerAppearance}
       {readerThemeLabels}
       advancedSettings={settings.advancedSettings}
+      lookupPopupSettings={settings.lookupPopupSettings}
       {dictionaryList}
       {dictionaryListStatus}
       {dictionaryListError}
@@ -1207,6 +1208,9 @@
       onForgetBook={forgetBook}
       onSetReaderTheme={settings.setReaderTheme}
       onSetReopenLastBookOnStartup={settings.setReopenLastBookOnStartup}
+      onSetLookupPopupWidth={settings.setLookupPopupWidth}
+      onSetLookupPopupHeight={settings.setLookupPopupHeight}
+      onSetLookupPopupScale={settings.setLookupPopupScale}
       onRefreshDictionaries={refreshDictionaries}
       onImportDictionary={importDictionary}
       onImportDictionaryFolder={importDictionaryFolder}
@@ -1250,6 +1254,7 @@
     />
     <LookupPopupLayer
       popups={lookupPopups}
+      popupSettings={settings.lookupPopupSettings}
       {ankiSettings}
       onClose={closePopup}
       onImportDictionary={importDictionary}

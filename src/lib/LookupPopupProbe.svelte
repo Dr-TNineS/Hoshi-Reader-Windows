@@ -3,6 +3,7 @@
   import { extractDictionaryMediaReferences } from "./anki-field-renderer";
   import type { LookupState } from "./lookup-popup";
   import { lookupPopupStyle } from "./lookup-popup-position";
+  import { normalizeLookupPopupSettings } from "./lookup-popup-settings";
   import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiNoteRequest, AnkiRemoteAudioRequest, AnkiSettings, AnkiStoreBookCoverResult, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LocalAudioStoreRequest, LocalAudioStoreResult, LookupAnkiPayload, ReaderSelection, WordAudioPlaybackResult, WordAudioResolveRequest } from "./types";
 
   const params = new URLSearchParams(window.location.search);
@@ -22,6 +23,11 @@
   const coverFieldEnabled = params.get("coverField") !== "disabled";
   const noBookId = params.has("noBookId");
   const emptyExpression = params.has("emptyExpression");
+  const popupSettings = normalizeLookupPopupSettings({
+    width: params.has("popupWidth") ? Number(params.get("popupWidth")) : 320,
+    height: params.has("popupHeight") ? Number(params.get("popupHeight")) : 250,
+    scale: params.has("popupScale") ? Number(params.get("popupScale")) : 1,
+  });
 
   const rootSelection: ReaderSelection = {
     text: "school",
@@ -177,53 +183,24 @@
   let coverStoreRequests = $state<string[]>([]);
   let operationEvents = $state<string[]>([]);
   let wordAudioPrepareRequests = $state<WordAudioResolveRequest[]>([]);
-  let popupSizes = $state<Record<string, { width: number; height: number }>>({});
 
   function readerBottomBoundary(): number {
     const controls = document.querySelector<HTMLElement>(".probe-ctrls");
-    return Math.min(window.innerHeight, controls?.getBoundingClientRect().top ?? window.innerHeight);
-  }
-
-  function measureLookupPopup(node: HTMLElement, popupId: string) {
-    let id = popupId;
-
-    const sync = () => {
-      const rect = node.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
-      const nextSize = { width: Math.ceil(rect.width), height: Math.ceil(rect.height) };
-      const previous = popupSizes[id];
-      if (previous?.width === nextSize.width && previous?.height === nextSize.height) return;
-      popupSizes = { ...popupSizes, [id]: nextSize };
-    };
-
-    const observer = new ResizeObserver(sync);
-    observer.observe(node);
-    const frame = requestAnimationFrame(sync);
-
-    return {
-      update(nextId: string) {
-        if (nextId === id) return;
-        const { [id]: _removed, ...rest } = popupSizes;
-        popupSizes = rest;
-        id = nextId;
-        sync();
-      },
-      destroy() {
-        cancelAnimationFrame(frame);
-        observer.disconnect();
-        const { [id]: _removed, ...rest } = popupSizes;
-        popupSizes = rest;
-      },
-    };
+    const fallbackBottom = bottomEdge ? window.innerHeight - 26 : window.innerHeight;
+    return Math.min(window.innerHeight, controls?.getBoundingClientRect().top ?? fallbackBottom);
   }
 
   function positionedPopupStyle(popup: ProbePopup, index: number): string {
-    if (!bottomEdge) return `--offset:${index * 26}px;--popup-z:${125 + index}`;
-    const style = lookupPopupStyle(popup.selection, popupSizes[popup.id] ?? { width: 306, height: 154 }, {
+    const bottom = readerBottomBoundary();
+    const size = {
+      width: Math.max(1, Math.min(popupSettings.width, window.innerWidth - 24)),
+      height: Math.max(1, Math.min(popupSettings.height, bottom - 44)),
+    };
+    const style = lookupPopupStyle(popup.selection, size, {
       width: window.innerWidth,
-      bottom: readerBottomBoundary(),
+      bottom,
     });
-    return `${style};--offset:${index * 26}px;--popup-z:${125 + index}`;
+    return `${style};width:${size.width}px;height:${size.height}px;--popup-scale:${popupSettings.scale};--popup-z:${125 + index}`;
   }
 
   function nestedResult(selection: ReaderSelection): DictResult {
@@ -490,7 +467,6 @@
       class="lookup-pop"
       data-state={lookupState}
       data-popup-id={popup.id}
-      use:measureLookupPopup={popup.id}
       onpointerdown={() => closeChildren(popup.id)}
       style={positionedPopupStyle(popup, index)}
     >
@@ -581,14 +557,10 @@
   }
   .lookup-pop {
     position: fixed;
-    left: min(calc(520px + var(--offset)), calc(100vw - 304px));
-    top: calc(72px + var(--offset));
     z-index: var(--popup-z);
     display: flex;
     flex-direction: column;
     gap: 8px;
-    width: 280px;
-    max-height: min(520px, calc(100vh - 92px));
     padding: 10px 12px;
     background: #23262a;
     color: #e8eaed;

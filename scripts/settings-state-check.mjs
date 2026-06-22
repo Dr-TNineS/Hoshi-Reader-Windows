@@ -46,6 +46,11 @@ async function state(page) {
     appearanceVars: element.getAttribute("data-appearance-vars"),
     savedAppearances: element.getAttribute("data-saved-appearances"),
     savedAdvanced: element.getAttribute("data-saved-advanced"),
+    popupWidth: Number(element.getAttribute("data-popup-width")),
+    popupHeight: Number(element.getAttribute("data-popup-height")),
+    popupScale: Number(element.getAttribute("data-popup-scale")),
+    savedPopup: JSON.parse(element.getAttribute("data-saved-popup") ?? "[]"),
+    normalizedInvalidPopup: JSON.parse(element.getAttribute("data-normalized-invalid-popup") ?? "{}"),
   }));
 }
 
@@ -70,6 +75,9 @@ async function main() {
     assert(current.theme === "dark" && current.reopen === "true", "Controller should expose loaded settings.", current);
     assert(current.savedAppearances === "dark", "Controller should preserve appearance startup normalization.", current);
     assert(current.savedAdvanced === "", "Controller should not rewrite Advanced settings during startup.", current);
+    assert(current.popupWidth === 320 && current.popupHeight === 250 && current.popupScale === 1, "Controller should expose loaded popup settings.", current);
+    assert(current.savedPopup.length === 0, "Controller should not rewrite popup settings during startup.", current);
+    assert(current.normalizedInvalidPopup.width === 320 && current.normalizedInvalidPopup.height === 100 && current.normalizedInvalidPopup.scale === 1, "Invalid popup settings should fall back or clamp safely.", current);
 
     const lightTheme = page.getByRole("radio", { name: "Light", exact: true });
     const darkTheme = page.getByRole("radio", { name: "Dark", exact: true });
@@ -95,6 +103,24 @@ async function main() {
     await darkTheme.click();
     current = await state(page);
     assert(current.savedAppearances === "dark,light,dark", "Repeated theme changes should persist in order.", current);
+
+    await page.getByLabel("Popup width").evaluate((input) => {
+      input.value = "684";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.getByLabel("Popup height").evaluate((input) => {
+      input.value = "999";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.getByLabel("Popup scale").evaluate((input) => {
+      input.value = "1.13";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    current = await state(page);
+    assert(current.popupWidth === 680, "Popup width should snap to its 10 px step.", current);
+    assert(current.popupHeight === 800, "Popup height should clamp to its supported maximum.", current);
+    assert(current.popupScale === 1.15, "Popup scale should snap to its 0.05 step.", current);
+    assert(current.savedPopup.length === 3, "Each popup setting change should persist immediately.", current);
 
     console.log(JSON.stringify(current, null, 2));
   } finally {

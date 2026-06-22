@@ -68,6 +68,9 @@ async function openProbe(page, state, options = {}) {
   if (options.audioEnabled === false) params.set("audioEnabled", "disabled");
   if (options.audioField === false) params.set("audioField", "disabled");
   if (options.emptyExpression) params.set("emptyExpression", "1");
+  if (options.popupWidth) params.set("popupWidth", String(options.popupWidth));
+  if (options.popupHeight) params.set("popupHeight", String(options.popupHeight));
+  if (options.popupScale) params.set("popupScale", String(options.popupScale));
   await page.goto(`${origin}/?${params}`);
   await page.locator(".lookup-pop").waitFor({ timeout: 10000 });
 }
@@ -294,6 +297,7 @@ async function main() {
       document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='loaded']").length >= 1
     ));
     const ready = await popupMetrics(page);
+    assert(Math.abs(ready.popup.width - 320) <= 1 && Math.abs(ready.popup.height - 250) <= 1, "Default popup outer frame should be 320 x 250.", ready);
     assert(ready.text.includes("school"), "Ready popup should render expression.", ready);
     assert(ready.lookupResultRows >= 5 && ready.text.includes("extra rendered lookup result 5"), "Ready popup should render all backend lookup results, not only the first three.", ready);
     assert(ready.text.includes("Jitendex.org [probe]"), "Ready popup should render dictionary source.", ready);
@@ -645,13 +649,21 @@ async function main() {
     assert(scrolled.scrollCloseCount >= 1, "Parent scroll should record child close behavior.", scrolled);
     assert(scrolled.popupHighlightText === "", "Scrolling the parent popup should clear child lookup highlight.", scrolled);
 
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await openProbe(page, "ready", { longResult: true, popupWidth: 700, popupHeight: 800 });
+    const constrainedMaximum = await popupMetrics(page);
+    assert(Math.abs(constrainedMaximum.popup.width - 700) <= 1, "Maximum configured popup width should render at 700 px when space permits.", constrainedMaximum);
+    assert(constrainedMaximum.popup.height === 676, "Maximum configured popup height should shrink to the available reader viewport.", constrainedMaximum);
+    assert(constrainedMaximum.popup.bottom <= constrainedMaximum.viewport.height, "Constrained maximum popup should stay inside the viewport.", constrainedMaximum);
+
     await page.setViewportSize({ width: 360, height: 640 });
-    await openProbe(page, "ready", { longResult: true });
+    await openProbe(page, "ready", { longResult: true, popupWidth: 700, popupHeight: 800 });
     const narrow = await popupMetrics(page);
     assert(!narrow.horizontalOverflow, "Narrow lookup popup should not create horizontal overflow.", narrow);
     assert(narrow.popup.right <= narrow.viewport.width, "Narrow lookup popup should stay within the viewport.", narrow);
+    assert(narrow.popup.width === 336 && narrow.popup.height === 596, "Narrow popup should shrink to the available viewport without changing the configured limits.", narrow);
 
-    console.log(JSON.stringify({ ready, mediaFailed, mediaNoTauri, nested, childClosed, scrolled, narrow }, null, 2));
+    console.log(JSON.stringify({ ready, mediaFailed, mediaNoTauri, nested, childClosed, scrolled, constrainedMaximum, narrow }, null, 2));
   } finally {
     if (browser) await browser.close();
     stopServer(vite);
