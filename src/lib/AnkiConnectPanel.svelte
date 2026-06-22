@@ -23,6 +23,7 @@
     onSetForceSyncAfterAdd = (_enabled: boolean) => {},
     onSetNoteOptions = (_tags: string, _allowDuplicates: boolean, _duplicateScope: AnkiSettings["duplicateScope"], _checkAllModels: boolean) => {},
     onSetCompactGlossaries = (_enabled: boolean) => {},
+    onSetWordAudioPlaybackOptions = (_autoplay: boolean, _mode: AnkiSettings["audioPlaybackMode"]) => {},
     localAudioStatus = { imported: false, sizeBytes: null, sources: [] },
     onSetLocalAudioEnabled = (_enabled: boolean) => {},
     onImportLocalAudio = () => {},
@@ -46,6 +47,7 @@
     onSetForceSyncAfterAdd?: (enabled: boolean) => void;
     onSetNoteOptions?: (tags: string, allowDuplicates: boolean, duplicateScope: AnkiSettings["duplicateScope"], checkAllModels: boolean) => void;
     onSetCompactGlossaries?: (enabled: boolean) => void;
+    onSetWordAudioPlaybackOptions?: (autoplay: boolean, mode: AnkiSettings["audioPlaybackMode"]) => void;
     localAudioStatus?: LocalAudioStatus;
     onSetLocalAudioEnabled?: (enabled: boolean) => void;
     onImportLocalAudio?: () => void;
@@ -62,6 +64,11 @@
     { value: "collection", label: "Collection" },
     { value: "deck", label: "Deck" },
     { value: "deckRoot", label: "Deck and children" },
+  ];
+  const playbackModeOptions = [
+    { value: "interrupt", label: "Interrupt" },
+    { value: "duck", label: "Lower volume" },
+    { value: "mix", label: "Keep volume" },
   ];
 
   function fetchedLabel(timestamp: number | null | undefined): string {
@@ -313,6 +320,27 @@
           onCheckedChange={updateAudioEnabled}
         />
         <label for="anki-audio-enabled">Enable</label>
+      </div>
+    </div>
+    <div class="config-grid">
+      <div class="audio-toggle note-option-toggle">
+        <UiSwitch
+          id="word-audio-autoplay"
+          checked={settings?.audioAutoplay ?? false}
+          disabled={busy}
+          onCheckedChange={(autoplay) => onSetWordAudioPlaybackOptions(autoplay, settings?.audioPlaybackMode ?? "interrupt")}
+        />
+        <label for="word-audio-autoplay">Autoplay on lookup</label>
+      </div>
+      <div class="select-row">
+        <span id="word-audio-playback-mode-label">Playback Mode</span>
+        <UiSelect
+          value={settings?.audioPlaybackMode ?? "interrupt"}
+          items={playbackModeOptions}
+          disabled={busy}
+          ariaLabelledby="word-audio-playback-mode-label"
+          onValueChange={(mode) => onSetWordAudioPlaybackOptions(settings?.audioAutoplay ?? false, mode as AnkiSettings["audioPlaybackMode"])}
+        />
       </div>
     </div>
     <div class="audio-source-toolbar">

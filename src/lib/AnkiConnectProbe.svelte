@@ -94,6 +94,8 @@
     checkDuplicatesAcrossAllModels: false,
     duplicateScope: "collection",
     compactGlossaries: false,
+    audioAutoplay: false,
+    audioPlaybackMode: "interrupt",
     lastFetchedAt: 1780000000000,
   };
 
@@ -110,6 +112,7 @@
   let syncEvents = $state<string[]>([]);
   let noteOptionEvents = $state<string[]>([]);
   let compactGlossaryEvents = $state<string[]>([]);
+  let playbackOptionEvents = $state<string[]>([]);
   let localImportClicks = $state(0);
   let localRemoveClicks = $state(0);
   let localAudioStatus = $state<LocalAudioStatus>({
@@ -172,6 +175,11 @@
     if (settings) settings = { ...settings, compactGlossaries: enabled };
   }
 
+  function setWordAudioPlaybackOptions(autoplay: boolean, mode: AnkiSettings["audioPlaybackMode"]) {
+    playbackOptionEvents = [...playbackOptionEvents, `${autoplay}:${mode}`];
+    if (settings) settings = { ...settings, audioAutoplay: autoplay, audioPlaybackMode: mode };
+  }
+
   function moveLocalAudioSource(source: string, direction: -1 | 1) {
     localAudioEvents = [...localAudioEvents, `move:${source}:${direction}`];
     const sources = [...localAudioStatus.sources];
@@ -202,6 +210,7 @@
     onSetForceSyncAfterAdd={setForceSyncAfterAdd}
     onSetNoteOptions={setNoteOptions}
     onSetCompactGlossaries={setCompactGlossaries}
+    onSetWordAudioPlaybackOptions={setWordAudioPlaybackOptions}
     {localAudioStatus}
     onSetLocalAudioEnabled={setLocalAudioEnabled}
     onImportLocalAudio={() => localImportClicks += 1}
@@ -217,6 +226,7 @@
     data-sync-events={syncEvents.join(",")}
     data-note-option-events={noteOptionEvents.join("|")}
     data-compact-glossary-events={compactGlossaryEvents.join(",")}
+    data-playback-option-events={playbackOptionEvents.join(",")}
     data-deck-events={deckEvents.join(",")}
     data-note-type-events={noteTypeEvents.join(",")}
     data-field-template-events={fieldTemplateEvents.join(",")}
@@ -235,6 +245,8 @@
     data-duplicate-scope={settings?.duplicateScope ?? ""}
     data-check-all-models={settings?.checkDuplicatesAcrossAllModels ?? false}
     data-compact-glossaries={settings?.compactGlossaries ?? false}
+    data-audio-autoplay={settings?.audioAutoplay ?? false}
+    data-audio-playback-mode={settings?.audioPlaybackMode ?? ""}
     data-local-audio-enabled={settings?.localAudioEnabled ? "true" : "false"}
     data-local-audio-events={localAudioEvents.join("|")}
     data-local-import-clicks={localImportClicks}

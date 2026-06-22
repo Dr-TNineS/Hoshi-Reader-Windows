@@ -497,6 +497,14 @@ fn resolve_audio(
     Ok(Some((bytes, extension.into())))
 }
 
+pub(crate) fn resolve_local_audio(
+    app: &AppHandle,
+    expression: &str,
+    reading: &str,
+) -> Result<Option<(Vec<u8>, String)>, String> {
+    resolve_audio(&audio_root(app)?, expression, reading)
+}
+
 fn supported_extension(file: &str) -> Option<&str> {
     let extension = file.rsplit_once('.')?.1;
     SUPPORTED_EXTENSIONS

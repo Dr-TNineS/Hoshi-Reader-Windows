@@ -92,6 +92,9 @@ async function panelMetrics(page) {
       checkAllModels: state?.getAttribute("data-check-all-models") ?? "",
       compactGlossaries: state?.getAttribute("data-compact-glossaries") ?? "",
       compactGlossaryEvents: state?.getAttribute("data-compact-glossary-events") ?? "",
+      audioAutoplay: state?.getAttribute("data-audio-autoplay") ?? "",
+      audioPlaybackMode: state?.getAttribute("data-audio-playback-mode") ?? "",
+      playbackOptionEvents: state?.getAttribute("data-playback-option-events") ?? "",
       localAudioEnabled: state?.getAttribute("data-local-audio-enabled") ?? "",
       localAudioEvents: state?.getAttribute("data-local-audio-events") ?? "",
       localImportClicks: Number(state?.getAttribute("data-local-import-clicks") ?? 0),
@@ -167,6 +170,12 @@ async function main() {
     await page.getByLabel("Compact glossary cards").click();
     metrics = await panelMetrics(page);
     assert(metrics.compactGlossaries === "true" && metrics.compactGlossaryEvents.includes("true"), "Compact glossary toggle should persist through the panel boundary.", metrics);
+    await page.getByLabel("Autoplay on lookup").click();
+    await page.locator(".select-row").filter({ hasText: "Playback Mode" }).getByRole("button").click();
+    await page.getByRole("option", { name: "Keep volume" }).click();
+    metrics = await panelMetrics(page);
+    assert(metrics.audioAutoplay === "true" && metrics.audioPlaybackMode === "mix", "Word audio autoplay and playback mode should persist through the panel boundary.", metrics);
+    assert(metrics.playbackOptionEvents.includes("true:mix"), "Playback setting changes should emit settings events.", metrics);
     assert(metrics.fieldMappings.includes("Front:{expression}") && metrics.fieldMappings.includes("Back:{glossary-first}"), "Ready panel should expose saved field templates.", metrics);
     assert(metrics.handlebarButtonCount === 3, "Ready panel should show a handlebar picker for each field template.", metrics);
     await page.locator(".field-template-row").filter({ hasText: "Front" }).locator(".handlebar-trigger").click();

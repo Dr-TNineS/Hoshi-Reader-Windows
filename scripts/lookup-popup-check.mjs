@@ -60,6 +60,7 @@ async function openProbe(page, state, options = {}) {
   if (options.noBookId) params.set("noBookId", "1");
   if (options.firstRemoteMiss) params.set("firstRemoteMiss", "1");
   if (options.firstRemoteUnsafe) params.set("firstRemoteUnsafe", "1");
+  if (options.audioAutoplay) params.set("audioAutoplay", "enabled");
   if (options.ankiStoreMode) params.set("ankiStoreMode", options.ankiStoreMode);
   if (options.ankiAudioStoreMode) params.set("ankiAudioStoreMode", options.ankiAudioStoreMode);
   if (options.localAudioStoreMode) params.set("localAudioStoreMode", options.localAudioStoreMode);
@@ -121,6 +122,8 @@ async function popupMetrics(page) {
       coverStoreCount: Number(state?.getAttribute("data-cover-store-count") ?? 0),
       coverLastBookId: state?.getAttribute("data-cover-last-book-id") ?? "",
       operationEvents: state?.getAttribute("data-operation-events") ?? "",
+      wordAudioPrepareCount: Number(state?.getAttribute("data-word-audio-prepare-count") ?? 0),
+      wordAudioLastRequest: JSON.parse(state?.getAttribute("data-word-audio-last-request") ?? "null"),
       popup: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom },
       viewport: { width: window.innerWidth, height: window.innerHeight },
       controlsTop: controlsRect?.top ?? window.innerHeight,
@@ -318,7 +321,7 @@ async function main() {
     assert(ready.text.includes("education") && ready.text.includes("place"), "Ready popup should render glossary definition tags.", ready);
     assert(ready.headerActions >= 1, "Ready popup should render HSA-style header actions.", ready);
     assert(ready.audioButtons >= 1 && ready.audioDisabled, "Word audio button should render as a disabled boundary.", ready);
-    assert(ready.audioTitle.includes("not implemented"), "Disabled audio affordance should describe the boundary.", ready);
+    assert(ready.audioTitle.includes("No enabled"), "Disabled audio affordance should describe missing configuration.", ready);
     assert(ready.frequencyGroups >= 1 && ready.frequencyDictLabels.includes("Freq Probe") && ready.text.includes("120"), "Ready popup should render frequency as dictionary pills.", ready);
     assert(ready.pitchGroups >= 1 && ready.pitchVisuals >= 1 && ready.text.includes("school"), "Ready popup should render pitch as grouped pitch rows.", ready);
     assert(ready.lookupDetailRows === 0 && !ready.text.includes("FreqPitch"), "Ready popup should not render old Freq/Pitch detail rows.", ready);
@@ -331,8 +334,14 @@ async function main() {
     await openProbe(page, "ready", { ankiMode: "configured" });
     const configuredAnki = await popupMetrics(page);
     assert(!configuredAnki.ankiDisabled && configuredAnki.ankiAriaLabel === "Add to Anki", "Configured Anki action should be enabled as a header icon.", configuredAnki);
+    assert(!configuredAnki.audioDisabled && configuredAnki.audioTitle.includes("Play word audio"), "Configured word audio action should be enabled.", configuredAnki);
+    await page.getByRole("button", { name: "Play audio" }).first().click();
+    await page.waitForFunction(() => Number(document.querySelector(".probe-state")?.getAttribute("data-word-audio-prepare-count") ?? 0) === 1);
+    const playedAudio = await popupMetrics(page);
+    assert(playedAudio.wordAudioLastRequest.expression === "school" && playedAudio.wordAudioLastRequest.sources[0].id === "probe", "Playback should call the shared resolver with lookup text and stable source settings.", playedAudio);
     assert(configuredAnki.ankiPreviewButtons === 0 && configuredAnki.ankiPreviewRows === 0, "Configured popup should not expose manual Anki preview UI.", configuredAnki);
 
+    await openProbe(page, "ready", { ankiMode: "configured" });
     await page.getByRole("button", { name: "Add to Anki" }).click();
     const ankiAdded = await popupMetrics(page);
     assert(ankiAdded.ankiAddCount === 1, "Add Anki should call the note creation callback once.", ankiAdded);
@@ -407,6 +416,11 @@ async function main() {
     await page.getByRole("button", { name: "Add to Anki" }).click();
     const ankiUnsafeFirstRemote = await popupMetrics(page);
     assert(ankiUnsafeFirstRemote.ankiAudioStoreCount === 1 && ankiUnsafeFirstRemote.ankiAddCount === 0, "A hard error in the first remote source should stop fallback and note creation.", ankiUnsafeFirstRemote);
+
+    await openProbe(page, "ready", { ankiMode: "configured", audioAutoplay: true });
+    await page.waitForFunction(() => Number(document.querySelector(".probe-state")?.getAttribute("data-word-audio-prepare-count") ?? 0) === 1);
+    const autoplayAudio = await popupMetrics(page);
+    assert(autoplayAudio.wordAudioPrepareCount === 1, "Autoplay should resolve the first lookup result once.", autoplayAudio);
 
     await openProbe(page, "ready", { ankiMode: "configured", localAudio: true });
     await page.getByRole("button", { name: "Add to Anki" }).click();
@@ -559,6 +573,9 @@ async function main() {
 
     await page.locator(".lookup-pop[data-popup-id='root']").getByRole("button", { name: "Back" }).click();
     await page.waitForFunction(() => document.querySelector(".lookup-pop[data-popup-id='root']")?.textContent?.includes("classroom school room"));
+    await page.waitForFunction(() => (
+      (document.querySelector(".lookup-pop[data-popup-id='root'] .lookup-results")?.scrollTop ?? 0) >= 70
+    ));
 
     await dispatchGlossaryClick(page, "classroom");
     await page.waitForFunction(() => document.querySelectorAll(".lookup-pop").length === 2);

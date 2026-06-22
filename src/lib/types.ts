@@ -186,6 +186,21 @@ export interface AnkiStoreRemoteAudioResult {
   warnings: string[];
 }
 
+export interface WordAudioResolveRequest {
+  expression: string;
+  reading: string;
+  localAudioEnabled: boolean;
+  sources: AnkiAudioSource[];
+  timeoutMs: number;
+}
+
+export interface WordAudioPlaybackResult {
+  cachePath: string | null;
+  mimeType: string | null;
+  sourceName: string | null;
+  warnings: string[];
+}
+
 export interface LocalAudioSourceStatus {
   name: string;
   order: number;
@@ -273,10 +288,13 @@ export interface AnkiSettings {
   checkDuplicatesAcrossAllModels: boolean;
   duplicateScope: AnkiDuplicateScope;
   compactGlossaries: boolean;
+  audioAutoplay: boolean;
+  audioPlaybackMode: AudioPlaybackMode;
   lastFetchedAt: number | null;
 }
 
 export type AnkiDuplicateScope = "collection" | "deck" | "deckRoot";
+export type AudioPlaybackMode = "interrupt" | "duck" | "mix";
 
 export interface AnkiConnectionStatus {
   ok: boolean;

@@ -52,6 +52,7 @@
     onSetAnkiForceSyncAfterAdd = (_enabled: boolean) => {},
     onSetAnkiNoteOptions = (_tags: string, _allowDuplicates: boolean, _duplicateScope: AnkiSettings["duplicateScope"], _checkAllModels: boolean) => {},
     onSetAnkiCompactGlossaries = (_enabled: boolean) => {},
+    onSetWordAudioPlaybackOptions = (_autoplay: boolean, _mode: AnkiSettings["audioPlaybackMode"]) => {},
     onSetAnkiLocalAudioEnabled = (_enabled: boolean) => {},
     onImportLocalAudio = () => {},
     onRemoveLocalAudio = () => {},
@@ -97,6 +98,7 @@
     onSetAnkiForceSyncAfterAdd?: (enabled: boolean) => void;
     onSetAnkiNoteOptions?: (tags: string, allowDuplicates: boolean, duplicateScope: AnkiSettings["duplicateScope"], checkAllModels: boolean) => void;
     onSetAnkiCompactGlossaries?: (enabled: boolean) => void;
+    onSetWordAudioPlaybackOptions?: (autoplay: boolean, mode: AnkiSettings["audioPlaybackMode"]) => void;
     onSetAnkiLocalAudioEnabled?: (enabled: boolean) => void;
     onImportLocalAudio?: () => void;
     onRemoveLocalAudio?: () => void;
@@ -281,6 +283,7 @@
         onSetForceSyncAfterAdd={onSetAnkiForceSyncAfterAdd}
         onSetNoteOptions={onSetAnkiNoteOptions}
         onSetCompactGlossaries={onSetAnkiCompactGlossaries}
+        onSetWordAudioPlaybackOptions={onSetWordAudioPlaybackOptions}
         {localAudioStatus}
         onSetLocalAudioEnabled={onSetAnkiLocalAudioEnabled}
         onImportLocalAudio={onImportLocalAudio}

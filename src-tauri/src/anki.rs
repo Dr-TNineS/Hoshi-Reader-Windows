@@ -20,6 +20,7 @@ use crate::dict::commands::{
     dictionary_manifest_path, load_dictionary_media, read_dictionary_manifest, DictionaryManifest,
 };
 use crate::library::library_cover_path;
+use crate::local_audio::resolve_local_audio;
 
 const DEFAULT_ENDPOINT: &str = "http://127.0.0.1:8765";
 const SETTINGS_VERSION: u32 = 2;
@@ -27,6 +28,8 @@ const TIMEOUT: Duration = Duration::from_secs(5);
 const MAX_REMOTE_AUDIO_BYTES: usize = 10 * 1024 * 1024;
 const MAX_REMOTE_AUDIO_REDIRECTS: usize = 3;
 const MAX_BOOK_COVER_BYTES: usize = 10 * 1024 * 1024;
+const MAX_WORD_AUDIO_CACHE_BYTES: u64 = 50 * 1024 * 1024;
+const MAX_WORD_AUDIO_CACHE_FILES: usize = 20;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
@@ -67,6 +70,15 @@ pub enum AnkiDuplicateScope {
     DeckRoot,
 }
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "camelCase")]
+pub enum AudioPlaybackMode {
+    #[default]
+    Interrupt,
+    Duck,
+    Mix,
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
 pub struct AnkiSettings {
@@ -98,6 +110,10 @@ pub struct AnkiSettings {
     pub duplicate_scope: AnkiDuplicateScope,
     #[serde(default)]
     pub compact_glossaries: bool,
+    #[serde(default)]
+    pub audio_autoplay: bool,
+    #[serde(default)]
+    pub audio_playback_mode: AudioPlaybackMode,
     pub last_fetched_at: Option<u64>,
 }
 
@@ -121,6 +137,8 @@ impl Default for AnkiSettings {
             check_duplicates_across_all_models: false,
             duplicate_scope: AnkiDuplicateScope::Collection,
             compact_glossaries: false,
+            audio_autoplay: false,
+            audio_playback_mode: AudioPlaybackMode::Interrupt,
             last_fetched_at: None,
         }
     }
@@ -217,6 +235,25 @@ pub struct AnkiStoreBookCoverResult {
     pub warnings: Vec<String>,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WordAudioResolveRequest {
+    pub expression: String,
+    pub reading: String,
+    pub local_audio_enabled: bool,
+    pub sources: Vec<AnkiAudioSource>,
+    pub timeout_ms: u32,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
+pub struct WordAudioPlaybackResult {
+    pub cache_path: Option<String>,
+    pub mime_type: Option<String>,
+    pub source_name: Option<String>,
+    pub warnings: Vec<String>,
+}
+
 #[tauri::command]
 pub fn anki_load_settings(app: AppHandle) -> Result<AnkiSettings, String> {
     let root = anki_root(&app)?;
@@ -296,6 +333,8 @@ pub fn anki_fetch_config(endpoint: String, app: AppHandle) -> Result<AnkiSetting
         check_duplicates_across_all_models: current.check_duplicates_across_all_models,
         duplicate_scope: current.duplicate_scope,
         compact_glossaries: current.compact_glossaries,
+        audio_autoplay: current.audio_autoplay,
+        audio_playback_mode: current.audio_playback_mode,
         last_fetched_at: Some(now_millis()?),
     });
     write_settings(&root, &next)?;
@@ -374,48 +413,180 @@ pub fn anki_store_remote_audio(
     request: AnkiRemoteAudioRequest,
 ) -> Result<AnkiStoreRemoteAudioResult, String> {
     let endpoint = normalize_endpoint(&endpoint)?;
-    let Some(download) = download_remote_audio(&request)? else {
+    let (resolved, warnings) = resolve_remote_audio(&request)?;
+    let Some(resolved) = resolved else {
         return Ok(AnkiStoreRemoteAudioResult {
             filename: None,
-            warnings: vec![remote_audio_warning(
-                &request.source_name,
-                "No audio was returned.",
-            )],
+            warnings,
         });
     };
-    if let Some(warning) = download.warning {
+    let stored_filename = store_audio_bytes(&endpoint, &resolved.bytes, &resolved.extension)?;
+    Ok(AnkiStoreRemoteAudioResult {
+        filename: Some(stored_filename),
+        warnings,
+    })
+}
+
+#[derive(Debug)]
+struct ResolvedWordAudio {
+    bytes: Vec<u8>,
+    extension: String,
+    source_name: String,
+}
+
+#[tauri::command]
+pub fn anki_store_word_audio(
+    endpoint: String,
+    request: WordAudioResolveRequest,
+    app: AppHandle,
+) -> Result<AnkiStoreRemoteAudioResult, String> {
+    let endpoint = normalize_endpoint(&endpoint)?;
+    let (resolved, warnings) = resolve_word_audio(&app, &request)?;
+    let Some(resolved) = resolved else {
         return Ok(AnkiStoreRemoteAudioResult {
             filename: None,
-            warnings: vec![remote_audio_warning(&request.source_name, &warning)],
+            warnings,
         });
+    };
+    let filename = store_audio_bytes(&endpoint, &resolved.bytes, &resolved.extension)?;
+    Ok(AnkiStoreRemoteAudioResult {
+        filename: Some(filename),
+        warnings,
+    })
+}
+
+#[tauri::command]
+pub fn word_audio_prepare_playback(
+    request: WordAudioResolveRequest,
+    app: AppHandle,
+) -> Result<WordAudioPlaybackResult, String> {
+    let (resolved, warnings) = resolve_word_audio(&app, &request)?;
+    let Some(resolved) = resolved else {
+        return Ok(WordAudioPlaybackResult {
+            cache_path: None,
+            mime_type: None,
+            source_name: None,
+            warnings,
+        });
+    };
+    let cache_path = cache_word_audio(&app, &resolved.bytes, &resolved.extension)?;
+    Ok(WordAudioPlaybackResult {
+        cache_path: Some(cache_path.to_string_lossy().into_owned()),
+        mime_type: Some(audio_mime_type(&resolved.extension).into()),
+        source_name: Some(resolved.source_name),
+        warnings,
+    })
+}
+
+fn resolve_word_audio(
+    app: &AppHandle,
+    request: &WordAudioResolveRequest,
+) -> Result<(Option<ResolvedWordAudio>, Vec<String>), String> {
+    resolve_word_audio_with(
+        request,
+        || resolve_local_audio(app, &request.expression, &request.reading),
+        resolve_remote_audio,
+    )
+}
+
+fn resolve_word_audio_with<L, R>(
+    request: &WordAudioResolveRequest,
+    mut local: L,
+    mut remote: R,
+) -> Result<(Option<ResolvedWordAudio>, Vec<String>), String>
+where
+    L: FnMut() -> Result<Option<(Vec<u8>, String)>, String>,
+    R: FnMut(&AnkiRemoteAudioRequest) -> Result<(Option<ResolvedWordAudio>, Vec<String>), String>,
+{
+    let mut warnings = Vec::new();
+    if request.expression.trim().is_empty() {
+        return Ok((None, warnings));
     }
-    let Some(bytes) = download.bytes else {
-        return Ok(AnkiStoreRemoteAudioResult {
-            filename: None,
-            warnings: vec![remote_audio_warning(
+    if request.local_audio_enabled {
+        match local() {
+            Ok(Some((bytes, extension))) => {
+                return Ok((
+                    Some(ResolvedWordAudio {
+                        bytes,
+                        extension,
+                        source_name: "HSA Local Audio".into(),
+                    }),
+                    warnings,
+                ))
+            }
+            Ok(None) => {}
+            Err(error) => warnings.push(format!("Local word audio: {error}")),
+        }
+    }
+    for source in request
+        .sources
+        .iter()
+        .filter(|source| source.enabled && !source.url.trim().is_empty())
+    {
+        let remote_request = AnkiRemoteAudioRequest {
+            source_name: source.name.clone(),
+            url_template: source.url.clone(),
+            expression: request.expression.clone(),
+            reading: request.reading.clone(),
+            timeout_ms: request.timeout_ms,
+        };
+        let (resolved, remote_warnings) = remote(&remote_request)?;
+        warnings.extend(remote_warnings);
+        if resolved.is_some() {
+            return Ok((resolved, warnings));
+        }
+    }
+    Ok((None, warnings))
+}
+
+fn resolve_remote_audio(
+    request: &AnkiRemoteAudioRequest,
+) -> Result<(Option<ResolvedWordAudio>, Vec<String>), String> {
+    let Some(download) = download_remote_audio(request)? else {
+        return Ok((
+            None,
+            vec![remote_audio_warning(
                 &request.source_name,
                 "No audio was returned.",
             )],
-        });
+        ));
+    };
+    if let Some(warning) = download.warning {
+        return Ok((
+            None,
+            vec![remote_audio_warning(&request.source_name, &warning)],
+        ));
+    }
+    let Some(bytes) = download.bytes else {
+        return Ok((
+            None,
+            vec![remote_audio_warning(
+                &request.source_name,
+                "No audio was returned.",
+            )],
+        ));
     };
     let Some(extension) = detect_audio_extension(
         &bytes,
         download.content_type.as_deref(),
         download.final_url.path(),
     ) else {
-        return Ok(AnkiStoreRemoteAudioResult {
-            filename: None,
-            warnings: vec![remote_audio_warning(
+        return Ok((
+            None,
+            vec![remote_audio_warning(
                 &request.source_name,
                 "The response was not a supported MP3, OGG/Opus, WAV, M4A, or AAC file.",
             )],
-        });
+        ));
     };
-    let stored_filename = store_audio_bytes(&endpoint, &bytes, extension)?;
-    Ok(AnkiStoreRemoteAudioResult {
-        filename: Some(stored_filename),
-        warnings: Vec::new(),
-    })
+    Ok((
+        Some(ResolvedWordAudio {
+            bytes,
+            extension: extension.into(),
+            source_name: request.source_name.trim().to_string(),
+        }),
+        Vec::new(),
+    ))
 }
 
 #[tauri::command]
@@ -552,6 +723,94 @@ pub(crate) fn store_audio_bytes(
     .ok_or_else(|| "AnkiConnect storeMediaFile returned an unexpected response.".to_string())?
     .to_string();
     validate_anki_media_filename(&stored_filename)
+}
+
+fn cache_word_audio(app: &AppHandle, bytes: &[u8], extension: &str) -> Result<PathBuf, String> {
+    let root = app
+        .path()
+        .app_cache_dir()
+        .map_err(|error| format!("Cannot resolve app cache dir: {error}"))?
+        .join("word-audio");
+    cache_word_audio_in(&root, bytes, extension)
+}
+
+fn cache_word_audio_in(root: &Path, bytes: &[u8], extension: &str) -> Result<PathBuf, String> {
+    ensure_remote_audio_size(bytes.len())?;
+    fs::create_dir_all(&root)
+        .map_err(|error| format!("Cannot create word audio cache: {error}"))?;
+    let filename = remote_audio_filename(bytes, extension);
+    let path = root.join(filename);
+    if !path.is_file() {
+        let nonce = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .unwrap_or_default()
+            .as_nanos();
+        let temp = root.join(format!(
+            "{}.tmp-{}-{nonce}",
+            path.file_name().unwrap_or_default().to_string_lossy(),
+            std::process::id()
+        ));
+        if let Err(error) = fs::write(&temp, bytes) {
+            let _ = fs::remove_file(&temp);
+            return Err(format!("Cannot write word audio cache: {error}"));
+        }
+        if let Err(error) = fs::rename(&temp, &path) {
+            let _ = fs::remove_file(&temp);
+            if !path.is_file() {
+                return Err(format!("Cannot install word audio cache: {error}"));
+            }
+        }
+    }
+    prune_word_audio_cache(&root, &path)?;
+    Ok(path)
+}
+
+fn prune_word_audio_cache(root: &Path, keep: &Path) -> Result<(), String> {
+    let mut entries = fs::read_dir(root)
+        .map_err(|error| format!("Cannot read word audio cache: {error}"))?
+        .filter_map(Result::ok)
+        .filter(|entry| {
+            let path = entry.path();
+            path.is_file()
+                && path != keep
+                && path
+                    .file_name()
+                    .is_some_and(|name| !name.to_string_lossy().contains(".tmp-"))
+        })
+        .filter_map(|entry| {
+            let metadata = entry.metadata().ok()?;
+            let modified = metadata.modified().ok()?;
+            Some((entry.path(), metadata.len(), modified))
+        })
+        .collect::<Vec<_>>();
+    entries.sort_by_key(|(_, _, modified)| *modified);
+    let keep_size = fs::metadata(keep)
+        .map(|metadata| metadata.len())
+        .unwrap_or(0);
+    let mut total = keep_size + entries.iter().map(|(_, size, _)| size).sum::<u64>();
+    let mut count = 1 + entries.len();
+    for (path, size, _) in entries {
+        if count <= MAX_WORD_AUDIO_CACHE_FILES && total <= MAX_WORD_AUDIO_CACHE_BYTES {
+            break;
+        }
+        fs::remove_file(&path)
+            .map_err(|error| format!("Cannot prune word audio cache: {error}"))?;
+        count -= 1;
+        total = total.saturating_sub(size);
+    }
+    Ok(())
+}
+
+fn audio_mime_type(extension: &str) -> &'static str {
+    match extension {
+        "mp3" => "audio/mpeg",
+        "ogg" => "audio/ogg",
+        "opus" => "audio/opus",
+        "wav" => "audio/wav",
+        "m4a" => "audio/mp4",
+        "aac" => "audio/aac",
+        _ => "application/octet-stream",
+    }
 }
 
 #[derive(Debug)]
@@ -1528,6 +1787,8 @@ mod tests {
         assert!(!loaded.allow_duplicates);
         assert_eq!(loaded.duplicate_scope, AnkiDuplicateScope::Collection);
         assert!(!loaded.compact_glossaries);
+        assert!(!loaded.audio_autoplay);
+        assert_eq!(loaded.audio_playback_mode, AudioPlaybackMode::Interrupt);
         let _ = fs::remove_dir_all(root);
     }
 
@@ -1603,6 +1864,107 @@ mod tests {
         assert_eq!(first[0].id, "same");
         assert_eq!(first[1].id, "same-2");
         assert_eq!(first[0].name, first[1].name);
+    }
+
+    fn word_audio_request() -> WordAudioResolveRequest {
+        WordAudioResolveRequest {
+            expression: "school".into(),
+            reading: "school".into(),
+            local_audio_enabled: true,
+            sources: vec![
+                AnkiAudioSource {
+                    id: "one".into(),
+                    name: "One".into(),
+                    url: "https://one.invalid/{term}".into(),
+                    enabled: true,
+                },
+                AnkiAudioSource {
+                    id: "two".into(),
+                    name: "Two".into(),
+                    url: "https://two.invalid/{term}".into(),
+                    enabled: true,
+                },
+            ],
+            timeout_ms: 5000,
+        }
+    }
+
+    #[test]
+    fn shared_word_audio_resolver_prefers_local_and_falls_back_in_order() {
+        let request = word_audio_request();
+        let (local, warnings) = resolve_word_audio_with(
+            &request,
+            || Ok(Some((b"ID3local".to_vec(), "mp3".into()))),
+            |_| panic!("remote resolver should not run after a local hit"),
+        )
+        .unwrap();
+        assert_eq!(local.unwrap().source_name, "HSA Local Audio");
+        assert!(warnings.is_empty());
+
+        let mut attempted = Vec::new();
+        let (remote, warnings) = resolve_word_audio_with(
+            &request,
+            || Err("probe database failure".into()),
+            |source| {
+                attempted.push(source.source_name.clone());
+                if source.source_name == "One" {
+                    Ok((None, vec!["Word audio (One): missing".into()]))
+                } else {
+                    Ok((
+                        Some(ResolvedWordAudio {
+                            bytes: b"ID3remote".to_vec(),
+                            extension: "mp3".into(),
+                            source_name: source.source_name.clone(),
+                        }),
+                        Vec::new(),
+                    ))
+                }
+            },
+        )
+        .unwrap();
+        assert_eq!(attempted, ["One", "Two"]);
+        assert_eq!(remote.unwrap().source_name, "Two");
+        assert_eq!(warnings.len(), 2);
+        assert!(warnings[0].contains("database failure"));
+    }
+
+    #[test]
+    fn shared_word_audio_resolver_stops_on_remote_hard_error() {
+        let request = word_audio_request();
+        let mut attempted = Vec::new();
+        let error = resolve_word_audio_with(
+            &request,
+            || Ok(None),
+            |source| -> Result<(Option<ResolvedWordAudio>, Vec<String>), String> {
+                attempted.push(source.source_name.clone());
+                Err("blocked unsafe target".into())
+            },
+        )
+        .unwrap_err();
+        assert_eq!(attempted, ["One"]);
+        assert!(error.contains("blocked unsafe target"));
+    }
+
+    #[test]
+    fn word_audio_cache_is_stable_and_bounded() {
+        let root = temp_root("word_audio_cache");
+        let stable = cache_word_audio_in(&root, b"ID3stable", "mp3").unwrap();
+        assert_eq!(
+            stable,
+            cache_word_audio_in(&root, b"ID3stable", "mp3").unwrap()
+        );
+        for index in 0..25u8 {
+            cache_word_audio_in(&root, &[b'I', b'D', b'3', index], "mp3").unwrap();
+        }
+        let files = fs::read_dir(&root)
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| entry.path().is_file())
+            .count();
+        assert!(files <= MAX_WORD_AUDIO_CACHE_FILES);
+        assert_eq!(audio_mime_type("mp3"), "audio/mpeg");
+        assert_eq!(audio_mime_type("opus"), "audio/opus");
+        let _ = fs::remove_dir_all(root);
     }
 
     #[test]

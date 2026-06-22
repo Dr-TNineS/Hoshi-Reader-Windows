@@ -3,7 +3,7 @@
   import { extractDictionaryMediaReferences } from "./anki-field-renderer";
   import type { LookupState } from "./lookup-popup";
   import { lookupPopupStyle } from "./lookup-popup-position";
-  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiNoteRequest, AnkiRemoteAudioRequest, AnkiSettings, AnkiStoreBookCoverResult, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LocalAudioStoreRequest, LocalAudioStoreResult, LookupAnkiPayload, ReaderSelection } from "./types";
+  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiNoteRequest, AnkiRemoteAudioRequest, AnkiSettings, AnkiStoreBookCoverResult, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LocalAudioStoreRequest, LocalAudioStoreResult, LookupAnkiPayload, ReaderSelection, WordAudioPlaybackResult, WordAudioResolveRequest } from "./types";
 
   const params = new URLSearchParams(window.location.search);
   const allowedStates: LookupState[] = ["loading", "noDictionaries", "engineUnavailable", "empty", "error", "ready"];
@@ -138,6 +138,8 @@
       checkDuplicatesAcrossAllModels: params.get("checkAllModels") === "enabled",
       duplicateScope: params.get("duplicateScope") === "deckRoot" ? "deckRoot" : "collection",
       compactGlossaries: params.get("compactGlossaries") === "enabled",
+      audioAutoplay: params.get("audioAutoplay") === "enabled",
+      audioPlaybackMode: "interrupt",
       lastFetchedAt: 1780000000000,
     }
     : null;
@@ -174,6 +176,7 @@
   let localAudioStoreRequests = $state<LocalAudioStoreRequest[]>([]);
   let coverStoreRequests = $state<string[]>([]);
   let operationEvents = $state<string[]>([]);
+  let wordAudioPrepareRequests = $state<WordAudioResolveRequest[]>([]);
   let popupSizes = $state<Record<string, { width: number; height: number }>>({});
 
   function readerBottomBoundary(): number {
@@ -426,6 +429,38 @@
     return { filename: "hsw_audio_local.ogg", warnings: [] };
   }
 
+  async function storeAnkiWordAudio(request: WordAudioResolveRequest): Promise<AnkiStoreRemoteAudioResult> {
+    const warnings: string[] = [];
+    if (request.localAudioEnabled) {
+      const local = await storeAnkiLocalAudio({ expression: request.expression, reading: request.reading });
+      warnings.push(...local.warnings);
+      if (local.filename) return { filename: local.filename, warnings };
+    }
+    for (const source of request.sources.filter((item) => item.enabled && item.url.trim())) {
+      const remote = await storeAnkiRemoteAudio({
+        sourceName: source.name,
+        urlTemplate: source.url,
+        expression: request.expression,
+        reading: request.reading,
+        timeoutMs: request.timeoutMs,
+      });
+      warnings.push(...remote.warnings);
+      if (remote.filename) return { filename: remote.filename, warnings };
+    }
+    return { filename: null, warnings };
+  }
+
+  async function prepareWordAudio(request: WordAudioResolveRequest): Promise<WordAudioPlaybackResult> {
+    wordAudioPrepareRequests = [...wordAudioPrepareRequests, request];
+    const resolved = await storeAnkiWordAudio(request);
+    return {
+      cachePath: resolved.filename ? "data:audio/wav;base64,UklGRiQAAABXQVZFZm10IBAAAAABAAEAQB8AAEAfAAABAAgAZGF0YQAAAAA=" : null,
+      mimeType: resolved.filename ? "audio/wav" : null,
+      sourceName: resolved.filename?.includes("local") ? "HSA Local Audio" : resolved.filename ? "Probe Audio" : null,
+      warnings: resolved.warnings,
+    };
+  }
+
   async function loadDictionaryStyles(dictionary: string) {
     if (dictionary !== "Jitendex.org [probe]") return { source: dictionary, css: "" };
     return {
@@ -491,8 +526,8 @@
         buildAnkiPayload={(result, resultIndex) => buildAnkiPayload(popup.selection, result, resultIndex)}
         onStoreAnkiMedia={storeAnkiMedia}
         onStoreAnkiBookCover={storeAnkiBookCover}
-        onStoreAnkiRemoteAudio={storeAnkiRemoteAudio}
-        onStoreAnkiLocalAudio={storeAnkiLocalAudio}
+        onStoreAnkiWordAudio={storeAnkiWordAudio}
+        onPrepareWordAudio={prepareWordAudio}
         onAddAnkiNote={addAnkiNote}
       />
     </aside>
@@ -521,6 +556,8 @@
     data-cover-store-count={coverStoreRequests.length}
     data-cover-last-book-id={coverStoreRequests[coverStoreRequests.length - 1] ?? ""}
     data-operation-events={operationEvents.join(",")}
+    data-word-audio-prepare-count={wordAudioPrepareRequests.length}
+    data-word-audio-last-request={JSON.stringify(wordAudioPrepareRequests[wordAudioPrepareRequests.length - 1] ?? null)}
     data-state={lookupState}
     aria-hidden="true"
     ></div>

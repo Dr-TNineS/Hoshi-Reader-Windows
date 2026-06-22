@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { invoke, isTauri } from "@tauri-apps/api/core";
+  import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
   import { ankiDictionaryMediaRefs, buildAnkiNoteRequest, isAnkiPreviewConfigured, payloadWithStoredBookCover, payloadWithStoredDictionaryMedia, payloadWithStoredRemoteAudio, renderAnkiFieldPreview } from "./anki-field-renderer";
   import { loadCachedDictionaryStyles, type DictionaryStyleResource } from "./dictionary-style-cache";
   import { scopeDictionaryCss, type LookupPitchGroup, type LookupState } from "./lookup-popup";
@@ -7,7 +7,7 @@
   import { clearLookupHighlight, POPUP_LOOKUP_HIGHLIGHT } from "./lookup-highlight";
   import { markLookupPerformance } from "./lookup-performance";
   import { selectPopupTextFromPoint } from "./popup-selection";
-  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiRemoteAudioRequest, AnkiSettings, AnkiStoreBookCoverResult, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LocalAudioStoreRequest, LocalAudioStoreResult, LookupAnkiPayload, ReaderSelection } from "./types";
+  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, AnkiStoreBookCoverResult, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LookupAnkiPayload, ReaderSelection, WordAudioPlaybackResult, WordAudioResolveRequest } from "./types";
 
   let {
     popupId,
@@ -34,8 +34,8 @@
     buildAnkiPayload,
     onStoreAnkiMedia,
     onStoreAnkiBookCover,
-    onStoreAnkiRemoteAudio,
-    onStoreAnkiLocalAudio,
+    onStoreAnkiWordAudio,
+    onPrepareWordAudio,
     onAddAnkiNote,
   }: {
     popupId: string;
@@ -62,8 +62,8 @@
     buildAnkiPayload?: (result: DictResult, resultIndex: number) => LookupAnkiPayload;
     onStoreAnkiMedia?: (media: AnkiDictionaryMediaRef[]) => Promise<AnkiStoreMediaResult>;
     onStoreAnkiBookCover?: (bookId: string) => Promise<AnkiStoreBookCoverResult>;
-    onStoreAnkiRemoteAudio?: (request: AnkiRemoteAudioRequest) => Promise<AnkiStoreRemoteAudioResult>;
-    onStoreAnkiLocalAudio?: (request: LocalAudioStoreRequest) => Promise<LocalAudioStoreResult>;
+    onStoreAnkiWordAudio?: (request: WordAudioResolveRequest) => Promise<AnkiStoreRemoteAudioResult>;
+    onPrepareWordAudio?: (request: WordAudioResolveRequest) => Promise<WordAudioPlaybackResult>;
     onAddAnkiNote?: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
   } = $props();
 
@@ -81,6 +81,12 @@
   let ankiActionMessage = $state("");
   let ankiMediaWarnings = $state<string[]>([]);
   let ankiAudioHint = $state("");
+  let wordAudioKey = $state("");
+  let wordAudioState = $state<"idle" | "loading" | "playing" | "error">("idle");
+  let wordAudioMessage = $state("");
+  let wordAudioElement: HTMLAudioElement | null = null;
+  let wordAudioRequestGeneration = 0;
+  let lastAutoplayKey = "";
   let styleRequestId = 0;
   let firstPaintRequestId = 0;
   const styleTag = "style";
@@ -392,27 +398,104 @@
   ): Promise<AnkiStoreRemoteAudioResult | null> {
     if (!ankiSettings?.audioEnabled || !payload.expression.trim()) return null;
     if (!fields.some((field) => field.template.toLowerCase().includes("{audio}"))) return null;
-    const warnings: string[] = [];
-    if (ankiSettings.localAudioEnabled && onStoreAnkiLocalAudio) {
-      const localResult = await onStoreAnkiLocalAudio({ expression: payload.expression, reading: payload.reading });
-      warnings.push(...localResult.warnings);
-      if (localResult.filename) return { filename: localResult.filename, warnings };
-    }
-    const sources = ankiSettings.audioSources.filter((item) => item.enabled && item.url.trim());
-    if (sources.length === 0 || !onStoreAnkiRemoteAudio) return warnings.length > 0 ? { filename: null, warnings } : null;
-    for (const source of sources) {
-      const remoteResult = await onStoreAnkiRemoteAudio({
-        sourceName: source.name,
-        urlTemplate: source.url,
-        expression: payload.expression,
-        reading: payload.reading,
-        timeoutMs: ankiSettings.audioDownloadTimeoutMs,
-      });
-      warnings.push(...remoteResult.warnings);
-      if (remoteResult.filename) return { filename: remoteResult.filename, warnings };
-    }
-    return { filename: null, warnings };
+    if (!onStoreAnkiWordAudio) return null;
+    return onStoreAnkiWordAudio(wordAudioResolveRequest(payload.expression, payload.reading));
   }
+
+  function wordAudioResolveRequest(expression: string, reading: string): WordAudioResolveRequest {
+    return {
+      expression,
+      reading,
+      localAudioEnabled: ankiSettings?.localAudioEnabled ?? false,
+      sources: ankiSettings?.audioSources ?? [],
+      timeoutMs: ankiSettings?.audioDownloadTimeoutMs ?? 5000,
+    };
+  }
+
+  function canPlayWordAudio(result: DictResult): boolean {
+    const hasSource = Boolean(ankiSettings?.localAudioEnabled) || Boolean(ankiSettings?.audioSources.some((source) => source.enabled && source.url.trim()));
+    return Boolean(ankiSettings?.audioEnabled && hasSource && result.expression.trim() && onPrepareWordAudio);
+  }
+
+  function stopWordAudio(message = "") {
+    wordAudioRequestGeneration += 1;
+    if (wordAudioElement) {
+      wordAudioElement.pause();
+      wordAudioElement.src = "";
+      wordAudioElement.load();
+      wordAudioElement = null;
+    }
+    wordAudioKey = "";
+    wordAudioState = "idle";
+    wordAudioMessage = message;
+  }
+
+  async function toggleWordAudio(result: DictResult, key: string) {
+    if (wordAudioKey === key && (wordAudioState === "loading" || wordAudioState === "playing")) {
+      stopWordAudio("Word audio stopped.");
+      return;
+    }
+    if (!canPlayWordAudio(result) || !onPrepareWordAudio) return;
+    stopWordAudio();
+    const generation = wordAudioRequestGeneration;
+    wordAudioKey = key;
+    wordAudioState = "loading";
+    wordAudioMessage = "Resolving word audio...";
+    try {
+      const resolved = await onPrepareWordAudio(wordAudioResolveRequest(result.expression, result.reading));
+      if (generation !== wordAudioRequestGeneration || wordAudioKey !== key) return;
+      const warningText = resolved.warnings.join(" ");
+      if (!resolved.cachePath) {
+        wordAudioState = "error";
+        wordAudioMessage = warningText || "No word audio was found.";
+        return;
+      }
+      const source = resolved.cachePath.startsWith("data:") || resolved.cachePath.startsWith("blob:")
+        ? resolved.cachePath
+        : convertFileSrc(resolved.cachePath);
+      const audio = new Audio(source);
+      wordAudioElement = audio;
+      audio.onended = () => {
+        if (wordAudioElement !== audio) return;
+        wordAudioElement = null;
+        wordAudioKey = "";
+        wordAudioState = "idle";
+        wordAudioMessage = warningText || `Played word audio${resolved.sourceName ? ` from ${resolved.sourceName}` : ""}.`;
+      };
+      audio.onerror = () => {
+        if (wordAudioElement !== audio) return;
+        wordAudioElement = null;
+        wordAudioState = "error";
+        wordAudioMessage = "Word audio could not be played.";
+      };
+      await audio.play();
+      if (generation !== wordAudioRequestGeneration || wordAudioElement !== audio) {
+        audio.pause();
+        return;
+      }
+      wordAudioState = "playing";
+      wordAudioMessage = warningText || `Playing word audio${resolved.sourceName ? ` from ${resolved.sourceName}` : ""}.`;
+    } catch (error) {
+      if (generation !== wordAudioRequestGeneration) return;
+      wordAudioState = "error";
+      wordAudioMessage = String(error);
+    }
+  }
+
+  $effect(() => {
+    const lifecycleKey = `${popupId}:${requestId}:${selection.text}`;
+    void lifecycleKey;
+    return () => stopWordAudio();
+  });
+
+  $effect(() => {
+    const first = renderedResults[0];
+    const autoplayKey = first ? `${popupId}:${requestId}:${first.key}` : "";
+    if (lookupState === "ready" && ankiSettings?.audioAutoplay && first && autoplayKey !== lastAutoplayKey) {
+      lastAutoplayKey = autoplayKey;
+      queueMicrotask(() => void toggleWordAudio(first.result, first.key));
+    }
+  });
 
   function audioBoundaryHint(payload: LookupAnkiPayload, fields: AnkiFieldPreview[]): string {
     if (!fields.some((field) => field.template.toLowerCase().includes("{audio}"))) return "";
@@ -499,8 +582,16 @@
               {/if}
             </div>
             <div class="lookup-header-actions" aria-label="Lookup actions">
-              <button class="lookup-action-slot lookup-audio" disabled title="Word audio playback is not implemented yet." aria-label="Play audio">
-                <span aria-hidden="true">A</span>
+              <button
+                class:ready={canPlayWordAudio(rendered.result)}
+                class:playing={wordAudioKey === rendered.key && wordAudioState === "playing"}
+                class="lookup-action-slot lookup-audio"
+                disabled={!canPlayWordAudio(rendered.result)}
+                title={canPlayWordAudio(rendered.result) ? (wordAudioKey === rendered.key ? "Stop word audio" : "Play word audio") : "No enabled word audio source"}
+                aria-label={wordAudioKey === rendered.key && (wordAudioState === "loading" || wordAudioState === "playing") ? "Stop audio" : "Play audio"}
+                onclick={() => toggleWordAudio(rendered.result, rendered.key)}
+              >
+                <span aria-hidden="true">{wordAudioKey === rendered.key && wordAudioState === "loading" ? "..." : wordAudioKey === rendered.key && wordAudioState === "playing" ? "■" : "A"}</span>
               </button>
               <button
                 class:ready={canPreviewAnki}
@@ -517,6 +608,9 @@
               </button>
             </div>
           </div>
+          {#if wordAudioKey === rendered.key && wordAudioMessage}
+            <p class:error={wordAudioState === "error"} class="word-audio-status">{wordAudioMessage}</p>
+          {/if}
           {#if rendered.match || rendered.rules.length > 0 || rendered.frequencies.length > 0 || rendered.pitches.length > 0}
             <div class="entry-tags">
               {#if rendered.match || rendered.rules.length > 0}
@@ -636,6 +730,8 @@
 </div>
 
 <style>
+  .word-audio-status { margin: 2px 0 0; color: var(--app-status, #cce8d5); font-size: 11px; line-height: 1.35; }
+  .word-audio-status.error { color: var(--app-error, #ffb4ab); }
   .lookup-content { display: flex; flex-direction: column; gap: 8px; min-width: 0; }
   .lookup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--app-muted, #999999); font-size: 11px; text-transform: uppercase; }
   .lookup-head-actions { display: flex; align-items: center; gap: 4px; }

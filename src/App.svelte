@@ -36,11 +36,12 @@
     AnkiAudioSource,
     AnkiDictionaryMediaRef,
     AnkiNoteRequest,
-    AnkiRemoteAudioRequest,
     AnkiSettings,
     AnkiStoreMediaResult,
     AnkiStoreBookCoverResult,
     AnkiStoreRemoteAudioResult,
+    WordAudioPlaybackResult,
+    WordAudioResolveRequest,
     DictImportBatchSummary,
     DictResult,
     DictionaryManifestEntry,
@@ -48,8 +49,6 @@
     EpubMeta,
     LookupAnkiPayload,
     LocalAudioStatus,
-    LocalAudioStoreRequest,
-    LocalAudioStoreResult,
     ReaderProgress,
     ReaderSelection,
   } from "./lib/types";
@@ -384,6 +383,8 @@
       checkDuplicatesAcrossAllModels: false,
       duplicateScope: "collection",
       compactGlossaries: false,
+      audioAutoplay: false,
+      audioPlaybackMode: "interrupt",
       lastFetchedAt: null,
     };
   }
@@ -535,6 +536,13 @@
     if (ankiBusy) return;
     const base = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft };
     ankiSettings = { ...base, compactGlossaries: enabled };
+    await saveAnkiSettings();
+  }
+
+  async function setWordAudioPlaybackOptions(audioAutoplay: boolean, audioPlaybackMode: AnkiSettings["audioPlaybackMode"]) {
+    if (ankiBusy) return;
+    const base = { ...(ankiSettings ?? defaultAnkiSettings()), endpoint: ankiEndpointDraft };
+    ankiSettings = { ...base, audioAutoplay, audioPlaybackMode };
     await saveAnkiSettings();
   }
 
@@ -797,13 +805,6 @@
     return invoke<AnkiStoreMediaResult>("anki_store_dictionary_media", { endpoint, media });
   }
 
-  async function storeAnkiRemoteAudio(request: AnkiRemoteAudioRequest): Promise<AnkiStoreRemoteAudioResult> {
-    if (!isTauriRuntime()) throw new Error("Anki audio storage requires Tauri runtime.");
-    const endpoint = ankiSettings?.endpoint;
-    if (!endpoint) throw new Error("Anki endpoint is not configured.");
-    return invoke<AnkiStoreRemoteAudioResult>("anki_store_remote_audio", { endpoint, request });
-  }
-
   async function storeAnkiBookCover(bookId: string): Promise<AnkiStoreBookCoverResult> {
     if (!isTauriRuntime()) throw new Error("Anki book cover storage requires Tauri runtime.");
     const endpoint = ankiSettings?.endpoint;
@@ -811,11 +812,16 @@
     return invoke<AnkiStoreBookCoverResult>("anki_store_book_cover", { endpoint, bookId });
   }
 
-  async function storeAnkiLocalAudio(request: LocalAudioStoreRequest): Promise<LocalAudioStoreResult> {
-    if (!isTauriRuntime()) throw new Error("Anki local audio storage requires Tauri runtime.");
+  async function storeAnkiWordAudio(request: WordAudioResolveRequest): Promise<AnkiStoreRemoteAudioResult> {
+    if (!isTauriRuntime()) throw new Error("Anki word audio storage requires Tauri runtime.");
     const endpoint = ankiSettings?.endpoint;
     if (!endpoint) throw new Error("Anki endpoint is not configured.");
-    return invoke<LocalAudioStoreResult>("anki_store_local_audio", { endpoint, request });
+    return invoke<AnkiStoreRemoteAudioResult>("anki_store_word_audio", { endpoint, request });
+  }
+
+  async function prepareWordAudio(request: WordAudioResolveRequest): Promise<WordAudioPlaybackResult> {
+    if (!isTauriRuntime()) throw new Error("Word audio playback requires Tauri runtime.");
+    return invoke<WordAudioPlaybackResult>("word_audio_prepare_playback", { request });
   }
 
   async function setDictionaryEnabled(dictionary: DictionaryManifestEntry, enabled: boolean) {
@@ -1219,6 +1225,7 @@
       onSetAnkiForceSyncAfterAdd={setAnkiForceSyncAfterAdd}
       onSetAnkiNoteOptions={setAnkiNoteOptions}
       onSetAnkiCompactGlossaries={setAnkiCompactGlossaries}
+      onSetWordAudioPlaybackOptions={setWordAudioPlaybackOptions}
       onImportLocalAudio={importLocalAudio}
       onRemoveLocalAudio={removeLocalAudio}
       onMoveLocalAudioSource={moveLocalAudioSource}
@@ -1255,9 +1262,9 @@
       ankiTitle={lookupAnkiTitle}
       {buildAnkiPayload}
       onStoreAnkiMedia={storeAnkiMedia}
-      onStoreAnkiRemoteAudio={storeAnkiRemoteAudio}
       onStoreAnkiBookCover={storeAnkiBookCover}
-      onStoreAnkiLocalAudio={storeAnkiLocalAudio}
+      onStoreAnkiWordAudio={storeAnkiWordAudio}
+      onPrepareWordAudio={prepareWordAudio}
       onAddAnkiNote={addAnkiNote}
     />
     {#if showToc}
