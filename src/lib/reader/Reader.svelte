@@ -644,6 +644,10 @@
     });
   }
 
+  function shouldScheduleShiftHoverLookup(pointer: { x: number; y: number } | null): boolean {
+    return shiftKeyPressed && pointer !== null;
+  }
+
   function logReaderGeometry(reason: string) {
     if (!readerDebugEnabled() || !containerEl || !contentEl) return;
 
@@ -809,7 +813,11 @@
   function handleKey(e: KeyboardEvent) {
     const ctrl = e.ctrlKey || e.metaKey;
     if (e.key === "Shift") {
+      const wasShiftPressed = shiftKeyPressed;
       shiftKeyPressed = true;
+      if (!wasShiftPressed && lastPointer && shouldScheduleShiftHoverLookup(lastPointer)) {
+        scheduleShiftHoverLookup();
+      }
     } else if (ctrl && e.key === "ArrowLeft") {
       e.preventDefault();
       onNextChapter();
@@ -869,7 +877,7 @@
   function handlePointerMove(e: PointerEvent) {
     lastPointer = { x: e.clientX, y: e.clientY };
     shiftKeyPressed = e.shiftKey;
-    if (e.shiftKey) {
+    if (shouldScheduleShiftHoverLookup(lastPointer)) {
       scheduleShiftHoverLookup();
     } else {
       resetShiftHoverState();

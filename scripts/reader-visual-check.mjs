@@ -305,6 +305,19 @@ async function dispatchReaderShiftMoves(page, points, cancelWith = "") {
   }, { coordinates: points, cancel: cancelWith });
 }
 
+async function dispatchReaderPointerMove(page, point, shiftKey = false) {
+  await page.evaluate(({ x, y, shift }) => {
+    const viewport = document.querySelector(".rv");
+    if (!(viewport instanceof HTMLElement)) throw new Error("Reader viewport not found.");
+    viewport.dispatchEvent(new PointerEvent("pointermove", {
+      bubbles: true,
+      clientX: x,
+      clientY: y,
+      shiftKey: shift,
+    }));
+  }, { x: point.x, y: point.y, shift: shiftKey });
+}
+
 async function main() {
   const vite = spawn(
     process.platform === "win32" ? "cmd.exe" : "npm",
@@ -422,6 +435,102 @@ async function main() {
         { cancellation, beforeCancellation, current: await probeSelectionCount(page) },
       );
     }
+
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => (document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "") === "");
+
+    const hoverThenShiftStartCount = await probeSelectionCount(page);
+    await dispatchReaderPointerMove(page, adjacentPoints.first, false);
+    await page.waitForTimeout(40);
+    assert(
+      await probeSelectionCount(page) === hoverThenShiftStartCount,
+      "Plain hover before Shift should not trigger lookup.",
+      { adjacentPoints, hoverThenShiftStartCount, currentCount: await probeSelectionCount(page) },
+    );
+    await page.evaluate(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift" })));
+    await page.waitForFunction(
+      (expected) => Number(document.querySelector(".probe-state")?.getAttribute("data-selection-count") ?? 0) === expected,
+      hoverThenShiftStartCount + 1,
+    );
+    assert(
+      await probeSelectionCount(page) === hoverThenShiftStartCount + 1,
+      "Pressing Shift after hovering reader text should trigger Shift-hover lookup from the last pointer.",
+      { adjacentPoints, currentCount: await probeSelectionCount(page) },
+    );
+    await page.evaluate(() => window.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift" })));
+
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => (document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "") === "");
+    const repeatCancelStartCount = await probeSelectionCount(page);
+    await page.evaluate((point) => {
+      const viewport = document.querySelector(".rv");
+      if (!(viewport instanceof HTMLElement)) throw new Error("Reader viewport not found.");
+
+      const callbacks = [];
+      const originalRequestAnimationFrame = window.requestAnimationFrame;
+      const originalCancelAnimationFrame = window.cancelAnimationFrame;
+      window.__hswReaderVisualRaf = {
+        callbacks,
+        originalRequestAnimationFrame,
+        originalCancelAnimationFrame,
+      };
+      window.requestAnimationFrame = (callback) => {
+        const id = callbacks.length + 1;
+        callbacks.push({ id, callback, cancelled: false });
+        return id;
+      };
+      window.cancelAnimationFrame = (id) => {
+        const entry = callbacks.find((candidate) => candidate.id === id);
+        if (entry) entry.cancelled = true;
+      };
+
+      viewport.dispatchEvent(new PointerEvent("pointermove", {
+        bubbles: true,
+        clientX: point.x,
+        clientY: point.y,
+        shiftKey: false,
+      }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift" }));
+      window.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift", repeat: true }));
+      window.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift" }));
+    }, adjacentPoints.second);
+    const repeatRafState = await page.evaluate(() => {
+      const state = window.__hswReaderVisualRaf;
+      if (!state) throw new Error("Reader visual RAF hook was not installed.");
+      const scheduled = state.callbacks.length;
+      const cancelled = state.callbacks.filter((entry) => entry.cancelled).length;
+      const callbacks = [...state.callbacks];
+      window.requestAnimationFrame = state.originalRequestAnimationFrame;
+      window.cancelAnimationFrame = state.originalCancelAnimationFrame;
+      delete window.__hswReaderVisualRaf;
+      for (const entry of callbacks) {
+        if (!entry.cancelled) entry.callback(performance.now());
+      }
+      return { scheduled, cancelled };
+    });
+    await page.waitForTimeout(40);
+    assert(
+      repeatRafState.scheduled === 1 && repeatRafState.cancelled === 1 &&
+        await probeSelectionCount(page) === repeatCancelStartCount,
+      "Shift key repeat should not reschedule lookup, and keyup should cancel the pending lookup.",
+      { repeatRafState, repeatCancelStartCount, currentCount: await probeSelectionCount(page) },
+    );
+
+    await dispatchReaderPointerMove(page, adjacentPoints.first, false);
+    await page.evaluate(() => {
+      const viewport = document.querySelector(".rv");
+      if (!(viewport instanceof HTMLElement)) throw new Error("Reader viewport not found.");
+      viewport.dispatchEvent(new PointerEvent("pointerleave", { bubbles: false }));
+    });
+    const leaveThenShiftStartCount = await probeSelectionCount(page);
+    await page.evaluate(() => window.dispatchEvent(new KeyboardEvent("keydown", { key: "Shift" })));
+    await page.waitForTimeout(40);
+    await page.evaluate(() => window.dispatchEvent(new KeyboardEvent("keyup", { key: "Shift" })));
+    assert(
+      await probeSelectionCount(page) === leaveThenShiftStartCount,
+      "Pressing Shift after leaving the reader should not use a stale pointer.",
+      { leaveThenShiftStartCount, currentCount: await probeSelectionCount(page) },
+    );
 
     await page.keyboard.press("Escape");
     await page.waitForFunction(() => (document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "") === "");
