@@ -15,9 +15,9 @@ This file is the short operational handoff for future agents. Keep detailed stat
 
 ## Current Priorities
 
-1. Follow `docs/DICTIONARY_POPUP_DESKTOP_ALIGNMENT_PLAN.md` for the active desktop popup alignment work.
-   - Current: Slice 2, Windows popup typography, content scaling, visual verification, and status documentation.
-   - Next: Reassess the completed route; do not expand into transparency, full-width mode, custom CSS, or font selection without a new slice.
+1. Treat `docs/DICTIONARY_POPUP_DESKTOP_ALIGNMENT_PLAN.md` as complete at its documented validation level.
+   - Slices 0-2 are complete: persisted width/height/scale settings, responsive fixed sizing, Windows Japanese sans typography, scaled content, and wide/narrow runtime visual checks.
+   - No next slice is authorized; do not expand into transparency, full-width mode, custom CSS, or font selection without a new documented slice.
 2. Treat the current reader lookup implementation slices in `docs/LOOKUP_ROADMAP.md` as complete.
    - Slice 6 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including a passing VS developer-shell linked build.
    - Slice 7 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including a real JMdict Yomitan import, manifest verification, and linked runtime lookup check.

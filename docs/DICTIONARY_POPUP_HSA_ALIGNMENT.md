@@ -251,7 +251,9 @@ Validation:
 - Word audio and local/remote audio playback.
 - Sasayaki popup controls and audiobook sentence audio.
 - Dictionary settings UI for collapse modes, compact glossaries, compact pitch,
-  custom user CSS, and popup scale.
+  and custom user CSS. Popup width, height, and content scale are implemented in
+  the Windows Appearance panel through the desktop alignment route documented in
+  `docs/DICTIONARY_POPUP_DESKTOP_ALIGNMENT_PLAN.md`.
 - E-ink-specific underline/highlight parity.
 - Dictionary tab and Process Text iframe popup hosts.
 

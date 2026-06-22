@@ -23,6 +23,7 @@
   const coverFieldEnabled = params.get("coverField") !== "disabled";
   const noBookId = params.has("noBookId");
   const emptyExpression = params.has("emptyExpression");
+  const showReading = params.has("showReading");
   const popupSettings = normalizeLookupPopupSettings({
     width: params.has("popupWidth") ? Number(params.get("popupWidth")) : 320,
     height: params.has("popupHeight") ? Number(params.get("popupHeight")) : 250,
@@ -82,7 +83,7 @@
 
   const baseResult: DictResult = {
     expression: emptyExpression ? "" : "school",
-    reading: "school",
+    reading: showReading ? "すくーる" : "school",
     glossary: [
       { dict: "Jitendex.org [probe]", text: structuredGlossaryText, termTags: "n common", definitionTags: "education" },
       { dict: "Jitendex.org [probe]", text: "academy; lesson context", definitionTags: "place" },

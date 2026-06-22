@@ -71,6 +71,7 @@ async function openProbe(page, state, options = {}) {
   if (options.popupWidth) params.set("popupWidth", String(options.popupWidth));
   if (options.popupHeight) params.set("popupHeight", String(options.popupHeight));
   if (options.popupScale) params.set("popupScale", String(options.popupScale));
+  if (options.showReading) params.set("showReading", "1");
   await page.goto(`${origin}/?${params}`);
   await page.locator(".lookup-pop").waitFor({ timeout: 10000 });
 }
@@ -85,6 +86,13 @@ async function popupMetrics(page) {
     const anki = document.querySelector(".lookup-anki");
     const audio = document.querySelector(".lookup-audio");
     const controls = document.querySelector(".probe-ctrls");
+    const content = document.querySelector(".lookup-content");
+    const expression = document.querySelector(".lookup-expression");
+    const reading = document.querySelector(".lookup-reading");
+    const glossary = document.querySelector(".lookup-glossary-content");
+    const glossaryItem = document.querySelector(".lookup-glossary");
+    const glossaryDictionary = document.querySelector(".lookup-glossary-dict");
+    const pitchList = document.querySelector(".pitch-list");
     const rect = popup instanceof HTMLElement
       ? popup.getBoundingClientRect()
       : { x: 0, y: 0, width: 0, height: 0, right: 0, bottom: 0 };
@@ -177,6 +185,15 @@ async function popupMetrics(page) {
       ankiDisplay: anki instanceof HTMLElement ? getComputedStyle(anki).display : "",
       audioDisplay: audio instanceof HTMLElement ? getComputedStyle(audio).display : "",
       bodyBackground: getComputedStyle(document.body).backgroundColor,
+      contentFontFamily: content instanceof HTMLElement ? getComputedStyle(content).fontFamily : "",
+      expressionFontSize: expression instanceof HTMLElement ? getComputedStyle(expression).fontSize : "",
+      readingFontSize: reading instanceof HTMLElement ? getComputedStyle(reading).fontSize : "",
+      glossaryFontSize: glossary instanceof HTMLElement ? getComputedStyle(glossary).fontSize : "",
+      glossaryLineHeight: glossary instanceof HTMLElement ? getComputedStyle(glossary).lineHeight : "",
+      glossaryItemFontSize: glossaryItem instanceof HTMLElement ? getComputedStyle(glossaryItem).fontSize : "",
+      glossaryDictionaryFontSize: glossaryDictionary instanceof HTMLElement ? getComputedStyle(glossaryDictionary).fontSize : "",
+      pitchFontSize: pitchList instanceof HTMLElement ? getComputedStyle(pitchList).fontSize : "",
+      actionSlotWidth: anki instanceof HTMLElement ? getComputedStyle(anki).width : "",
     };
   });
 }
@@ -211,6 +228,7 @@ async function dispatchGlossaryPointer(page, text, eventType, options = {}) {
     }
     if (!textNode || offset < 0) throw new Error(`Nested lookup probe text not found: ${needle}`);
 
+    textNode.parentElement?.scrollIntoView({ block: "center", inline: "nearest" });
     const range = document.createRange();
     range.setStart(textNode, offset);
     range.setEnd(textNode, offset + 1);
@@ -287,7 +305,7 @@ async function main() {
     await page.getByRole("button", { name: "Close lookup" }).click();
     assert((await popupMetrics(page)).closeClicks === 1, "Close action should be wired.");
 
-    await openProbe(page, "ready", { longResult: true });
+    await openProbe(page, "ready", { longResult: true, showReading: true });
     await page.waitForFunction(() => {
       const target = document.querySelector(".lookup-glossary-content .gloss-sc-div");
       return target instanceof HTMLElement && getComputedStyle(target).color === "rgb(123, 210, 145)";
@@ -299,6 +317,11 @@ async function main() {
     const ready = await popupMetrics(page);
     assert(Math.abs(ready.popup.width - 320) <= 1 && Math.abs(ready.popup.height - 250) <= 1, "Default popup outer frame should be 320 x 250.", ready);
     assert(ready.text.includes("school"), "Ready popup should render expression.", ready);
+    assert(ready.contentFontFamily.includes("Yu Gothic UI"), "Popup content should use the Windows Japanese sans-serif stack.", ready);
+    assert(ready.expressionFontSize === "26px" && ready.readingFontSize === "13px", "Scale 1 should use upstream expression and reading sizes.", ready);
+    assert(ready.glossaryFontSize === "15px" && ready.glossaryItemFontSize === "14px" && ready.glossaryDictionaryFontSize === "10px", "Scale 1 should preserve the upstream glossary type hierarchy.", ready);
+    assert(ready.glossaryLineHeight === "21px" && ready.pitchFontSize === "13px", "Scale 1 should use 1.4 glossary line height and 13 px pitch text.", ready);
+    assert(ready.actionSlotWidth === "28px", "Scale 1 should keep result-level action slots at 28 px.", ready);
     assert(ready.lookupResultRows >= 5 && ready.text.includes("extra rendered lookup result 5"), "Ready popup should render all backend lookup results, not only the first three.", ready);
     assert(ready.text.includes("Jitendex.org [probe]"), "Ready popup should render dictionary source.", ready);
     assert(ready.lookupTextRows === 0, "Ready popup should not render the original selected text row.", ready);
@@ -649,6 +672,16 @@ async function main() {
     assert(scrolled.scrollCloseCount >= 1, "Parent scroll should record child close behavior.", scrolled);
     assert(scrolled.popupHighlightText === "", "Scrolling the parent popup should clear child lookup highlight.", scrolled);
 
+    await openProbe(page, "ready", { longResult: true, popupScale: 1.5, showReading: true });
+    await scrollFirstMediaPlaceholderIntoView(page);
+    await page.waitForFunction(() => (
+      document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='loaded']").length >= 1
+    ));
+    const scaled = await popupMetrics(page);
+    assert(scaled.popup.width === 320 && scaled.popup.height === 250, "Content scale should not change the popup outer frame.", scaled);
+    assert(scaled.expressionFontSize === "39px" && scaled.readingFontSize === "19.5px" && scaled.glossaryFontSize === "22.5px", "Scale 1.5 should multiply the core popup type sizes.", scaled);
+    assert(scaled.actionSlotWidth === "42px" && scaled.mediaImageMaxHeight === "270px", "Scale 1.5 should multiply result actions and media limits.", scaled);
+
     await page.setViewportSize({ width: 1280, height: 720 });
     await openProbe(page, "ready", { longResult: true, popupWidth: 700, popupHeight: 800 });
     const constrainedMaximum = await popupMetrics(page);
@@ -663,7 +696,7 @@ async function main() {
     assert(narrow.popup.right <= narrow.viewport.width, "Narrow lookup popup should stay within the viewport.", narrow);
     assert(narrow.popup.width === 336 && narrow.popup.height === 596, "Narrow popup should shrink to the available viewport without changing the configured limits.", narrow);
 
-    console.log(JSON.stringify({ ready, mediaFailed, mediaNoTauri, nested, childClosed, scrolled, constrainedMaximum, narrow }, null, 2));
+    console.log(JSON.stringify({ ready, mediaFailed, mediaNoTauri, nested, childClosed, scrolled, scaled, constrainedMaximum, narrow }, null, 2));
   } finally {
     if (browser) await browser.close();
     stopServer(vite);

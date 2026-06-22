@@ -39,7 +39,7 @@ selection, popup renderer replacement, pagination changes, and Rust commands.
 | --- | --- | --- | --- | --- |
 | 0 | Complete | Plan and short handoff | `git diff --check` passed | this documentation commit |
 | 1 | Complete | Persisted width/height/scale settings, Appearance controls, responsive fixed frame, internal scrolling | settings, bookshelf, and popup probes passed; `npm run check` and `npm run build` passed | this feature commit |
-| 2 | Pending | Windows Japanese sans typography, scaled popup content, final visual coverage and status docs | popup probe, `npm run check`, `npm run build`, wide/narrow runtime visual check | pending |
+| 2 | Complete | Windows Japanese sans typography, scaled popup content, final visual coverage and status docs | popup and settings probes passed; `npm run check` and `npm run build` passed; wide/narrow/default/0.8/1.5/nested visual checks passed | this feature commit |
 
 After each slice, update this table with the commit and validation result, then
 reassess the next slice before editing implementation files.

@@ -74,6 +74,8 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Supports left-click lookup selection in reader text and popup glossary text; plain mouse drag selection does not open the lookup popup.
   - Lookup-triggered highlights use HSA-style CSS Highlight gray highlighting instead of the native blue browser selection; user-driven text selection remains separate.
   - Popup prefers left/right side placement beside the selected text, with top/bottom fallback.
+  - Popup outer sizing is user-configurable from Appearance: width `100...700` (default `320`), height `100...800` (default `250`), and content scale `0.8...1.5` (default `1.0`). Oversized settings shrink only for the current reader viewport and do not overwrite persisted values.
+  - Popup content uses the Windows Japanese sans-serif stack (`Yu Gothic UI`, `Meiryo`, `Segoe UI`) with upstream-aligned expression, reading, glossary, metadata, and pitch size tiers. Content scale affects result typography, spacing, tags, actions, and media limits without changing the outer frame or desktop popup header.
   - Debug lookup timing records cover frontend request/first-frame/style/media stages and Rust lock/native lookup stages; the current local before/after baseline is recorded in `docs/LOOKUP_PERFORMANCE_BASELINE.md`.
   - Lookup uses a 32-entry in-memory LRU that also deduplicates concurrent identical requests; dictionary mutations clear lookup and style caches.
   - Enabled term-dictionary styles are prewarmed after dictionary state becomes ready, popup style loads run in parallel, and popup results use one-pass view models for match/rules/frequency/pitch/glossary rendering.
@@ -82,7 +84,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Dictionary media loads lazily inside popup glossary content; loaded, unavailable, and non-Tauri fallback states are covered by the lookup popup probe.
   - Popup glossary text supports Shift hover nested lookup as a popup stack: root lookup stays open, child popups anchor to glossary text, closing a child preserves the parent, and parent scroll closes children.
   - Popup has a disabled Anki boundary affordance and can build a typed lookup-to-Anki payload from the selected result and current book/chapter context.
-  - Lookup popup probe and `npm run check:lookup-popup` cover popup states, glossary Shift hover nested lookup stack behavior, child close parent preservation, parent-scroll child dismissal, redirect history, scoped dictionary CSS behavior, long-result internal scrolling, HSA-style header action/frequency/pitch layout, disabled Anki/audio boundaries, import/close actions, and narrow-window overflow.
+  - Lookup popup probe and `npm run check:lookup-popup` cover popup states, glossary Shift hover nested lookup stack behavior, child close parent preservation, parent-scroll child dismissal, redirect history, scoped dictionary CSS behavior, fixed/default/maximum/narrow sizing, upstream typography tiers, scale `1.0`/`1.5`, long-result internal scrolling, HSA-style header action/frequency/pitch layout, disabled Anki/audio boundaries, import/close actions, and narrow-window overflow.
   - Popup clears on page/chapter changes, TOC jumps, shelf return, close, and Escape.
 - Dictionary backend:
   - `dict_status` returns structured dictionary status: ready, no dictionaries, engine unavailable, or error.
@@ -149,7 +151,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 
 - No durable database; app-owned library metadata and reading state are still JSON.
 - Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; real remote-audio-plus-AnkiConnect, real HSA local-audio database, real popup word-audio playback, and real post-add sync runtime validation are also not verified.
-- No full settings surface; only the minimal bookshelf Appearance and Advanced startup-behavior panels are implemented.
+- No full settings surface; only the minimal bookshelf Appearance (theme plus dictionary popup sizing/scale) and Advanced startup-behavior panels are implemented.
 - No verified app-owned cover thumbnail cache.
 - Runtime validation with a normal media-bearing Yomitan dictionary is not verified; on 2026-06-16, `HSW_MEDIA_YOMITAN_ZIP` was unset, `OALDPE10.zip` had `mediaCount=0`, and `MK3Fix0213.zip` remained unsuitable because compatibility import intentionally skips media.
 - No verified release packaging flow.
