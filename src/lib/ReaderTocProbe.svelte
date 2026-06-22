@@ -52,8 +52,6 @@
     <TocPanel {entries} {chapterIndex} onClose={closeToc} onJumpToChapter={jumpToChapter} />
   {/if}
   <ReaderControls
-    {chapterIndex}
-    totalChapters={2}
     onPrevChapter={() => {}}
     onNextChapter={() => {}}
     onToggleToc={toggleToc}

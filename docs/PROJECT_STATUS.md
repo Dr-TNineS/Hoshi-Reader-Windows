@@ -64,6 +64,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - EPUB asset URL rewriting.
   - Basic image load/reflow handling, SVG cover replacement, gaiji image handling, and block image handling.
   - Reader progress based on visible text position.
+  - Reader chrome aligns with HSA by showing whole-book character progress and percentage instead of exposing spine chapter counts or per-spine page counts; spine remains the internal load/navigation unit while TOC remains a directory view.
 - Reader visual probe fixture and `npm run check:reader-visual` cover baseline pagination geometry, final-page alignment, block image rendering, Shift-hover and left-click lookup selection, Shift-hover tiny-movement dedupe, plain mouse drag selection not opening lookup, narrow-window overflow, Ctrl chapter navigation, and page-boundary chapter navigation.
 - Reader TOC probe fixture and `npm run check:reader-toc` cover trigger semantics, initial/restored focus, nonmodal interaction, Escape priority, chapter jumps, and narrow-window bounds.
 - Reader selection and popup:

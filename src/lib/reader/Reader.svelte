@@ -7,7 +7,6 @@
   let {
     content = "",
     chapterIndex = 0,
-    totalChapters = 0,
     onPrevChapter = () => {},
     onPrevChapterDirect = () => {},
     onNextChapter = () => {},
@@ -1012,7 +1011,6 @@
 <div class="rc" style={themeVars}>
   <div class="rh">
     <span>
-      Ch.{chapterIndex + 1}/{totalChapters} | P.{currentPage + 1}/{totalPages} |
       {bookReadChars}/{totalBookChars || charCount}c | {bookPercent.toFixed(2)}%
     </span>
   </div>

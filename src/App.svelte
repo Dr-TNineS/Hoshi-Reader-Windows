@@ -1234,7 +1234,6 @@
     <Reader
       content={chapterHtml}
       {chapterIndex}
-      totalChapters={meta?.spine.length ?? 0}
       onPrevChapter={prevChapter}
       onPrevChapterDirect={prevChapterDirect}
       onNextChapter={nextChapter}
@@ -1276,8 +1275,6 @@
       />
     {/if}
     <ReaderControls
-      {chapterIndex}
-      totalChapters={meta?.spine.length ?? 0}
       onPrevChapter={prevChapterDirect}
       onNextChapter={nextChapter}
       onToggleToc={toggleToc}

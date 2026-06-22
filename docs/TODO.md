@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Agent TODO
 
-Last updated: 2026-06-21
+Last updated: 2026-06-23
 
 This file is the short operational handoff for future agents. Keep detailed state in `docs/PROJECT_STATUS.md` and lookup-specific slice details in `docs/LOOKUP_ROADMAP.md`.
 
@@ -36,6 +36,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Slices 5A-5H are complete at their documented validation levels. Do not promote automated results to real runtime verification.
 4. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
 5. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
+6. Reader chrome should continue to avoid user-visible spine totals (`Ch.x/y`) or per-spine page totals (`P.x/y`); use whole-book character progress instead unless a future documented slice deliberately changes the chapter model.
 
 ## Active Blockers
 

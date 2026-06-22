@@ -107,7 +107,6 @@
 <Reader
   content={chapters[chapterIndex]}
   {chapterIndex}
-  totalChapters={chapters.length}
   totalBookChars={3600}
   {startAtEnd}
   onNextChapter={nextChapter}
