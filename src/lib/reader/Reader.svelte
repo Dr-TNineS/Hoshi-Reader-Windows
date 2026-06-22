@@ -444,8 +444,31 @@
     return element?.closest("p, li, blockquote, div, section, article") ?? contentEl;
   }
 
-  function sentenceContext(root: Node): string {
-    return (root.textContent ?? "").replace(/\s+/g, " ").trim().slice(0, MAX_SENTENCE_CONTEXT_TEXT);
+  function normalizedSentenceText(text: string): string {
+    return text.replace(/\s+/g, " ");
+  }
+
+  function sentenceContext(root: Node, range: Range): { sentence: string; sentenceOffset?: number } {
+    const raw = root.textContent ?? "";
+    const normalized = normalizedSentenceText(raw);
+    const leadingTrim = normalized.length - normalized.trimStart().length;
+    const sentence = normalized.trim().slice(0, MAX_SENTENCE_CONTEXT_TEXT);
+
+    const prefixRange = document.createRange();
+    try {
+      prefixRange.selectNodeContents(root);
+      prefixRange.setEnd(range.startContainer, range.startOffset);
+      const before = normalizedSentenceText(prefixRange.toString());
+      const sentenceOffset = before.length - leadingTrim;
+      return {
+        sentence,
+        ...(sentenceOffset >= 0 && sentenceOffset < sentence.length ? { sentenceOffset } : {}),
+      };
+    } catch {
+      return { sentence };
+    } finally {
+      prefixRange.detach();
+    }
   }
 
   function detachActiveLookupRange() {
@@ -596,7 +619,8 @@
     }
 
     const anchorRect = hit.rect;
-    const selection = { text, sentence: sentenceContext(root), rect, anchorRect, chapterIndex };
+    const context = sentenceContext(root, visibleRange);
+    const selection = { text, ...context, rect, anchorRect, chapterIndex };
     hasActiveSelection = true;
     onSelectionChange(selection);
     return selection;

@@ -438,7 +438,8 @@ async function main() {
     assert(ankiAdded.ankiLastRequest.tags.join(" ") === "hoshi-reader mining", "Add Anki should send configured whitespace-separated tags.", ankiAdded);
     assert(ankiAdded.ankiLastRequest.allowDuplicates === false && ankiAdded.ankiLastRequest.duplicateScope === "collection", "Add Anki should send default duplicate policy.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Expression === "school / school", "Add Anki should send rendered field values.", ankiAdded);
-    assert(ankiAdded.ankiLastFields.Sentence === "The academy school sentence contains the selected lookup term in a longer source paragraph.", "Add Anki should send sentence context rather than only selected text.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.ExpressionFurigana === "school ", "Add Anki should render the HSA furigana-plain field.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.Sentence === "The academy <b>school</b> sentence contains the selected lookup term in a longer source paragraph.", "Add Anki should bold the selected lookup term in sentence context.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Meaning.includes("classroom school room") && !ankiAdded.ankiLastFields.Meaning.includes("\"tag\""), "Add Anki should send rendered structured glossary values.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Meaning.includes("yomitan-glossary"), "Add Anki should wrap glossary HTML in an HSA/Lapis-compatible glossary container.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Meaning.includes('data-dictionary="Jitendex.org [probe]"'), "Add Anki should preserve dictionary identity for note template CSS.", ankiAdded);
@@ -448,6 +449,7 @@ async function main() {
     assert(ankiAdded.ankiAudioStoreCount === 1, "Add Anki should store remote word audio before note creation.", ankiAdded);
     assert(ankiAdded.ankiLastAudioRequest.expression === "school" && ankiAdded.ankiLastAudioRequest.reading === "school", "Remote audio request should use lookup expression and reading.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Audio === "[sound:hsw_audio_probe.mp3]", "Add Anki should render the stored word audio filename.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.Pitch === '<ol><li><span style="display:inline;"><span>[</span><span>0</span><span>]</span></span></li><li><span style="display:inline;"><span>[</span><span>2</span><span>]</span></span></li></ol>', "Add Anki should render HSA-style pitch accent positions.", ankiAdded);
     assert(ankiAdded.coverStoreCount === 1 && ankiAdded.coverLastBookId === "probe-book", "Referenced book cover should be stored by bookId.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Picture === '<img src="hsw_cover_probe.jpg">', "Stored cover should render into the book-cover field.", ankiAdded);
     assert(ankiAdded.operationEvents === "dictionary,cover,audio,add", "Media should store in dictionary-cover-audio order before addNote.", ankiAdded);

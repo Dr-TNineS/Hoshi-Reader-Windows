@@ -674,6 +674,7 @@
     return {
       selectedText: selection.text,
       sentence: selection.sentence ?? selection.text,
+      sentenceOffset: selection.sentenceOffset,
       resultIndex,
       expression: result.expression,
       reading: result.reading,

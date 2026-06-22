@@ -1,4 +1,4 @@
-import { frequencyLabel, pitchLabel, renderGlossaryContent } from "./lookup-popup";
+import { frequencyLabel, renderGlossaryContent } from "./lookup-popup";
 import type { AnkiDictionaryMediaRef, AnkiFieldMapping, AnkiFieldPreview, AnkiNoteRequest, AnkiNoteType, AnkiSettings, AnkiStoredMedia, GlossaryEntry, LookupAnkiMediaReference, LookupAnkiPayload } from "./types";
 
 const TOKEN_PATTERN = /\{([^{}]+)\}/g;
@@ -7,6 +7,7 @@ const CORE_HANDLEBAR_OPTIONS = [
   "-",
   "{expression}",
   "{reading}",
+  "{furigana-plain}",
   "{popup-selection-text}",
   "{glossary-first}",
   "{glossary}",
@@ -72,6 +73,8 @@ const KNOWN_NOTE_TYPE_TEMPLATES: Record<string, Record<string, string>> = {
     miscInfo: "{document-title}",
   },
 };
+const KANJI_PATTERN = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3005]/u;
+const KANJI_SEGMENT_PATTERN = /[\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3005]+|[^\u4e00-\u9fff\u3400-\u4dbf\uf900-\ufaff\u3005]+/gu;
 
 export function isAnkiPreviewConfigured(settings: AnkiSettings | null | undefined): boolean {
   const noteType = selectedNoteType(settings);
@@ -169,6 +172,8 @@ function tokenValue(token: string, payload: LookupAnkiPayload, compactGlossaries
       return payload.expression;
     case "reading":
       return payload.reading;
+    case "furigana-plain":
+      return constructFuriganaPlain(payload.expression, payload.reading);
     case "popup-selection-text":
       return payload.selectedText;
     case "glossary-first":
@@ -176,13 +181,13 @@ function tokenValue(token: string, payload: LookupAnkiPayload, compactGlossaries
     case "glossary":
       return renderAnkiGlossaryEntries(payload.glossary, compactGlossaries);
     case "sentence":
-      return payload.sentence;
+      return sentenceValue(payload);
     case "document-title":
       return payload.sourceBook.title ?? "";
     case "frequencies":
       return frequencyLabel({ frequencies: payload.frequencies } as Parameters<typeof frequencyLabel>[0]);
     case "pitch-accent-positions":
-      return pitchLabel({ pitches: payload.pitches } as Parameters<typeof pitchLabel>[0]);
+      return renderPitchAccentPositions(payload);
     case "dictionary-media":
       return renderDictionaryMedia(payload.media);
     case "audio":
@@ -334,6 +339,136 @@ function normalizeDictionaryName(dictionary: string): string {
 
 function splitTags(value: string | undefined): string[] {
   return [...new Set((value ?? "").split(/[\s,;|]+/).map((tag) => tag.trim()).filter(Boolean))];
+}
+
+function sentenceValue(payload: LookupAnkiPayload): string {
+  const matched = payload.matched.trim();
+  if (!matched) return payload.sentence;
+  const offset = payload.sentenceOffset;
+  if (
+    offset !== undefined &&
+    offset >= 0 &&
+    offset + matched.length <= payload.sentence.length &&
+    payload.sentence.slice(offset, offset + matched.length) === matched
+  ) {
+    return `${payload.sentence.slice(0, offset)}<b>${matched}</b>${payload.sentence.slice(offset + matched.length)}`;
+  }
+  return payload.sentence.replace(matched, `<b>${matched}</b>`);
+}
+
+function renderPitchAccentPositions(payload: LookupAnkiPayload): string {
+  const items = payload.pitches
+    .flatMap((group) => group.positions)
+    .filter((position) => Number.isFinite(position))
+    .map((position) => `<li><span style="display:inline;"><span>[</span><span>${position}</span><span>]</span></span></li>`)
+    .join("");
+  return items ? `<ol>${items}</ol>` : "";
+}
+
+function constructFuriganaPlain(expression: string, reading: string): string {
+  let result = "";
+  for (const [text, furigana] of segmentFurigana(expression, reading)) {
+    result += furigana ? `${text}[${furigana}]` : `${text} `;
+  }
+  return result;
+}
+
+function segmentFurigana(expression: string, reading: string): Array<[string, string]> {
+  if (!reading || reading === expression) return [[expression, ""]];
+  const groups = [...expression.matchAll(KANJI_SEGMENT_PATTERN)].map((match) => {
+    const text = match[0];
+    const isKana = !KANJI_PATTERN.test(text[0] ?? "");
+    return {
+      isKana,
+      text,
+      textNormalized: isKana ? toHiragana(text) : null,
+    };
+  });
+  const segments = segmentizeFurigana(reading, toHiragana(reading), groups, 0);
+  return segments ? segments.map((segment) => [segment.text, segment.reading]) : [[expression, reading]];
+}
+
+interface FuriganaGroup {
+  isKana: boolean;
+  text: string;
+  textNormalized: string | null;
+}
+
+interface FuriganaSegment {
+  text: string;
+  reading: string;
+}
+
+function toHiragana(text: string): string {
+  return text.replace(/[\u30a1-\u30f6]/g, (char) => String.fromCharCode(char.charCodeAt(0) - 0x60));
+}
+
+function createFuriganaSegment(text: string, reading: string): FuriganaSegment {
+  return { text, reading };
+}
+
+function getFuriganaKanaSegments(text: string, reading: string): FuriganaSegment[] {
+  const segments: FuriganaSegment[] = [];
+  let start = 0;
+  let state = reading[0] === text[0];
+  for (let index = 1; index < text.length; index += 1) {
+    const nextState = reading[index] === text[index];
+    if (state === nextState) continue;
+    segments.push(createFuriganaSegment(text.substring(start, index), state ? "" : reading.substring(start, index)));
+    state = nextState;
+    start = index;
+  }
+  segments.push(createFuriganaSegment(text.substring(start), state ? "" : reading.substring(start)));
+  return segments;
+}
+
+function segmentizeFurigana(
+  reading: string,
+  readingNormalized: string,
+  groups: FuriganaGroup[],
+  groupsStart: number,
+): FuriganaSegment[] | null {
+  const groupCount = groups.length - groupsStart;
+  if (groupCount <= 0) return reading.length === 0 ? [] : null;
+
+  const group = groups[groupsStart];
+  const textLength = group.text.length;
+  if (group.isKana) {
+    if (group.textNormalized !== null && readingNormalized.startsWith(group.textNormalized)) {
+      const segments = segmentizeFurigana(
+        reading.substring(textLength),
+        readingNormalized.substring(textLength),
+        groups,
+        groupsStart + 1,
+      );
+      if (segments !== null) {
+        if (reading.startsWith(group.text)) {
+          segments.unshift(createFuriganaSegment(group.text, ""));
+        } else {
+          segments.unshift(...getFuriganaKanaSegments(group.text, reading));
+        }
+        return segments;
+      }
+    }
+    return null;
+  }
+
+  let result: FuriganaSegment[] | null = null;
+  for (let index = reading.length; index >= textLength; index -= 1) {
+    const segments = segmentizeFurigana(
+      reading.substring(index),
+      readingNormalized.substring(index),
+      groups,
+      groupsStart + 1,
+    );
+    if (segments !== null) {
+      if (result !== null) return null;
+      segments.unshift(createFuriganaSegment(group.text, reading.substring(0, index)));
+      result = segments;
+    }
+    if (groupCount === 1) break;
+  }
+  return result;
 }
 
 function renderDictionaryMedia(media: LookupAnkiMediaReference[]): string {

@@ -183,8 +183,8 @@ async function main() {
     assert(metrics.handlebarMenuText.includes("-"), "Handlebar picker should include the blank option.", metrics);
     assert(metrics.handlebarMenuText.includes("{expression}") && metrics.handlebarMenuText.includes("{reading}"), "Handlebar picker should include core expression and reading options.", metrics);
     assert(metrics.handlebarMenuText.includes("{pitch-accent-positions}"), "Handlebar picker should include pitch accent positions.", metrics);
+    assert(metrics.handlebarMenuText.includes("{furigana-plain}"), "Handlebar picker should include HSA furigana plain.", metrics);
     assert(metrics.handlebarMenuText.includes("{single-glossary-JMdict}"), "Handlebar picker should include imported dictionary-specific glossary options.", metrics);
-    assert(!metrics.handlebarMenuText.includes("{furigana-plain}"), "Handlebar picker should not expose unavailable HSA-only tokens.", metrics);
     await page.getByRole("menuitem", { name: "{reading}", exact: true }).click();
     metrics = await panelMetrics(page);
     assert(metrics.fieldTemplates.Front === "{reading}", "Choosing a handlebar option should replace the full field template.", metrics);

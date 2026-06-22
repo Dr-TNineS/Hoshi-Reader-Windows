@@ -55,6 +55,7 @@ export interface ReaderSelectionRect {
 export interface ReaderSelection {
   text: string;
   sentence?: string;
+  sentenceOffset?: number;
   rect: ReaderSelectionRect;
   anchorRect?: ReaderSelectionRect;
   chapterIndex: number;
@@ -82,6 +83,7 @@ export interface DictResult {
 export interface LookupAnkiPayload {
   selectedText: string;
   sentence: string;
+  sentenceOffset?: number;
   resultIndex: number;
   expression: string;
   reading: string;
