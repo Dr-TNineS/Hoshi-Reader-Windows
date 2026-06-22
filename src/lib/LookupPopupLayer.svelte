@@ -2,6 +2,7 @@
   import LookupPopupContent from "./LookupPopupContent.svelte";
   import { lookupPopupStyle } from "./lookup-popup-position";
   import type { LookupState } from "./lookup-popup";
+  import { defaultLookupPopupSettings, type LookupPopupSettings } from "./lookup-popup-settings";
   import type {
     AnkiAddNoteResult,
     AnkiDictionaryMediaRef,
@@ -30,6 +31,8 @@
     results: DictResult[];
     requestId: number;
     clearSelectionSignal: number;
+    selectionHighlightCount: number;
+    selectionHighlightSignal: number;
     historyBack: LookupPopupHistoryEntry[];
     historyForward: LookupPopupHistoryEntry[];
     restoreScrollTop: number;
@@ -39,6 +42,7 @@
   let {
     popups = [],
     ankiSettings = null,
+    popupSettings = defaultLookupPopupSettings,
     onClose,
     onImportDictionary,
     onNestedLookup,
@@ -56,6 +60,7 @@
   }: {
     popups?: LookupPopupItem[];
     ankiSettings?: AnkiSettings | null;
+    popupSettings?: LookupPopupSettings;
     onClose: (popupId: string) => void;
     onImportDictionary: () => void;
     onNestedLookup: (popupId: string, selection: ReaderSelection) => void;
@@ -72,7 +77,8 @@
     onAddAnkiNote: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
   } = $props();
 
-  let lookupPopupSizes = $state<Record<string, { width: number; height: number }>>({});
+  let viewportWidth = $state(window.innerWidth);
+  let viewportHeight = $state(window.innerHeight);
 
   function readerBottomBoundary(): number {
     const controls = document.querySelector<HTMLElement>(".ctrls");
@@ -82,55 +88,33 @@
     return Math.min(window.innerHeight, controlsTop, readerBottom);
   }
 
-  function measureLookupPopup(node: HTMLElement, popupId: string) {
-    let id = popupId;
-
-    const sync = () => {
-      const rect = node.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
-      const nextSize = { width: Math.ceil(rect.width), height: Math.ceil(rect.height) };
-      const previous = lookupPopupSizes[id];
-      if (previous?.width === nextSize.width && previous?.height === nextSize.height) return;
-      lookupPopupSizes = { ...lookupPopupSizes, [id]: nextSize };
-    };
-
-    const observer = new ResizeObserver(sync);
-    observer.observe(node);
-    const frame = requestAnimationFrame(sync);
-
-    return {
-      update(nextId: string) {
-        if (nextId === id) return;
-        const { [id]: _removed, ...rest } = lookupPopupSizes;
-        lookupPopupSizes = rest;
-        id = nextId;
-        sync();
-      },
-      destroy() {
-        cancelAnimationFrame(frame);
-        observer.disconnect();
-        const { [id]: _removed, ...rest } = lookupPopupSizes;
-        lookupPopupSizes = rest;
-      },
-    };
+  function syncViewport() {
+    viewportWidth = window.innerWidth;
+    viewportHeight = window.innerHeight;
   }
 
-  function popupStyle(popupId: string, selection: ReaderSelection): string {
-    const measuredSize = lookupPopupSizes[popupId];
-    return lookupPopupStyle(selection, measuredSize ?? { width: 306, height: 154 }, {
-      width: window.innerWidth,
-      bottom: readerBottomBoundary(),
+  function popupStyle(selection: ReaderSelection): string {
+    const bottom = Math.min(viewportHeight, readerBottomBoundary());
+    const size = {
+      width: Math.max(1, Math.min(popupSettings.width, viewportWidth - 24)),
+      height: Math.max(1, Math.min(popupSettings.height, bottom - 44)),
+    };
+    const position = lookupPopupStyle(selection, size, {
+      width: viewportWidth,
+      bottom,
     });
+    return `${position};width:${size.width}px;height:${size.height}px;--popup-scale:${popupSettings.scale}`;
   }
 </script>
+
+<svelte:window onresize={syncViewport} />
 
 {#each popups as popup, popupIndex (popup.id)}
   <aside
     class="lookup-pop"
     data-popup-id={popup.id}
-    use:measureLookupPopup={popup.id}
     onpointerdown={() => onPopupPointerDown(popup.id)}
-    style={`${popupStyle(popup.id, popup.selection)};--popup-z:${125 + popupIndex}`}
+    style={`${popupStyle(popup.selection)};--popup-z:${125 + popupIndex}`}
   >
     <LookupPopupContent
       popupId={popup.id}
@@ -140,6 +124,8 @@
       error={popup.error}
       results={popup.results}
       clearSelectionSignal={popup.clearSelectionSignal}
+      selectionHighlightCount={popup.selectionHighlightCount}
+      selectionHighlightSignal={popup.selectionHighlightSignal}
       onClose={onClose}
       onImportDictionary={onImportDictionary}
       onNestedLookup={onNestedLookup}
@@ -163,5 +149,5 @@
 {/each}
 
 <style>
-  .lookup-pop { position: fixed; z-index: var(--popup-z); display: flex; flex-direction: column; gap: 8px; max-height: min(520px, calc(100vh - 92px)); padding: 10px 12px; background: var(--app-surface); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 6px; box-shadow: 0 14px 38px var(--app-shadow); overflow: hidden; }
+  .lookup-pop { position: fixed; z-index: var(--popup-z); display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: var(--app-surface); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 6px; box-shadow: 0 14px 38px var(--app-shadow); overflow: hidden; }
 </style>

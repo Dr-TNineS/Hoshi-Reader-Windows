@@ -68,13 +68,12 @@ function ensureLookupHighlightStyles(): void {
   style.dataset.hswLookupHighlight = "true";
   style.textContent = `
 ::highlight(${READER_LOOKUP_HIGHLIGHT}) {
-  background-color: rgba(160, 160, 160, 0.4);
-  background-color: color-mix(in srgb, var(--reader-info, #999999) 42%, transparent);
+  background-color: var(--lookup-highlight-color, rgba(160, 160, 160, 0.32));
   color: inherit;
 }
 
 ::highlight(${POPUP_LOOKUP_HIGHLIGHT}) {
-  background-color: rgba(160, 160, 160, 0.4);
+  background-color: var(--lookup-highlight-color, rgba(160, 160, 160, 0.32));
   color: inherit;
 }
 `;

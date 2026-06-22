@@ -8,6 +8,7 @@ export type ReaderAppearancePalette = {
   readerBackground: string;
   readerText: string;
   readerInfo: string;
+  lookupHighlight: string;
   appBackground: string;
   appText: string;
   appMuted: string;
@@ -58,6 +59,7 @@ export function readerAppearancePalette(appearance: ReaderAppearance): ReaderApp
       readerBackground: "#fff",
       readerText: "#000",
       readerInfo: "#999999",
+      lookupHighlight: "rgba(160, 160, 160, 0.32)",
       appBackground: "#fff",
       appText: "#000",
       appMuted: "#666666",
@@ -78,6 +80,7 @@ export function readerAppearancePalette(appearance: ReaderAppearance): ReaderApp
     readerBackground: "#000",
     readerText: "#fff",
     readerInfo: "#999999",
+    lookupHighlight: "rgba(255, 255, 255, 0.32)",
     appBackground: "#000",
     appText: "#fff",
     appMuted: "#999999",
@@ -99,6 +102,7 @@ export function readerAppearanceCssVars(palette: ReaderAppearancePalette): strin
     `--reader-bg:${palette.readerBackground}`,
     `--reader-text:${palette.readerText}`,
     `--reader-info:${palette.readerInfo}`,
+    `--lookup-highlight-color:${palette.lookupHighlight}`,
     `--app-bg:${palette.appBackground}`,
     `--app-text:${palette.appText}`,
     `--app-muted:${palette.appMuted}`,

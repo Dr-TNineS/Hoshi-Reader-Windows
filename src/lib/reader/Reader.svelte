@@ -17,7 +17,8 @@
     chapterStartChars = 0,
     totalBookChars = 0,
     appearancePalette = undefined as ReaderAppearancePalette | undefined,
-    lookupHighlightText = "",
+    lookupHighlightCount = 0,
+    lookupHighlightSignal = 0,
     onProgressChange = (_progress: ReaderProgress) => {},
     onSelectionChange = (_selection: ReaderSelection | null) => {},
   } = $props();
@@ -26,8 +27,6 @@
   const MAX_SELECTION_TEXT = 80;
   const MAX_HOVER_SELECTION_TEXT = 16;
   const MAX_SENTENCE_CONTEXT_TEXT = 1200;
-  const SHIFT_HOVER_DELAY_MS = 45;
-  const SHIFT_HOVER_MOVE_THRESHOLD_SQUARED = 64;
   const SCAN_BOUNDARY_PATTERN = /[\s\u3000\u3001\u3002\uff01\uff1f\uff08\uff09\u300c\u300d\u300e\u300f\u3010\u3011\u2014\u2026.,!?;:()[\]{}"'<>/\\|]/u;
 
   let containerEl: HTMLDivElement = $state()!;
@@ -48,18 +47,17 @@
   let shiftKeyPressed = false;
   let lastPointer: { x: number; y: number } | null = null;
   let pointerDownPoint: { x: number; y: number } | null = null;
-  let lastShiftHoverPoint: { x: number; y: number } | null = null;
-  let lastLookupSelectionKey = "";
-  let lastAppliedLookupHighlightText = "";
+  let lastShiftHoverHit: { node: Text; offset: number } | null = null;
+  let lastAppliedLookupHighlightCount = -1;
   let activeLookupRange: Range | null = null;
-  let shiftHoverTimer: number | null = null;
+  let shiftHoverFrame: number | null = null;
   let layoutRun = 0;
   let resizeRun = 0;
   let contentMaxScroll = 0;
 
   let styleVars = $derived(`--page-width:${pageWidth}px;--page-height:${pageHeight}px`);
   let themeVars = $derived(appearancePalette
-    ? `--reader-bg:${appearancePalette.readerBackground};--reader-text:${appearancePalette.readerText};--reader-info:${appearancePalette.readerInfo};--app-border:${appearancePalette.appBorder}`
+    ? `--reader-bg:${appearancePalette.readerBackground};--reader-text:${appearancePalette.readerText};--reader-info:${appearancePalette.readerInfo};--lookup-highlight-color:${appearancePalette.lookupHighlight};--app-border:${appearancePalette.appBorder}`
     : "");
 
   function readerDebugEnabled(): boolean {
@@ -281,10 +279,6 @@
     return raw.replace(/\s+/g, " ").trim().slice(0, MAX_SELECTION_TEXT);
   }
 
-  function normalizedLookupText(raw: string): string {
-    return raw.replace(/\s+/g, "").trim();
-  }
-
   function nodeInsideContent(node: Node | null): boolean {
     if (!node || !contentEl) return false;
     return contentEl.contains(node.nodeType === Node.ELEMENT_NODE ? node : node.parentElement);
@@ -457,13 +451,12 @@
   function detachActiveLookupRange() {
     activeLookupRange?.detach();
     activeLookupRange = null;
-    lastAppliedLookupHighlightText = "";
+    lastAppliedLookupHighlightCount = -1;
     clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
   }
 
-  function rangeTextPrefixEnd(range: Range, targetText: string): { node: Text; offset: number } | null {
-    const target = normalizedLookupText(targetText);
-    if (!target || !range.startContainer.parentElement?.isConnected) return null;
+  function rangePrefixEnd(range: Range, characterCount: number): { node: Text; offset: number } | null {
+    if (characterCount <= 0 || !range.startContainer.parentElement?.isConnected) return null;
 
     const commonRoot = range.commonAncestorContainer;
     const walkerRoot = commonRoot.nodeType === Node.TEXT_NODE
@@ -477,7 +470,7 @@
     let node: Text | null = range.startContainer.nodeType === Node.TEXT_NODE
       ? range.startContainer as Text
       : walker.nextNode() as Text | null;
-    let matched = "";
+    let remaining = characterCount;
 
     while (node) {
       if (!range.intersectsNode(node)) {
@@ -493,11 +486,8 @@
       while (offset < endOffset) {
         const char = String.fromCodePoint(content.codePointAt(offset) ?? 0);
         const nextOffset = Math.min(endOffset, offset + char.length);
-        if (!/\s/u.test(char)) {
-          matched += char;
-          if (!target.startsWith(matched)) return null;
-          if (matched === target) return { node, offset: nextOffset };
-        }
+        remaining -= 1;
+        if (remaining === 0) return { node, offset: nextOffset };
         offset = nextOffset;
       }
 
@@ -509,26 +499,34 @@
     return null;
   }
 
-  function applyLookupHighlightText(text: string) {
-    if (!activeLookupRange || text === lastAppliedLookupHighlightText) return;
-    if (!text) {
-      setLookupHighlightRange(READER_LOOKUP_HIGHLIGHT, activeLookupRange);
-      lastAppliedLookupHighlightText = "";
+  function applyLookupHighlightCount(characterCount: number) {
+    if (!activeLookupRange || characterCount === lastAppliedLookupHighlightCount) return;
+    if (characterCount <= 0) {
+      clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
+      lastAppliedLookupHighlightCount = 0;
       return;
     }
 
-    const end = rangeTextPrefixEnd(activeLookupRange, text);
-    if (!end) return;
+    const end = rangePrefixEnd(activeLookupRange, characterCount);
+    if (!end) {
+      clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
+      lastAppliedLookupHighlightCount = characterCount;
+      return;
+    }
 
     const visibleRange = document.createRange();
     visibleRange.setStart(activeLookupRange.startContainer, activeLookupRange.startOffset);
     visibleRange.setEnd(end.node, end.offset);
     setLookupHighlightRange(READER_LOOKUP_HIGHLIGHT, visibleRange);
     visibleRange.detach();
-    lastAppliedLookupHighlightText = text;
+    lastAppliedLookupHighlightCount = characterCount;
   }
 
-  function selectTextFromPoint(x: number, y: number): ReaderSelection | null {
+  function selectTextFromPoint(
+    x: number,
+    y: number,
+    resolvedHit?: { node: Text; offset: number; rect: ReaderSelectionRect },
+  ): ReaderSelection | null {
     if (!contentEl) return null;
     const target = document.elementFromPoint(x, y);
     if (target instanceof Element && contentEl.contains(target) && target.closest("a[data-epub-href], img, image, svg")) {
@@ -536,7 +534,7 @@
       return null;
     }
 
-    const hit = characterAtPoint(x, y);
+    const hit = resolvedHit ?? characterAtPoint(x, y);
     if (!hit) {
       return null;
     }
@@ -586,8 +584,8 @@
     visibleRange.setEnd(lastRange.endContainer, lastRange.endOffset);
     detachActiveLookupRange();
     activeLookupRange = visibleRange.cloneRange();
-    lastAppliedLookupHighlightText = "__pending_lookup_highlight__";
-    applyLookupHighlightText(lookupHighlightText);
+    lastAppliedLookupHighlightCount = 0;
+    clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
     window.getSelection()?.removeAllRanges();
 
     const rect = unionRects(ranges.flatMap((range) => Array.from(range.getClientRects())));
@@ -598,37 +596,29 @@
     }
 
     const anchorRect = hit.rect;
-    const selectionKey = `${chapterIndex}:${text}:${Math.round(anchorRect.x)}:${Math.round(anchorRect.y)}`;
     const selection = { text, sentence: sentenceContext(root), rect, anchorRect, chapterIndex };
-    if (selectionKey === lastLookupSelectionKey) return selection;
-
-    lastLookupSelectionKey = selectionKey;
     hasActiveSelection = true;
     onSelectionChange(selection);
     return selection;
   }
 
   function clearSelection() {
-    if (shiftHoverTimer !== null) {
-      window.clearTimeout(shiftHoverTimer);
-      shiftHoverTimer = null;
-    }
+    cancelShiftHoverFrame();
     window.getSelection()?.removeAllRanges();
     detachActiveLookupRange();
     hasActiveSelection = false;
-    lastLookupSelectionKey = "";
     onSelectionChange(null);
   }
 
-  function clearShiftHoverTimer() {
-    if (shiftHoverTimer === null) return;
-    window.clearTimeout(shiftHoverTimer);
-    shiftHoverTimer = null;
+  function cancelShiftHoverFrame() {
+    if (shiftHoverFrame === null) return;
+    window.cancelAnimationFrame(shiftHoverFrame);
+    shiftHoverFrame = null;
   }
 
   function resetShiftHoverState() {
-    clearShiftHoverTimer();
-    lastShiftHoverPoint = null;
+    cancelShiftHoverFrame();
+    lastShiftHoverHit = null;
   }
 
   function leaveReaderPointerState() {
@@ -637,28 +627,25 @@
     resetShiftHoverState();
   }
 
-  function shouldScheduleShiftHoverLookup(point: { x: number; y: number }): boolean {
-    if (!lastShiftHoverPoint) {
-      lastShiftHoverPoint = point;
-      return true;
-    }
-
-    const dx = point.x - lastShiftHoverPoint.x;
-    const dy = point.y - lastShiftHoverPoint.y;
-    if (dx * dx + dy * dy < SHIFT_HOVER_MOVE_THRESHOLD_SQUARED) return false;
-
-    lastShiftHoverPoint = point;
-    return true;
+  function scheduleShiftHoverLookup() {
+    if (!shiftKeyPressed || !lastPointer || shiftHoverFrame !== null) return;
+    shiftHoverFrame = window.requestAnimationFrame(() => {
+      shiftHoverFrame = null;
+      if (!shiftKeyPressed || !lastPointer) return;
+      const { x, y } = lastPointer;
+      const hit = characterAtPoint(x, y);
+      if (!hit) {
+        lastShiftHoverHit = null;
+        return;
+      }
+      if (lastShiftHoverHit?.node === hit.node && lastShiftHoverHit.offset === hit.offset) return;
+      lastShiftHoverHit = { node: hit.node, offset: hit.offset };
+      selectTextFromPoint(x, y, hit);
+    });
   }
 
-  function scheduleShiftHoverLookup() {
-    if (!shiftKeyPressed || !lastPointer) return;
-    clearShiftHoverTimer();
-    shiftHoverTimer = window.setTimeout(() => {
-      shiftHoverTimer = null;
-      if (!shiftKeyPressed || !lastPointer) return;
-      selectTextFromPoint(lastPointer.x, lastPointer.y);
-    }, SHIFT_HOVER_DELAY_MS);
+  function shouldScheduleShiftHoverLookup(pointer: { x: number; y: number } | null): boolean {
+    return shiftKeyPressed && pointer !== null;
   }
 
   function logReaderGeometry(reason: string) {
@@ -826,7 +813,11 @@
   function handleKey(e: KeyboardEvent) {
     const ctrl = e.ctrlKey || e.metaKey;
     if (e.key === "Shift") {
+      const wasShiftPressed = shiftKeyPressed;
       shiftKeyPressed = true;
+      if (!wasShiftPressed && lastPointer && shouldScheduleShiftHoverLookup(lastPointer)) {
+        scheduleShiftHoverLookup();
+      }
     } else if (ctrl && e.key === "ArrowLeft") {
       e.preventDefault();
       onNextChapter();
@@ -886,8 +877,8 @@
   function handlePointerMove(e: PointerEvent) {
     lastPointer = { x: e.clientX, y: e.clientY };
     shiftKeyPressed = e.shiftKey;
-    if (e.shiftKey) {
-      if (shouldScheduleShiftHoverLookup(lastPointer)) scheduleShiftHoverLookup();
+    if (shouldScheduleShiftHoverLookup(lastPointer)) {
+      scheduleShiftHoverLookup();
     } else {
       resetShiftHoverState();
     }
@@ -932,7 +923,8 @@
   });
 
   $effect(() => {
-    applyLookupHighlightText(lookupHighlightText);
+    lookupHighlightSignal;
+    applyLookupHighlightCount(lookupHighlightCount);
   });
 
   $effect(() => {

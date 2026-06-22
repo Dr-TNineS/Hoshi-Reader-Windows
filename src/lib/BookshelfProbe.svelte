@@ -32,11 +32,15 @@
     readerAppearance={{ theme: "dark" }}
     readerThemeLabels={{ light: "Light", dark: "Dark" }}
     advancedSettings={{ reopenLastBookOnStartup: true }}
+    lookupPopupSettings={{ width: 320, height: 250, scale: 1 }}
     onOpenBook={() => {}}
     onContinueBook={() => {}}
     onForgetBook={(book) => forgetEvents = [...forgetEvents, book.bookId ?? book.path ?? "unknown"]}
     onSetReaderTheme={() => {}}
     onSetReopenLastBookOnStartup={() => {}}
+    onSetLookupPopupWidth={() => {}}
+    onSetLookupPopupHeight={() => {}}
+    onSetLookupPopupScale={() => {}}
     onRefreshDictionaries={() => {}}
     onImportDictionary={() => {}}
     onImportDictionaryFolder={() => {}}

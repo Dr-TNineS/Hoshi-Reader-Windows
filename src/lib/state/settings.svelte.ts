@@ -11,12 +11,20 @@ import {
   type ReaderAppearance,
   type ReaderTheme,
 } from "../appearance";
+import {
+  loadLookupPopupSettings,
+  normalizeLookupPopupSettings,
+  saveLookupPopupSettings,
+  type LookupPopupSettings,
+} from "../lookup-popup-settings";
 
 export type SettingsPersistence = {
   loadReaderAppearance: () => ReaderAppearance;
   saveReaderAppearance: (appearance: ReaderAppearance) => void;
   loadAdvancedSettings: () => AdvancedSettings;
   saveAdvancedSettings: (settings: AdvancedSettings) => void;
+  loadLookupPopupSettings: () => LookupPopupSettings;
+  saveLookupPopupSettings: (settings: LookupPopupSettings) => void;
 };
 
 const browserSettingsPersistence: SettingsPersistence = {
@@ -24,12 +32,15 @@ const browserSettingsPersistence: SettingsPersistence = {
   saveReaderAppearance,
   loadAdvancedSettings,
   saveAdvancedSettings,
+  loadLookupPopupSettings,
+  saveLookupPopupSettings,
 };
 
 export function createSettingsState(persistence: SettingsPersistence = browserSettingsPersistence) {
   const initialReaderAppearance = persistence.loadReaderAppearance();
   let readerAppearance = $state<ReaderAppearance>(initialReaderAppearance);
   let advancedSettings = $state<AdvancedSettings>(persistence.loadAdvancedSettings());
+  let lookupPopupSettings = $state<LookupPopupSettings>(persistence.loadLookupPopupSettings());
   let appearancePalette = $derived(readerAppearancePalette(readerAppearance));
   let appearanceVars = $derived(readerAppearanceCssVars(appearancePalette));
 
@@ -46,13 +57,34 @@ export function createSettingsState(persistence: SettingsPersistence = browserSe
     persistence.saveAdvancedSettings(advancedSettings);
   }
 
+  function updateLookupPopupSettings(update: Partial<LookupPopupSettings>) {
+    lookupPopupSettings = normalizeLookupPopupSettings({ ...lookupPopupSettings, ...update });
+    persistence.saveLookupPopupSettings(lookupPopupSettings);
+  }
+
+  function setLookupPopupWidth(width: number) {
+    updateLookupPopupSettings({ width });
+  }
+
+  function setLookupPopupHeight(height: number) {
+    updateLookupPopupSettings({ height });
+  }
+
+  function setLookupPopupScale(scale: number) {
+    updateLookupPopupSettings({ scale });
+  }
+
   return {
     get readerAppearance() { return readerAppearance; },
     get advancedSettings() { return advancedSettings; },
+    get lookupPopupSettings() { return lookupPopupSettings; },
     get appearancePalette() { return appearancePalette; },
     get appearanceVars() { return appearanceVars; },
     setReaderTheme,
     setReopenLastBookOnStartup,
+    setLookupPopupWidth,
+    setLookupPopupHeight,
+    setLookupPopupScale,
   };
 }
 

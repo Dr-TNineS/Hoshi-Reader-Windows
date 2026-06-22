@@ -68,7 +68,8 @@
   let readerInitialProgress = $state(0);
   let currentReaderProgress = $state<ReaderProgress | null>(null);
   let readerSelection = $state<ReaderSelection | null>(null);
-  let readerLookupHighlightText = $state("");
+  let readerLookupHighlightCount = $state(0);
+  let readerLookupHighlightSignal = $state(0);
   let lookupPopups = $state<LookupPopupItem[]>([]);
   const settings = createSettingsState();
   let lookupRequestId = 0;
@@ -619,7 +620,8 @@
     window.getSelection()?.removeAllRanges();
     clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
     readerSelection = null;
-    readerLookupHighlightText = "";
+    readerLookupHighlightCount = 0;
+    readerLookupHighlightSignal += 1;
     lookupPopups = [];
     lookupRequestId += 1;
   }
@@ -664,28 +666,8 @@
     return status;
   }
 
-  function normalizeLookupPrefix(value: string): string {
-    return value.replace(/\s+/g, "").trim();
-  }
-
-  function longestLookupSurfacePrefix(selection: ReaderSelection, results: DictResult[]): string {
-    const selectionText = normalizeLookupPrefix(selection.text);
-    if (!selectionText) return "";
-
-    for (const field of ["matched", "deinflected", "expression"] as const) {
-      const candidates: string[] = [];
-      for (const result of results) {
-        const value = result[field];
-        const candidate = normalizeLookupPrefix(value);
-        if (candidate && selectionText.startsWith(candidate) && !candidates.includes(candidate)) {
-          candidates.push(candidate);
-        }
-      }
-      const longest = candidates.sort((a, b) => b.length - a.length)[0];
-      if (longest) return longest;
-    }
-
-    return "";
+  function firstLookupMatchCount(results: DictResult[]): number {
+    return Array.from(results[0]?.matched ?? "").length;
   }
 
   function buildAnkiPayload(selection: ReaderSelection, result: DictResult, resultIndex: number): LookupAnkiPayload {
@@ -932,7 +914,11 @@
     return lookupRequestId;
   }
 
-  function createLookupPopup(id: string, selection: ReaderSelection, requestId: number): LookupPopupItem {
+  function createLookupPopup(
+    id: string,
+    selection: ReaderSelection,
+    requestId: number,
+  ): LookupPopupItem {
     beginLookupPerformance(requestId, id, selection.text, id === "root" ? "root" : "child");
     return {
       id,
@@ -942,6 +928,8 @@
       results: [],
       requestId,
       clearSelectionSignal: 0,
+      selectionHighlightCount: 0,
+      selectionHighlightSignal: 0,
       historyBack: [],
       historyForward: [],
       restoreScrollTop: 0,
@@ -968,24 +956,40 @@
   }
 
   function reloadLookupPopups() {
-    if (lookupPopups.some((popup) => popup.id === "root")) readerLookupHighlightText = "";
+    if (lookupPopups.some((popup) => popup.id === "root")) readerLookupHighlightCount = 0;
     const reloaded: LookupPopupItem[] = lookupPopups.map((popup) => {
       const requestId = nextLookupRequestId();
       beginLookupPerformance(requestId, popup.id, popup.selection.text, "reload");
-      return { ...popup, state: "loading", error: "", results: [], requestId };
+      return {
+        ...popup,
+        state: "loading",
+        error: "",
+        results: [],
+        requestId,
+        selectionHighlightCount: 0,
+        selectionHighlightSignal: popup.selectionHighlightSignal + 1,
+        clearSelectionSignal: popup.clearSelectionSignal + 1,
+      };
     });
     lookupPopups = reloaded;
     for (const popup of reloaded) {
-      void lookupSelection(popup.id, popup.selection, popup.requestId);
+      void lookupSelection(
+        popup.id,
+        popup.selection,
+        popup.requestId,
+        null,
+        popup.id === "root" && popup.selection === readerSelection,
+      );
     }
   }
 
   function openRootLookup(selection: ReaderSelection) {
     const requestId = nextLookupRequestId();
     readerSelection = selection;
-    readerLookupHighlightText = "";
+    readerLookupHighlightCount = 0;
+    readerLookupHighlightSignal += 1;
     lookupPopups = [createLookupPopup("root", selection, requestId)];
-    void lookupSelection("root", selection, requestId);
+    void lookupSelection("root", selection, requestId, null, true);
   }
 
   function openChildLookup(parentId: string, selection: ReaderSelection) {
@@ -995,10 +999,14 @@
     const childId = `popup-${Date.now()}-${Math.random().toString(36).slice(2)}`;
     const requestId = nextLookupRequestId();
     lookupPopups = [
-      ...lookupPopups.slice(0, index + 1),
+      ...lookupPopups.slice(0, index + 1).map((popup, popupIndex) => (
+        popupIndex === index
+          ? { ...popup, selectionHighlightCount: 0, selectionHighlightSignal: popup.selectionHighlightSignal + 1 }
+          : popup
+      )),
       createLookupPopup(childId, selection, requestId),
     ];
-    void lookupSelection(childId, selection, requestId);
+    void lookupSelection(childId, selection, requestId, parentId);
   }
 
   function closePopup(id: string) {
@@ -1107,7 +1115,13 @@
     clearPopupChildren(parentId, true);
   }
 
-  async function lookupSelection(popupId: string, selection: ReaderSelection, requestId: number) {
+  async function lookupSelection(
+    popupId: string,
+    selection: ReaderSelection,
+    requestId: number,
+    highlightOwnerId: string | null = null,
+    updateReaderHighlight = false,
+  ) {
     const isCurrent = () => lookupPopups.some((popup) => popup.id === popupId && popup.requestId === requestId);
     if (!isTauriRuntime()) {
       if (!isCurrent()) return;
@@ -1141,14 +1155,23 @@
       const results = await lookupRequest.promise;
       markLookupPerformance(requestId, "invoke-end", { resultCount: results.length, cacheHit: lookupRequest.cacheHit });
       if (!isCurrent()) return;
-      if (popupId === "root" && results.length > 0) {
-        const highlightText = longestLookupSurfacePrefix(selection, results);
-        if (highlightText) readerLookupHighlightText = highlightText;
+      const highlightCount = firstLookupMatchCount(results);
+      if (updateReaderHighlight) {
+        readerLookupHighlightCount = highlightCount;
+        readerLookupHighlightSignal += 1;
       }
-      updateLookupPopup(popupId, {
-        state: results.length > 0 ? "ready" : "empty",
-        error: "",
-        results,
+      lookupPopups = lookupPopups.map((popup) => {
+        if (popup.id === popupId) {
+          return { ...popup, state: results.length > 0 ? "ready" : "empty", error: "", results };
+        }
+        if (highlightOwnerId && popup.id === highlightOwnerId) {
+          return {
+            ...popup,
+            selectionHighlightCount: highlightCount,
+            selectionHighlightSignal: popup.selectionHighlightSignal + 1,
+          };
+        }
+        return popup;
       });
       markLookupPerformance(requestId, "state-committed", { resultCount: results.length });
     } catch (e) {
@@ -1192,6 +1215,7 @@
       readerAppearance={settings.readerAppearance}
       {readerThemeLabels}
       advancedSettings={settings.advancedSettings}
+      lookupPopupSettings={settings.lookupPopupSettings}
       {dictionaryList}
       {dictionaryListStatus}
       {dictionaryListError}
@@ -1207,6 +1231,9 @@
       onForgetBook={forgetBook}
       onSetReaderTheme={settings.setReaderTheme}
       onSetReopenLastBookOnStartup={settings.setReopenLastBookOnStartup}
+      onSetLookupPopupWidth={settings.setLookupPopupWidth}
+      onSetLookupPopupHeight={settings.setLookupPopupHeight}
+      onSetLookupPopupScale={settings.setLookupPopupScale}
       onRefreshDictionaries={refreshDictionaries}
       onImportDictionary={importDictionary}
       onImportDictionaryFolder={importDictionaryFolder}
@@ -1243,13 +1270,15 @@
       chapterStartChars={chapterBookInfo?.current_total ?? 0}
       totalBookChars={meta?.book_info.character_count ?? 0}
       appearancePalette={settings.appearancePalette}
-      lookupHighlightText={readerLookupHighlightText}
+      lookupHighlightCount={readerLookupHighlightCount}
+      lookupHighlightSignal={readerLookupHighlightSignal}
       onProgressChange={handleReaderProgress}
       onSelectionChange={handleReaderSelection}
       {startAtEnd}
     />
     <LookupPopupLayer
       popups={lookupPopups}
+      popupSettings={settings.lookupPopupSettings}
       {ankiSettings}
       onClose={closePopup}
       onImportDictionary={importDictionary}

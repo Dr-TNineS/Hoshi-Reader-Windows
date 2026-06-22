@@ -6,6 +6,13 @@ This document records the read-only comparison of Hibiki's Shift+hover lookup be
 
 The goal is not to copy Hibiki's Flutter/WebView architecture. HSW already owns the reader DOM in Svelte, so the useful parts are the interaction model, throttling rules, selection algorithm details, and popup-layer behavior.
 
+Current HSW decision (2026-06-23): the fixed 8px movement threshold remains a
+Hibiki reference fact, not the HSA behavior target. HSW will coalesce Shift-hover
+pointer movement to at most one hit test per animation frame and dedupe by the
+actual DOM text node plus character offset. Lookup highlighting will follow HSA:
+remain hidden while lookup is pending, then reveal only the first result's
+`matched` character range.
+
 No code in the Hibiki reference project should be modified from this plan.
 
 ## Reference Source
@@ -170,9 +177,9 @@ HSW already has the core interaction:
 - `selectTextFromPoint(...)` resolves the character at the point, expands through text nodes, creates browser selection ranges, computes the selection rect, and calls `onSelectionChange(...)`.
 - `App.svelte` receives the selection and calls `dict_lookup`.
 
-The current HSW model is simpler than Hibiki:
+The pre-alignment HSW model is simpler than Hibiki:
 
-- It combines a short timer with Hibiki-style 8px movement-distance thresholding.
+- It combines a 45ms timer with Hibiki-style 8px movement-distance thresholding.
 - It dedupes repeated lookup callbacks for the same selected text and rounded anchor rect.
 - It does not have a dedicated popup/barrier hover pass-through path.
 - It supports stacked recursive lookup inside popup glossary text: Shift-hover opens child popups, closing a child keeps the parent, and parent scroll closes children.
@@ -182,11 +189,53 @@ The current HSW model is simpler than Hibiki:
 
 Implement these only if lookup interaction hardening becomes the active slice.
 
+### Active Slice: HSA Match Highlight and Frame-Coalesced Hover
+
+Status: completed on 2026-06-23 (this slice's commit).
+
+Goal: keep Windows `Shift + hover` while replacing Hibiki's fixed movement
+threshold with display-frame coalescing and character-hit dedupe, and align
+reader/popup selection highlighting with HSA's first-result `matched` range.
+
+Key changes:
+
+- Record the latest Shift-hover pointer coordinate and process it in at most one
+  `requestAnimationFrame` callback per frame.
+- Dedupe by DOM text node plus code-unit offset so tiny movement into an adjacent
+  character triggers lookup while movement inside one character does not.
+- Cancel pending frames and reset hit identity on Shift release, pointer leave,
+  window blur, and component teardown.
+- Keep selection unhighlighted during lookup. On success, highlight only the
+  first result's `matched` Unicode character count; clear on empty/error/stale or
+  dismissed lookup.
+- Apply the same behavior to recursive popup lookup, with the child result
+  updating the selection range owned by its parent popup.
+- Use HSA normal-mode fill colors: `rgba(160,160,160,0.32)` in light mode and
+  `rgba(255,255,255,0.32)` in dark mode. E-ink highlight parity remains out of
+  scope.
+
+Validation:
+
+- `npm run check`
+- `npm run build`
+- `npm run check:reader-visual`
+- `npm run check:lookup-popup`
+- Runtime light/dark checks for fast reader and glossary Shift-hover movement.
+
+Validation result (2026-06-23): all four automated commands passed. Playwright
+runtime checks passed in light and dark reader themes; the confirmed match fill
+stayed readable without changing pagination geometry. The probes cover
+same-frame latest-coordinate handling, sub-8px adjacent-character movement,
+same-character dedupe, pending-frame cancellation, pending highlight hiding,
+first-result match narrowing, and stale child-result rejection.
+
 ### Slice 1: Reader Shift Hover Stability
 
 Goal: make current Shift+hover feel closer to Hibiki without changing popup architecture.
 
-Implementation status: implemented in HSW. Reader Shift-hover uses an 8px movement threshold, resets hover state when Shift is released or the pointer leaves the reader viewport, and dedupes repeated lookup callbacks for the same selected text/anchor.
+Implementation status: superseded on 2026-06-23 by the completed active slice
+above. This section preserves the earlier Hibiki-derived implementation history;
+current HSW no longer uses its 8px threshold or timer.
 
 Key changes:
 
@@ -278,6 +327,8 @@ Validation:
 
 ## Open Questions
 
-- Should HSW keep timer-based hover delay, switch fully to movement-threshold triggering, or combine both?
+- Resolved 2026-06-23: remove both the timer and fixed movement threshold; use
+  animation-frame coalescing plus DOM character-hit dedupe.
 - Should HSW eventually add popup history/back-forward controls like HSA, or keep the current stack-only behavior?
-- Should HSW introduce CSS Highlights for reader lookup highlight, or keep browser selection until a real layout issue demands the change?
+- Resolved: HSW uses CSS Highlights and will reveal only HSA's first-result
+  `matched` range after lookup succeeds.

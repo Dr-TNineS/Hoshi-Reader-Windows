@@ -3,6 +3,7 @@
   import { extractDictionaryMediaReferences } from "./anki-field-renderer";
   import type { LookupState } from "./lookup-popup";
   import { lookupPopupStyle } from "./lookup-popup-position";
+  import { normalizeLookupPopupSettings } from "./lookup-popup-settings";
   import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiNoteRequest, AnkiRemoteAudioRequest, AnkiSettings, AnkiStoreBookCoverResult, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LocalAudioStoreRequest, LocalAudioStoreResult, LookupAnkiPayload, ReaderSelection, WordAudioPlaybackResult, WordAudioResolveRequest } from "./types";
 
   const params = new URLSearchParams(window.location.search);
@@ -22,6 +23,12 @@
   const coverFieldEnabled = params.get("coverField") !== "disabled";
   const noBookId = params.has("noBookId");
   const emptyExpression = params.has("emptyExpression");
+  const showReading = params.has("showReading");
+  const popupSettings = normalizeLookupPopupSettings({
+    width: params.has("popupWidth") ? Number(params.get("popupWidth")) : 320,
+    height: params.has("popupHeight") ? Number(params.get("popupHeight")) : 250,
+    scale: params.has("popupScale") ? Number(params.get("popupScale")) : 1,
+  });
 
   const rootSelection: ReaderSelection = {
     text: "school",
@@ -76,7 +83,7 @@
 
   const baseResult: DictResult = {
     expression: emptyExpression ? "" : "school",
-    reading: "school",
+    reading: showReading ? "すくーる" : "school",
     glossary: [
       { dict: "Jitendex.org [probe]", text: structuredGlossaryText, termTags: "n common", definitionTags: "education" },
       { dict: "Jitendex.org [probe]", text: "academy; lesson context", definitionTags: "place" },
@@ -147,8 +154,11 @@
   interface ProbePopup {
     id: string;
     selection: ReaderSelection;
+    state: LookupState;
     results: DictResult[];
     clearSelectionSignal: number;
+    selectionHighlightCount: number;
+    selectionHighlightSignal: number;
     historyBack: Array<{ selection: ReaderSelection; scrollTop: number }>;
     historyForward: Array<{ selection: ReaderSelection; scrollTop: number }>;
     restoreScrollTop: number;
@@ -158,8 +168,11 @@
   let popups: ProbePopup[] = $state([{
     id: "root",
     selection: rootSelection,
+    state: lookupState,
     results: [{ ...baseResult }, ...extraResults],
     clearSelectionSignal: 0,
+    selectionHighlightCount: 0,
+    selectionHighlightSignal: 0,
     historyBack: [],
     historyForward: [],
     restoreScrollTop: 0,
@@ -177,62 +190,34 @@
   let coverStoreRequests = $state<string[]>([]);
   let operationEvents = $state<string[]>([]);
   let wordAudioPrepareRequests = $state<WordAudioResolveRequest[]>([]);
-  let popupSizes = $state<Record<string, { width: number; height: number }>>({});
 
   function readerBottomBoundary(): number {
     const controls = document.querySelector<HTMLElement>(".probe-ctrls");
-    return Math.min(window.innerHeight, controls?.getBoundingClientRect().top ?? window.innerHeight);
-  }
-
-  function measureLookupPopup(node: HTMLElement, popupId: string) {
-    let id = popupId;
-
-    const sync = () => {
-      const rect = node.getBoundingClientRect();
-      if (rect.width <= 0 || rect.height <= 0) return;
-      const nextSize = { width: Math.ceil(rect.width), height: Math.ceil(rect.height) };
-      const previous = popupSizes[id];
-      if (previous?.width === nextSize.width && previous?.height === nextSize.height) return;
-      popupSizes = { ...popupSizes, [id]: nextSize };
-    };
-
-    const observer = new ResizeObserver(sync);
-    observer.observe(node);
-    const frame = requestAnimationFrame(sync);
-
-    return {
-      update(nextId: string) {
-        if (nextId === id) return;
-        const { [id]: _removed, ...rest } = popupSizes;
-        popupSizes = rest;
-        id = nextId;
-        sync();
-      },
-      destroy() {
-        cancelAnimationFrame(frame);
-        observer.disconnect();
-        const { [id]: _removed, ...rest } = popupSizes;
-        popupSizes = rest;
-      },
-    };
+    const fallbackBottom = bottomEdge ? window.innerHeight - 26 : window.innerHeight;
+    return Math.min(window.innerHeight, controls?.getBoundingClientRect().top ?? fallbackBottom);
   }
 
   function positionedPopupStyle(popup: ProbePopup, index: number): string {
-    if (!bottomEdge) return `--offset:${index * 26}px;--popup-z:${125 + index}`;
-    const style = lookupPopupStyle(popup.selection, popupSizes[popup.id] ?? { width: 306, height: 154 }, {
+    const bottom = readerBottomBoundary();
+    const size = {
+      width: Math.max(1, Math.min(popupSettings.width, window.innerWidth - 24)),
+      height: Math.max(1, Math.min(popupSettings.height, bottom - 44)),
+    };
+    const style = lookupPopupStyle(popup.selection, size, {
       width: window.innerWidth,
-      bottom: readerBottomBoundary(),
+      bottom,
     });
-    return `${style};--offset:${index * 26}px;--popup-z:${125 + index}`;
+    return `${style};width:${size.width}px;height:${size.height}px;--popup-scale:${popupSettings.scale};--popup-z:${125 + index}`;
   }
 
   function nestedResult(selection: ReaderSelection): DictResult {
+    const matched = Array.from(selection.text).slice(0, 2).join("");
     return {
       ...baseResult,
       expression: selection.text,
       reading: "",
       glossary: [{ dict: "Jitendex.org [probe]", text: `nested result for ${selection.text}` }],
-      matched: selection.text,
+      matched,
       deinflected: selection.text,
       rules: "",
       frequencies: [],
@@ -245,19 +230,47 @@
     nestedLookupText = nestedSelection.text;
     const parentIndex = popups.findIndex((popup) => popup.id === parentId);
     if (parentIndex < 0) return;
+    const result = nestedResult(nestedSelection);
+    const childId = `child-${nestedLookupCount}`;
     popups = [
-      ...popups.slice(0, parentIndex + 1),
+      ...popups.slice(0, parentIndex + 1).map((popup, popupIndex) => (
+        popupIndex === parentIndex
+          ? {
+              ...popup,
+              selectionHighlightCount: 0,
+              selectionHighlightSignal: popup.selectionHighlightSignal + 1,
+            }
+          : popup
+      )),
       {
-        id: `child-${nestedLookupCount}`,
+        id: childId,
         selection: nestedSelection,
-        results: [nestedResult(nestedSelection)],
+        state: "loading",
+        results: [],
         clearSelectionSignal: 0,
+        selectionHighlightCount: 0,
+        selectionHighlightSignal: 0,
         historyBack: [],
         historyForward: [],
         restoreScrollTop: 0,
         restoreScrollSignal: 0,
       },
     ];
+    window.setTimeout(() => {
+      const childIndex = popups.findIndex((popup) => popup.id === childId);
+      if (childIndex <= 0 || popups[childIndex - 1]?.id !== parentId) return;
+      popups = popups.map((popup) => {
+        if (popup.id === childId) return { ...popup, state: "ready", results: [result] };
+        if (popup.id === parentId) {
+          return {
+            ...popup,
+            selectionHighlightCount: Array.from(result.matched).length,
+            selectionHighlightSignal: popup.selectionHighlightSignal + 1,
+          };
+        }
+        return popup;
+      });
+    }, 80);
   }
 
   function popupResultsScrollTop(id: string): number {
@@ -488,27 +501,28 @@
   {#each popups as popup, index (popup.id)}
     <aside
       class="lookup-pop"
-      data-state={lookupState}
+      data-state={popup.state}
       data-popup-id={popup.id}
-      use:measureLookupPopup={popup.id}
       onpointerdown={() => closeChildren(popup.id)}
       style={positionedPopupStyle(popup, index)}
     >
       <LookupPopupContent
         popupId={popup.id}
         selection={popup.selection}
-        state={lookupState}
+        state={popup.state}
         error={
-          lookupState === "noDictionaries"
+          popup.state === "noDictionaries"
             ? "No imported dictionaries found."
-            : lookupState === "engineUnavailable"
+            : popup.state === "engineUnavailable"
               ? "Dictionary engine not linked. Install CMake/C++ build tools and rebuild HSW with hoshidicts."
-              : lookupState === "error"
+              : popup.state === "error"
                 ? "Cannot parse dictionary manifest: probe"
                 : ""
         }
-        results={lookupState === "ready" ? popup.results : []}
+        results={popup.state === "ready" ? popup.results : []}
         clearSelectionSignal={popup.clearSelectionSignal}
+        selectionHighlightCount={popup.selectionHighlightCount}
+        selectionHighlightSignal={popup.selectionHighlightSignal}
         onImportDictionary={() => importClicks += 1}
         onClose={closePopup}
         onNestedLookup={openNestedLookup}
@@ -569,7 +583,7 @@
 <style>
   :global(*) { margin: 0; padding: 0; box-sizing: border-box; }
   :global(body) { background: #202124; color: #e8eaed; font-family: "Segoe UI", sans-serif; overflow: hidden; }
-  .probe { width: 100vw; height: 100vh; position: relative; }
+  .probe { width: 100vw; height: 100vh; position: relative; --lookup-highlight-color: rgba(255, 255, 255, 0.32); }
   .probe::before {
     content: "school";
     position: fixed;
@@ -581,14 +595,10 @@
   }
   .lookup-pop {
     position: fixed;
-    left: min(calc(520px + var(--offset)), calc(100vw - 304px));
-    top: calc(72px + var(--offset));
     z-index: var(--popup-z);
     display: flex;
     flex-direction: column;
     gap: 8px;
-    width: 280px;
-    max-height: min(520px, calc(100vh - 92px));
     padding: 10px 12px;
     background: #23262a;
     color: #e8eaed;
