@@ -4,7 +4,7 @@ This directory is for local read-only reference projects used while developing H
 
 Expected local entries include:
 
-- `hoshi-reader-android`
+- `Hoshi-Reader-Android`
 - `hoshi-reader-mac`
 - `hoshi-reader-original`
 
