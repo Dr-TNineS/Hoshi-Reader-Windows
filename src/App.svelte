@@ -111,9 +111,7 @@
     (async () => {
       try {
         const readingState = await importLegacyReadingState(true);
-        books = readingState.books;
-        const libraryBooks = await invoke<LibraryBookRecord[]>("library_list_books");
-        books = mergeLibraryBooks(books, libraryBooks);
+        books = await mergeCurrentLibraryBooks(readingState.books);
 
         const session = readingState.session;
         if (shouldReopenLastBook && session && view === "bookshelf") {
@@ -182,9 +180,9 @@
     books = upsertReadingProgressBook(books, update.record);
     const saveVersion = ++progressSaveVersion;
     void persistReadingProgress(update.record, update.session, isTauriRuntime())
-      .then((savedBooks) => {
+      .then(async (savedBooks) => {
         if (saveVersion !== progressSaveVersion) return;
-        books = savedBooks;
+        books = await mergeCurrentLibraryBooks(savedBooks);
       })
       .catch((e) => {
         error = String(e);
@@ -218,10 +216,14 @@
     await openBookLocator({ path }, chapter, status, chapterProgress);
   }
 
-  async function refreshLibraryBooks() {
-    if (!isTauriRuntime()) return;
+  async function mergeCurrentLibraryBooks(readingBooks: BookRecord[]): Promise<BookRecord[]> {
+    if (!isTauriRuntime()) return readingBooks;
     const libraryBooks = await invoke<LibraryBookRecord[]>("library_list_books");
-    books = mergeLibraryBooks(books, libraryBooks);
+    return mergeLibraryBooks(readingBooks, libraryBooks);
+  }
+
+  async function refreshLibraryBooks() {
+    books = await mergeCurrentLibraryBooks(books);
   }
 
   function fileNameForStatus(path: string): string {
@@ -299,10 +301,12 @@
 
   async function forgetBook(book: BookRecord) {
     try {
+      progressSaveVersion += 1;
       if (book.bookId && isTauriRuntime()) {
         await invoke<LibraryBookRecord[]>("library_forget_book", { bookId: book.bookId });
       }
-      books = await forgetReadingBook(book, isTauriRuntime());
+      const readingBooks = await forgetReadingBook(book, isTauriRuntime());
+      books = await mergeCurrentLibraryBooks(readingBooks);
       error = "";
       debug = "Forgot book";
     } catch (e) {
