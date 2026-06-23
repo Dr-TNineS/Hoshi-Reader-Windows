@@ -256,8 +256,58 @@ function structuredAttributes(record: Record<string, unknown>, tag: string): str
   if (typeof record.rowspan === "number") attrs.push(`rowspan="${record.rowspan}"`);
 
   attrs.push(...structuredDataAttributes(record));
+  const style = structuredStyleAttribute(record);
+  if (style) attrs.push(`style="${escapeAttribute(style)}"`);
 
   return attrs.length ? ` ${attrs.join(" ")}` : "";
+}
+
+function structuredStyleAttribute(record: Record<string, unknown>): string {
+  const style = record.style;
+  if (!style || typeof style !== "object" || Array.isArray(style)) return "";
+
+  const declarations: string[] = [];
+  for (const [rawProperty, rawValue] of Object.entries(style as Record<string, unknown>)) {
+    const property = toKebabCase(rawProperty);
+    if (!isSafeStructuredStyleProperty(property)) continue;
+
+    const value = structuredStyleValue(rawValue);
+    if (!value || !isSafeStructuredStyleValue(value)) continue;
+    declarations.push(`${property}: ${value}`);
+  }
+
+  return declarations.join("; ");
+}
+
+function isSafeStructuredStyleProperty(property: string): boolean {
+  return property === "color"
+    || property === "background-color"
+    || property === "font-weight"
+    || property === "font-style"
+    || property === "font-size"
+    || property === "text-align"
+    || property === "vertical-align"
+    || property === "text-decoration"
+    || property.startsWith("margin-")
+    || property.startsWith("padding-");
+}
+
+function structuredStyleValue(value: unknown): string {
+  if (typeof value === "number" && Number.isFinite(value)) return String(value);
+  if (typeof value !== "string") return "";
+  return value.trim().replace(/\s+/g, " ");
+}
+
+function isSafeStructuredStyleValue(value: string): boolean {
+  if (!value || value.length > 120) return false;
+  if (/[;{}<>]/.test(value)) return false;
+  if (/url\s*\(|image-set\s*\(|cross-fade\s*\(|paint\s*\(|expression\s*\(|behavior\s*:|-moz-binding/i.test(value)) {
+    return false;
+  }
+  if (/[a-z-]+\s*\(/i.test(value) && !/^(?:rgb|rgba|hsl|hsla)\(\s*[-+.\d%\s,]+\)$/i.test(value)) {
+    return false;
+  }
+  return true;
 }
 
 function structuredDataAttributes(record: Record<string, unknown>): string[] {

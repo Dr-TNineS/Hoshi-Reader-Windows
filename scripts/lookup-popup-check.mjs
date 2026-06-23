@@ -92,6 +92,8 @@ async function popupMetrics(page) {
     const results = document.querySelector(".lookup-results");
     const state = document.querySelector(".probe-state");
     const styledGlossary = document.querySelector(".lookup-glossary-content .gloss-sc-div");
+    const safeInlineStyle = document.querySelector('.lookup-glossary-content [data-sc-class="probe-inline-style-safe"]');
+    const unsafeInlineStyle = document.querySelector('.lookup-glossary-content [data-sc-class="probe-inline-style-unsafe"]');
     const head = document.querySelector(".lookup-head");
     const anki = document.querySelector(".lookup-anki");
     const audio = document.querySelector(".lookup-audio");
@@ -211,6 +213,13 @@ async function popupMetrics(page) {
       dictionaryStyledColor: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).color : "",
       dictionaryStyledPosition: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).position : "",
       dictionaryStyledBackgroundImage: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).backgroundImage : "",
+      structuredInlineColor: safeInlineStyle instanceof HTMLElement ? getComputedStyle(safeInlineStyle).color : "",
+      structuredInlineFontWeight: safeInlineStyle instanceof HTMLElement ? getComputedStyle(safeInlineStyle).fontWeight : "",
+      structuredInlineFontSize: safeInlineStyle instanceof HTMLElement ? getComputedStyle(safeInlineStyle).fontSize : "",
+      structuredInlineMarginLeft: safeInlineStyle instanceof HTMLElement ? getComputedStyle(safeInlineStyle).marginLeft : "",
+      unsafeInlinePosition: unsafeInlineStyle instanceof HTMLElement ? getComputedStyle(unsafeInlineStyle).position : "",
+      unsafeInlineBackgroundImage: unsafeInlineStyle instanceof HTMLElement ? getComputedStyle(unsafeInlineStyle).backgroundImage : "",
+      unsafeInlineColor: unsafeInlineStyle instanceof HTMLElement ? getComputedStyle(unsafeInlineStyle).color : "",
       headColor: head instanceof HTMLElement ? getComputedStyle(head).color : "",
       ankiDisplay: anki instanceof HTMLElement ? getComputedStyle(anki).display : "",
       audioDisplay: audio instanceof HTMLElement ? getComputedStyle(audio).display : "",
@@ -435,6 +444,13 @@ async function main() {
     assert(ready.dictionaryStyledColor === "rgb(123, 210, 145)", "Dictionary CSS should affect glossary content.", ready);
     assert(ready.dictionaryStyledPosition !== "fixed", "Dictionary CSS sanitizer should block fixed positioning.", ready);
     assert(ready.dictionaryStyledBackgroundImage === "none", "Dictionary CSS sanitizer should block remote image URLs.", ready);
+    assert(ready.structuredInlineColor === "rgb(30, 144, 255)", "Structured glossary inline color should be preserved for Yomitan style objects.", ready);
+    assert(Number.parseInt(ready.structuredInlineFontWeight, 10) >= 700, "Structured glossary inline font weight should be preserved.", ready);
+    assert(ready.structuredInlineFontSize === "16.8px", "Structured glossary inline font size should be preserved.", ready);
+    assert(Math.abs(Number.parseFloat(ready.structuredInlineMarginLeft) + 8.4) < 0.1, "Structured glossary inline margin should be preserved.", ready);
+    assert(ready.unsafeInlinePosition !== "fixed", "Structured glossary inline style should reject positioning escape properties.", ready);
+    assert(ready.unsafeInlineBackgroundImage === "none", "Structured glossary inline style should reject remote image URLs.", ready);
+    assert(ready.unsafeInlineColor === "rgb(5, 6, 7)", "Structured glossary inline rgb colors should remain allowed while unsafe properties are dropped.", ready);
     assert(ready.headColor !== "rgb(255, 0, 0)", "Dictionary CSS should not style popup chrome.", ready);
     assert(ready.ankiDisplay !== "none", "Dictionary CSS should not style popup action buttons.", ready);
     assert(ready.bodyBackground !== "rgb(255, 0, 0)", "Dictionary CSS should not style the page body.", ready);

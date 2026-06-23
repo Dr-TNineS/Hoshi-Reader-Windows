@@ -67,6 +67,18 @@
       content: [
         { tag: "div", data: { class: "probe-entry", headword: "school" }, content: "classroom school room" },
         {
+          tag: "span",
+          data: { class: "probe-inline-style-safe" },
+          style: { color: "DodgerBlue", fontWeight: "bold", fontSize: "1.2em", marginLeft: "-0.5em" },
+          content: "colored structured style",
+        },
+        {
+          tag: "span",
+          data: { class: "probe-inline-style-unsafe" },
+          style: { position: "fixed", backgroundImage: "url(https://example.invalid/bad.png)", color: "rgb(5, 6, 7)" },
+          content: "sanitized structured style",
+        },
+        {
           tag: "div",
           data: { class: "probe-mk3-head" },
           content: [
