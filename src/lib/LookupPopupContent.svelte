@@ -1,6 +1,7 @@
 <script lang="ts">
   import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
   import { ankiDictionaryMediaRefs, buildAnkiNoteRequest, isAnkiPreviewConfigured, payloadWithStoredBookCover, payloadWithStoredDictionaryMedia, payloadWithStoredRemoteAudio, renderAnkiFieldPreview } from "./anki-field-renderer";
+  import { defaultDictionarySettings, type DictionarySettings } from "./dictionary-settings";
   import { loadCachedDictionaryStyles, type DictionaryStyleResource } from "./dictionary-style-cache";
   import { scopeDictionaryCss, type LookupPitchGroup, type LookupState } from "./lookup-popup";
   import { createLookupPopupViewModels, popupResultDictionaries } from "./lookup-popup-view-model";
@@ -29,6 +30,7 @@
     canNavigateForward = false,
     restoreScrollTop = 0,
     restoreScrollSignal = 0,
+    dictionarySettings = defaultDictionarySettings,
     loadDictionaryStyles,
     loadDictionaryMediaResource,
     ankiTitle = () => "Payload prepared for current book",
@@ -59,6 +61,7 @@
     canNavigateForward?: boolean;
     restoreScrollTop?: number;
     restoreScrollSignal?: number;
+    dictionarySettings?: DictionarySettings;
     loadDictionaryStyles?: (dictionary: string) => Promise<DictionaryStyleResource>;
     loadDictionaryMediaResource?: (dictionary: string, path: string) => Promise<DictionaryMediaResource>;
     ankiTitle?: (result: DictResult, resultIndex: number) => string;
@@ -97,7 +100,14 @@
   let firstPaintRequestId = 0;
   const styleTag = "style";
   const canPreviewAnki = $derived(isAnkiPreviewConfigured(ankiSettings) && Boolean(buildAnkiPayload));
-  const renderedResults = $derived(createLookupPopupViewModels(results));
+  const popupSelectionOptions = $derived({
+    maxLength: dictionarySettings.scanLength,
+    scanNonJapaneseText: dictionarySettings.scanNonJapaneseText,
+  });
+  const renderedResults = $derived(createLookupPopupViewModels(results, {
+    harmonicFrequency: dictionarySettings.harmonicFrequency,
+    deduplicatePitchAccents: dictionarySettings.deduplicatePitchAccents,
+  }));
 
   interface DictionaryMediaResource {
     mimeType: string;
@@ -244,14 +254,14 @@
       shiftHoverFrame = null;
       if (!shiftHoverPoint) return;
       const { x, y } = shiftHoverPoint;
-      const hit = popupTextHitAtPoint(x, y);
+      const hit = popupTextHitAtPoint(x, y, popupSelectionOptions);
       if (!hit) {
         lastShiftHoverHit = null;
         return;
       }
       if (lastShiftHoverHit?.node === hit.node && lastShiftHoverHit.offset === hit.offset) return;
       lastShiftHoverHit = hit;
-      const result = selectPopupTextFromHit(hit, x, y, selection.chapterIndex);
+      const result = selectPopupTextFromHit(hit, x, y, selection.chapterIndex, popupSelectionOptions);
       if (!result) return;
       const nestedSelection = result.selection;
       activatePopupSelection(result);
@@ -274,7 +284,7 @@
       : null;
     if (!target) {
       if (event.button !== 0) return;
-      const result = selectPopupTextFromPoint(event.clientX, event.clientY, selection.chapterIndex);
+      const result = selectPopupTextFromPoint(event.clientX, event.clientY, selection.chapterIndex, popupSelectionOptions);
       if (!result) return;
 
       activatePopupSelection(result);
@@ -601,6 +611,13 @@
   function hasPitchVisual(group: LookupPitchGroup, moras: string[]): boolean {
     return moras.length > 0 && group.positions.length > 0;
   }
+
+  function glossaryGroupOpen(dictionary: string, groupIndex: number): boolean {
+    if (dictionarySettings.collapseMode === "expandAll") return true;
+    if (dictionarySettings.expandFirstDictionary && groupIndex === 0) return true;
+    if (dictionarySettings.collapseMode === "collapseAll") return false;
+    return !dictionarySettings.collapsedDictionaries.includes(dictionary);
+  }
 </script>
 
 <svelte:window onkeyup={handleWindowKeyUp} onblur={resetShiftHover} />
@@ -609,7 +626,12 @@
   <svelte:element this={styleTag}>{dictionaryStyleCss}</svelte:element>
 </svelte:head>
 
-<div class="lookup-content" bind:this={contentRoot}>
+<div
+  class="lookup-content"
+  class:compact-glossaries={dictionarySettings.compactGlossaries}
+  class:compact-pitch={dictionarySettings.compactPitchAccents}
+  bind:this={contentRoot}
+>
   <div class="lookup-head">
     <span>Lookup</span>
     <div class="lookup-head-actions">
@@ -736,9 +758,9 @@
             </div>
           {/if}
           {#each rendered.glossaryGroups as group, groupIndex}
-            <details class="lookup-glossary-group" open={groupIndex === 0}>
+            <details class="lookup-glossary-group" open={glossaryGroupOpen(group.dictionary, groupIndex)}>
               <summary class="lookup-glossary-dict">{group.dictionary}</summary>
-              {#if group.termTags.length > 0}
+              {#if dictionarySettings.showExpressionTags && group.termTags.length > 0}
                 <div class="lookup-tags">
                   {#each group.termTags as tag}
                     <span class="lookup-tag">{tag}</span>
@@ -861,6 +883,12 @@
   .lookup-glossary-list { margin: 0; padding-left: 1.25em; }
   .lookup-glossary-list > li { margin: calc(4px * var(--popup-scale, 1)) 0; }
   .lookup-glossary-content { min-width: 0; font-size: calc(15px * var(--popup-scale, 1)); line-height: 1.4; }
+  .compact-glossaries .lookup-glossary { gap: calc(1px * var(--popup-scale, 1)); line-height: 1.28; }
+  .compact-glossaries .lookup-glossary-list > li { margin: calc(2px * var(--popup-scale, 1)) 0; }
+  .compact-glossaries .lookup-glossary-content { font-size: calc(14px * var(--popup-scale, 1)); line-height: 1.32; }
+  .compact-pitch .pitch-list { gap: calc(2px * var(--popup-scale, 1)); font-size: calc(12px * var(--popup-scale, 1)); }
+  .compact-pitch .pitch-group { flex-direction: row; align-items: center; flex-wrap: wrap; gap: calc(4px * var(--popup-scale, 1)); }
+  .compact-pitch .pitch-entries li { display: inline-flex; margin: 0 calc(5px * var(--popup-scale, 1)) 0 0; }
   .lookup-glossary-content :global(.structured-content) { display: inline; }
   .lookup-glossary-content :global(ul),
   .lookup-glossary-content :global(ol) { padding-left: 1.25em; margin: calc(3px * var(--popup-scale, 1)) 0; }

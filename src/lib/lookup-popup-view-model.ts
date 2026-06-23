@@ -7,6 +7,7 @@ import {
   ruleTags,
   type LookupFrequencyGroup,
   type LookupPitchGroup,
+  type LookupPopupRenderOptions,
 } from "./lookup-popup";
 import type { DictResult, GlossaryEntry } from "./types";
 
@@ -33,15 +34,15 @@ export interface LookupPopupResultViewModel {
   glossaryGroups: LookupPopupGlossaryGroup[];
 }
 
-export function createLookupPopupViewModels(results: DictResult[]): LookupPopupResultViewModel[] {
+export function createLookupPopupViewModels(results: DictResult[], options: LookupPopupRenderOptions = {}): LookupPopupResultViewModel[] {
   return results.map((result, resultIndex) => ({
     result,
     resultIndex,
     key: `${resultIndex}:${result.expression}:${result.reading}`,
     match: formatLookupMatch(result),
     rules: ruleTags(result),
-    frequencies: frequencyGroups(result),
-    pitches: pitchGroups(result),
+    frequencies: frequencyGroups(result, options),
+    pitches: pitchGroups(result, options),
     pitchMoras: Array.from(result.reading.trim()).slice(0, 18),
     glossaryGroups: glossaryGroups(result).map((group) => ({
       dictionary: group.dictionary,

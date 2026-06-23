@@ -17,6 +17,12 @@ import {
   saveLookupPopupSettings,
   type LookupPopupSettings,
 } from "../lookup-popup-settings";
+import {
+  loadDictionarySettings,
+  normalizeDictionarySettings,
+  saveDictionarySettings,
+  type DictionarySettings,
+} from "../dictionary-settings";
 
 export type SettingsPersistence = {
   loadReaderAppearance: () => ReaderAppearance;
@@ -25,6 +31,8 @@ export type SettingsPersistence = {
   saveAdvancedSettings: (settings: AdvancedSettings) => void;
   loadLookupPopupSettings: () => LookupPopupSettings;
   saveLookupPopupSettings: (settings: LookupPopupSettings) => void;
+  loadDictionarySettings: () => DictionarySettings;
+  saveDictionarySettings: (settings: DictionarySettings) => void;
 };
 
 const browserSettingsPersistence: SettingsPersistence = {
@@ -34,6 +42,8 @@ const browserSettingsPersistence: SettingsPersistence = {
   saveAdvancedSettings,
   loadLookupPopupSettings,
   saveLookupPopupSettings,
+  loadDictionarySettings,
+  saveDictionarySettings,
 };
 
 export function createSettingsState(persistence: SettingsPersistence = browserSettingsPersistence) {
@@ -41,6 +51,7 @@ export function createSettingsState(persistence: SettingsPersistence = browserSe
   let readerAppearance = $state<ReaderAppearance>(initialReaderAppearance);
   let advancedSettings = $state<AdvancedSettings>(persistence.loadAdvancedSettings());
   let lookupPopupSettings = $state<LookupPopupSettings>(persistence.loadLookupPopupSettings());
+  let dictionarySettings = $state<DictionarySettings>(persistence.loadDictionarySettings());
   let appearancePalette = $derived(readerAppearancePalette(readerAppearance));
   let appearanceVars = $derived(readerAppearanceCssVars(appearancePalette));
 
@@ -74,10 +85,16 @@ export function createSettingsState(persistence: SettingsPersistence = browserSe
     updateLookupPopupSettings({ scale });
   }
 
+  function updateDictionarySettings(update: Partial<DictionarySettings>) {
+    dictionarySettings = normalizeDictionarySettings({ ...dictionarySettings, ...update });
+    persistence.saveDictionarySettings(dictionarySettings);
+  }
+
   return {
     get readerAppearance() { return readerAppearance; },
     get advancedSettings() { return advancedSettings; },
     get lookupPopupSettings() { return lookupPopupSettings; },
+    get dictionarySettings() { return dictionarySettings; },
     get appearancePalette() { return appearancePalette; },
     get appearanceVars() { return appearanceVars; },
     setReaderTheme,
@@ -85,6 +102,7 @@ export function createSettingsState(persistence: SettingsPersistence = browserSe
     setLookupPopupWidth,
     setLookupPopupHeight,
     setLookupPopupScale,
+    updateDictionarySettings,
   };
 }
 

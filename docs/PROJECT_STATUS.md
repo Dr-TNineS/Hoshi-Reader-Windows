@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Project Status
 
-Last updated: 2026-06-21
+Last updated: 2026-06-23
 
 This file records current implementation facts for `hoshi-reader-windows`. It is not an agent rule file, product roadmap, or substitute for checking the current code.
 
@@ -47,6 +47,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Advanced panel with a default-on option to reopen the last reading session at startup.
   - Bits UI provides the first headless UI primitives for the Advanced switch and dictionary Tabs, enabled switches, and delete confirmation dialog; shared CSS variables define non-invasive control tokens without changing Reader layout styles.
   - Appearance and Advanced settings state is coordinated by a Svelte 5 runes controller in `src/lib/state/settings.svelte.ts`; persistence remains delegated to the existing appearance and Advanced storage modules.
+  - Dictionaries settings persist HSA core options in the same settings controller: scan non-Japanese text, max results, scan length, low-RAM dictionary import, collapse mode, expand-first dictionary, collapsed dictionaries, compact glossaries, expression tags, harmonic frequency, deduplicate pitch accents, and compact pitch accents.
   - The Advanced startup preference is stored locally in browser `localStorage`.
   - Read-only Shortcuts panel listing the currently implemented Reader keyboard and mouse shortcuts by feature group.
   - Resume from saved progress.
@@ -78,9 +79,12 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Popup content uses the Windows Japanese sans-serif stack (`Yu Gothic UI`, `Meiryo`, `Segoe UI`) with upstream-aligned expression, reading, glossary, metadata, and pitch size tiers. Content scale affects result typography, spacing, tags, actions, and media limits without changing the outer frame or desktop popup header.
   - Debug lookup timing records cover frontend request/first-frame/style/media stages and Rust lock/native lookup stages; the current local before/after baseline is recorded in `docs/LOOKUP_PERFORMANCE_BASELINE.md`.
   - Lookup uses a 32-entry in-memory LRU that also deduplicates concurrent identical requests; dictionary mutations clear lookup and style caches.
+  - Lookup passes configured max results and scan length to Rust lookup; changing either setting clears cached lookup results and reloads active popups.
+  - Reader and popup glossary selection honor configured scan length and can skip non-Japanese scan starts when `scanNonJapaneseText` is disabled.
   - Enabled term-dictionary styles are prewarmed after dictionary state becomes ready, popup style loads run in parallel, and popup results use one-pass view models for match/rules/frequency/pitch/glossary rendering.
   - Popup distinguishes loading, no dictionary, engine unavailable, empty, error, and ready states.
-  - Popup renders the full backend lookup result set, up to the current backend max results, with expression, reading, source dictionary, matched/deinflected text, rules, HSA-style frequency/pitch metadata groups, grouped glossary content, dictionary media, and scoped dictionary `styles.css`.
+  - Popup renders the full backend lookup result set, up to the configured backend max results, with expression, reading, source dictionary, matched/deinflected text, rules, HSA-style frequency/pitch metadata groups, grouped glossary content, dictionary media, and scoped dictionary `styles.css`.
+  - Popup consumes supported HSA dictionary rendering settings: collapse all/expand all/custom dictionary groups, expand first dictionary, compact glossary layout, expression tags, harmonic frequency, deduplicated pitch positions, and compact pitch layout.
   - Dictionary media loads lazily inside popup glossary content; loaded, unavailable, non-Tauri fallback, and Yomitan `type: "image"` gaiji SVG states are covered by the lookup popup probe.
   - Popup glossary text supports frame-coalesced Shift hover nested lookup as a popup stack: root lookup stays open, child popups anchor to glossary text, the parent owns the pending selection range, the child result narrows it to the first `matched` range, closing a child preserves the parent, and parent scroll closes children.
   - Popup has a disabled Anki boundary affordance and can build a typed lookup-to-Anki payload from the selected result and current book/chapter context.
@@ -99,9 +103,12 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - `build.rs` attempts to compile/link `third_party/hoshidicts` and the current C API bridge when CMake/C++ tools exist.
   - `HSW_HOSHIDICTS_DIR` can override the default local hoshidicts path.
   - Bookshelf has a minimal `Import Dictionary` entry for Yomitan `.zip` files.
-  - Bookshelf has a minimal dictionary management panel for Term/Frequency/Pitch categories, refreshing status, enabling/disabling role entries, changing per-category order, and deleting an imported dictionary from all categories.
+  - Bookshelf has a minimal dictionary management panel for Term/Frequency/Pitch categories, refreshing status, enabling/disabling role entries, changing per-category order, deleting an imported dictionary from all categories, and editing HSA-style Lookup, Import, Collapse Dictionaries, and Behaviour settings.
   - Dictionary management uses one in-app delete confirmation that describes app-owned cleanup without touching the original zip; ordering buttons expose themed hover/focus tooltips. The probe and `npm run check:dictionary-management` cover empty/loading/error/ready states, category tab click/keyboard navigation, visible counts, enable switches, order controls and tooltip boundaries, delete confirmation/cancel/focus restoration, import/refresh actions, Escape dismissal, and narrow-window overflow.
   - Dictionary import uses zip content hash as stable `dict_id` and records successful imports in the manifest.
+  - Dictionary import creates Term/Frequency/Pitch manifest role entries only when the native import reports positive `termCount`, `freqCount`, or `pitchCount`; imports with no detected roles fail with a clear dictionary-type detection error.
+  - Legacy manifest entries with explicit roles remain compatible, while legacy entries with no role and zero counts no longer invent a synthetic Term role.
+  - Low-RAM dictionary import is wired from the Dictionaries settings panel to the hoshidicts import API when the linked backend is available.
   - Dictionary import uses staging directories and preserves an existing dictionary dir if replacement fails.
   - `DictResult` includes rules, source dictionary, frequency entries, and pitch entries.
   - Local VS Build Tools, MSVC, Windows SDK, VS-bundled CMake, and VS-bundled Ninja can drive the hoshidicts CMake configure path from a VS developer shell.
@@ -151,7 +158,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 
 - No durable database; app-owned library metadata and reading state are still JSON.
 - Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; real remote-audio-plus-AnkiConnect, real HSA local-audio database, real popup word-audio playback, and real post-add sync runtime validation are also not verified.
-- No full settings surface; only the minimal bookshelf Appearance (theme plus dictionary popup sizing/scale) and Advanced startup-behavior panels are implemented.
+- No full settings surface; Appearance, Advanced startup behavior, dictionary popup sizing/scale, and core HSA dictionary settings are implemented. HSA profile-scoped settings, recommended dictionary downloads, automatic updates, dictionary default tab, and custom CSS are not implemented.
 - No verified app-owned cover thumbnail cache.
 - Runtime validation with a normal media-bearing Yomitan dictionary is not verified; on 2026-06-16, `HSW_MEDIA_YOMITAN_ZIP` was unset, `OALDPE10.zip` had `mediaCount=0`, and `MK3Fix0213.zip` remained unsuitable because compatibility import intentionally skipped media. Packed-media command tests now cover `media.idx`/`media.bin` reads, but full popup runtime validation with a media-preserving import is still not verified.
 - No verified release packaging flow.

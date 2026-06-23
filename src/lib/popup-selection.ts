@@ -2,7 +2,7 @@ import type { ReaderSelection, ReaderSelectionRect } from "./types";
 
 const POPUP_SCAN_BOUNDARIES = new Set(Array.from("。、！？…‥「」『』（）()【】〈〉《》〔〕｛｝{}［］[]・：；:;，,.─"));
 
-const LOOKUP_MAX_LENGTH = 16;
+const DEFAULT_LOOKUP_MAX_LENGTH = 16;
 
 type CaretDocument = Document & {
   caretPositionFromPoint?: (x: number, y: number) => { offsetNode: Node; offset: number } | null;
@@ -22,7 +22,12 @@ export interface PopupTextSelection {
   hit: PopupTextHit;
 }
 
-export function popupTextHitAtPoint(x: number, y: number): PopupTextHit | null {
+export interface PopupSelectionOptions {
+  maxLength?: number;
+  scanNonJapaneseText?: boolean;
+}
+
+export function popupTextHitAtPoint(x: number, y: number, options: PopupSelectionOptions = {}): PopupTextHit | null {
   const target = document.elementFromPoint(x, y);
   if (!(target instanceof Element)) return null;
 
@@ -43,7 +48,7 @@ export function popupTextHitAtPoint(x: number, y: number): PopupTextHit | null {
     "summary",
   ].join(","))) return null;
 
-  const hit = characterAtPoint(x, y, glossaryRoot);
+  const hit = characterAtPoint(x, y, glossaryRoot, options);
   return hit ? { ...hit, root: glossaryRoot } : null;
 }
 
@@ -52,8 +57,9 @@ export function selectPopupTextFromHit(
   x: number,
   y: number,
   chapterIndex: number,
+  options: PopupSelectionOptions = {},
 ): PopupTextSelection | null {
-  const built = buildSelection(hit, hit.root, x, y, chapterIndex);
+  const built = buildSelection(hit, hit.root, x, y, chapterIndex, options);
   if (!built) return null;
 
   return {
@@ -68,9 +74,9 @@ export function selectPopupTextFromHit(
   };
 }
 
-export function selectPopupTextFromPoint(x: number, y: number, chapterIndex: number): PopupTextSelection | null {
-  const hit = popupTextHitAtPoint(x, y);
-  return hit ? selectPopupTextFromHit(hit, x, y, chapterIndex) : null;
+export function selectPopupTextFromPoint(x: number, y: number, chapterIndex: number, options: PopupSelectionOptions = {}): PopupTextSelection | null {
+  const hit = popupTextHitAtPoint(x, y, options);
+  return hit ? selectPopupTextFromHit(hit, x, y, chapterIndex, options) : null;
 }
 
 export function popupSelectionPrefixRange(range: Range, characterCount: number): Range | null {
@@ -110,9 +116,9 @@ export function popupSelectionPrefixRange(range: Range, characterCount: number):
   return null;
 }
 
-function characterAtPoint(x: number, y: number, root: HTMLElement): Omit<PopupTextHit, "root"> | null {
+function characterAtPoint(x: number, y: number, root: HTMLElement, options: PopupSelectionOptions): Omit<PopupTextHit, "root"> | null {
   const range = caretRangeAtPoint(x, y, root);
-  if (!range) return fallbackCharacterAtPoint(x, y, root);
+  if (!range) return fallbackCharacterAtPoint(x, y, root, options);
 
   const candidates = [
     { node: range.startContainer, offset: range.startOffset },
@@ -133,12 +139,18 @@ function characterAtPoint(x: number, y: number, root: HTMLElement): Omit<PopupTe
     const anchorDomRect = Array.from(charRange.getClientRects()).find((rect) => rectContainsPoint(rect, x, y))
       ?? charRange.getBoundingClientRect();
     charRange.detach();
-    if (hit && !isScanBoundary(node.data[offset]) && anchorDomRect.width > 0 && anchorDomRect.height > 0) {
+    if (
+      hit &&
+      !isScanBoundary(node.data[offset]) &&
+      canScanCodePoint(node.data.codePointAt(offset), options) &&
+      anchorDomRect.width > 0 &&
+      anchorDomRect.height > 0
+    ) {
       return { node, offset, rect: rectSnapshotFromDomRect(anchorDomRect) };
     }
   }
 
-  return fallbackCharacterAtPoint(x, y, root);
+  return fallbackCharacterAtPoint(x, y, root, options);
 }
 
 function caretRangeAtPoint(x: number, y: number, root: HTMLElement): Range | null {
@@ -158,12 +170,12 @@ function caretRangeAtPoint(x: number, y: number, root: HTMLElement): Range | nul
   return null;
 }
 
-function fallbackCharacterAtPoint(x: number, y: number, root: HTMLElement): Omit<PopupTextHit, "root"> | null {
+function fallbackCharacterAtPoint(x: number, y: number, root: HTMLElement, options: PopupSelectionOptions): Omit<PopupTextHit, "root"> | null {
   const walker = textWalker(root);
   let node: Text | null;
   while ((node = walker.nextNode() as Text | null)) {
     for (let offset = 0; offset < node.data.length; offset += codeUnitLengthAt(node.data, offset)) {
-      if (isScanBoundary(node.data[offset])) continue;
+      if (isScanBoundary(node.data[offset]) || !canScanCodePoint(node.data.codePointAt(offset), options)) continue;
       const range = document.createRange();
       range.setStart(node, offset);
       range.setEnd(node, offset + codeUnitLengthAt(node.data, offset));
@@ -179,7 +191,7 @@ function fallbackCharacterAtPoint(x: number, y: number, root: HTMLElement): Omit
   return null;
 }
 
-function buildSelection(hit: PopupTextHit, root: HTMLElement, x: number, y: number, chapterIndex: number) {
+function buildSelection(hit: PopupTextHit, root: HTMLElement, x: number, y: number, chapterIndex: number, options: PopupSelectionOptions) {
   const ranges: Range[] = [];
   const walker = textWalker(root);
   walker.currentNode = hit.node;
@@ -187,10 +199,11 @@ function buildSelection(hit: PopupTextHit, root: HTMLElement, x: number, y: numb
   let node: Text | null = hit.node;
   let offset = hit.offset;
   let text = "";
+  const maxLength = lookupMaxLength(options.maxLength);
 
-  while (node && text.length < LOOKUP_MAX_LENGTH) {
+  while (node && text.length < maxLength) {
     const start = offset;
-    while (offset < node.data.length && text.length < LOOKUP_MAX_LENGTH) {
+    while (offset < node.data.length && text.length < maxLength) {
       const char = String.fromCodePoint(node.data.codePointAt(offset) ?? 0);
       if (isScanBoundary(char)) break;
       text += char;
@@ -204,7 +217,7 @@ function buildSelection(hit: PopupTextHit, root: HTMLElement, x: number, y: numb
       ranges.push(range);
     }
 
-    if (offset < node.data.length || text.length >= LOOKUP_MAX_LENGTH) break;
+    if (offset < node.data.length || text.length >= maxLength) break;
     node = walker.nextNode() as Text | null;
     offset = 0;
   }
@@ -292,4 +305,26 @@ function isScanBoundary(char: string): boolean {
 
 function normalizeSelectionText(text: string): string {
   return text.replace(/\s+/g, " ").trim();
+}
+
+function lookupMaxLength(value: unknown): number {
+  const numeric = typeof value === "number" ? value : Number(value);
+  if (!Number.isFinite(numeric)) return DEFAULT_LOOKUP_MAX_LENGTH;
+  return Math.min(64, Math.max(1, Math.round(numeric)));
+}
+
+function canScanCodePoint(codePoint: number | undefined, options: PopupSelectionOptions): boolean {
+  return options.scanNonJapaneseText !== false || isJapaneseCodePoint(codePoint);
+}
+
+function isJapaneseCodePoint(codePoint: number | undefined): boolean {
+  if (codePoint === undefined) return false;
+  return (
+    (codePoint >= 0x3040 && codePoint <= 0x309f) ||
+    (codePoint >= 0x30a0 && codePoint <= 0x30ff) ||
+    (codePoint >= 0x4e00 && codePoint <= 0x9fff) ||
+    (codePoint >= 0x3400 && codePoint <= 0x4dbf) ||
+    (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
+    (codePoint >= 0xff66 && codePoint <= 0xff9f)
+  );
 }

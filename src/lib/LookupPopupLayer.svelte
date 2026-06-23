@@ -1,5 +1,6 @@
 <script lang="ts">
   import LookupPopupContent from "./LookupPopupContent.svelte";
+  import { defaultDictionarySettings, type DictionarySettings } from "./dictionary-settings";
   import { lookupPopupStyle } from "./lookup-popup-position";
   import type { LookupState } from "./lookup-popup";
   import { defaultLookupPopupSettings, type LookupPopupSettings } from "./lookup-popup-settings";
@@ -43,6 +44,7 @@
     popups = [],
     ankiSettings = null,
     popupSettings = defaultLookupPopupSettings,
+    dictionarySettings = defaultDictionarySettings,
     onClose,
     onImportDictionary,
     onNestedLookup,
@@ -61,6 +63,7 @@
     popups?: LookupPopupItem[];
     ankiSettings?: AnkiSettings | null;
     popupSettings?: LookupPopupSettings;
+    dictionarySettings?: DictionarySettings;
     onClose: (popupId: string) => void;
     onImportDictionary: () => void;
     onNestedLookup: (popupId: string, selection: ReaderSelection) => void;
@@ -136,6 +139,7 @@
       canNavigateForward={popup.historyForward.length > 0}
       restoreScrollTop={popup.restoreScrollTop}
       restoreScrollSignal={popup.restoreScrollSignal}
+      {dictionarySettings}
       ankiTitle={(result, resultIndex) => ankiTitle(popup.selection, result, resultIndex)}
       {ankiSettings}
       buildAnkiPayload={(result, resultIndex) => buildAnkiPayload(popup.selection, result, resultIndex)}

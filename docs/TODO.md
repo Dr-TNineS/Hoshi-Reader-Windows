@@ -15,14 +15,23 @@ This file is the short operational handoff for future agents. Keep detailed stat
 
 ## Current Priorities
 
-1. Treat the HSA match-highlight and frame-coalesced Shift-hover slice in `docs/LOOKUP_SHIFT_HOVER_REFERENCE.md` as complete.
+1. Follow `docs/DICTIONARY_SETTINGS_HSA_ALIGNMENT_PLAN.md` for HSA dictionary
+   settings alignment; all documented slices are complete at their validation
+   level.
+   - Current: none.
+   - Next: none unless a new plan authorizes recommended downloads, automatic
+     updates, profiles, default tab, or custom CSS.
+   - Keep HSW manifest-based storage; do not duplicate dictionaries into HSA
+     physical type folders.
+   - Core HSA settings now persist and feed lookup/import/popup rendering.
+2. Treat the HSA match-highlight and frame-coalesced Shift-hover slice in `docs/LOOKUP_SHIFT_HOVER_REFERENCE.md` as complete.
    - The 45ms delay and Hibiki 8px threshold are replaced by one latest-coordinate hit test per animation frame and DOM character-position dedupe.
    - Reader and recursive-popup highlights stay hidden while pending, then reveal the first result's `matched` range.
    - Automated checks and light/dark runtime validation passed on 2026-06-23. Next slice: none.
-2. Treat `docs/DICTIONARY_POPUP_DESKTOP_ALIGNMENT_PLAN.md` as complete at its documented validation level.
+3. Treat `docs/DICTIONARY_POPUP_DESKTOP_ALIGNMENT_PLAN.md` as complete at its documented validation level.
    - Slices 0-2 are complete: persisted width/height/scale settings, responsive fixed sizing, Windows Japanese sans typography, scaled content, and wide/narrow runtime visual checks.
    - No next slice is authorized; do not expand into transparency, full-width mode, custom CSS, or font selection without a new documented slice.
-3. Treat the prior reader lookup implementation slices in `docs/LOOKUP_ROADMAP.md` as complete.
+4. Treat the prior reader lookup implementation slices in `docs/LOOKUP_ROADMAP.md` as complete.
    - Slice 6 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including a passing VS developer-shell linked build.
    - Slice 7 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including a real JMdict Yomitan import, manifest verification, and linked runtime lookup check.
    - Slice 8 in `docs/REAL_LOOKUP_VALIDATION_PLAN.md` is complete, including direct Tauri file-dialog import and reader popup lookup with real EPUB/dictionary data.
@@ -36,16 +45,16 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Bookshelf/import hardening is complete for staged EPUB imports, duplicate EPUB reuse, missing app-owned EPUB errors, dictionary replacement preservation, import busy guards, and bookshelf Forget cleanup.
    - Final linked real dictionary validation with local `MK3Fix0213.zip` passed on 2026-06-12: `dict_id=93e8e532b599ba4a`, `term=140821`, `media=0`, `lookup_results=2`.
    - Anki HSA/Windows alignment is documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`; AnkiConnect readiness/configuration, field preview, minimal duplicate-check/add-note plumbing, and real AnkiConnect runtime add-note validation are complete.
-4. Treat the storage/model migration as complete at the JSON-store level: reading progress, recent books, and session now live in Tauri app data `reading/state.json`, with one-time legacy `localStorage` import and browser fallback.
-5. Follow the complete Anki/audio route in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
+5. Treat the storage/model migration as complete at the JSON-store level: reading progress, recent books, and session now live in Tauri app data `reading/state.json`, with one-time legacy `localStorage` import and browser fallback.
+6. Follow the complete Anki/audio route in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
    - Current: Slice 5I-0, Windows audio decode/clipping capability spike.
    - Next: Slice 5I, per-book Sasayaki sidecar and import.
    - Completed on 2026-06-23: HSA Anki field rendering parity bugfix for `{furigana-plain}`, `{sentence}`, and `{pitch-accent-positions}`.
    - Completed on 2026-06-23: Slice 2B in `docs/DICTIONARY_POPUP_HSA_ALIGNMENT.md`, packed hoshidicts media support for lookup popup gaiji SVGs.
    - Slices 5A-5H are complete at their documented validation levels. Do not promote automated results to real runtime verification.
-6. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
-7. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
-8. Reader chrome should continue to avoid user-visible spine totals (`Ch.x/y`) or per-spine page totals (`P.x/y`); use whole-book character progress instead unless a future documented slice deliberately changes the chapter model.
+7. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
+8. Keep `docs/PROJECT_STATUS.md` accurate when implementation facts change.
+9. Reader chrome should continue to avoid user-visible spine totals (`Ch.x/y`) or per-spine page totals (`P.x/y`); use whole-book character progress instead unless a future documented slice deliberately changes the chapter model.
 
 ## Active Blockers
 

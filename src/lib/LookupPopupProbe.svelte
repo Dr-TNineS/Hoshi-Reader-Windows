@@ -1,6 +1,7 @@
 <script lang="ts">
   import LookupPopupContent from "./LookupPopupContent.svelte";
   import { extractDictionaryMediaReferences } from "./anki-field-renderer";
+  import { defaultDictionarySettings, normalizeDictionarySettings } from "./dictionary-settings";
   import type { LookupState } from "./lookup-popup";
   import { lookupPopupStyle } from "./lookup-popup-position";
   import { normalizeLookupPopupSettings } from "./lookup-popup-settings";
@@ -28,6 +29,19 @@
     width: params.has("popupWidth") ? Number(params.get("popupWidth")) : 320,
     height: params.has("popupHeight") ? Number(params.get("popupHeight")) : 250,
     scale: params.has("popupScale") ? Number(params.get("popupScale")) : 1,
+  });
+  const dictionarySettings = normalizeDictionarySettings({
+    ...defaultDictionarySettings,
+    scanLength: params.has("scanLength") ? Number(params.get("scanLength")) : defaultDictionarySettings.scanLength,
+    scanNonJapaneseText: params.get("scanNonJapaneseText") !== "disabled",
+    collapseMode: params.get("collapseMode") ?? defaultDictionarySettings.collapseMode,
+    expandFirstDictionary: params.get("expandFirstDictionary") === "enabled",
+    collapsedDictionaries: params.has("collapsedDictionaries") ? params.get("collapsedDictionaries")?.split("|") : defaultDictionarySettings.collapsedDictionaries,
+    compactGlossaries: params.get("dictionaryCompactGlossaries") !== "disabled",
+    showExpressionTags: params.get("showExpressionTags") === "enabled",
+    harmonicFrequency: params.get("harmonicFrequency") === "enabled",
+    deduplicatePitchAccents: params.get("deduplicatePitchAccents") === "enabled",
+    compactPitchAccents: params.get("compactPitchAccents") !== "disabled",
   });
 
   const rootSelection: ReaderSelection = {
@@ -95,8 +109,11 @@
     deinflected: "school",
     rules: "n",
     dictionary: "Jitendex.org [probe]",
-    frequencies: [{ dictionary: "Freq Probe", items: [{ value: 120, displayValue: "120" }] }],
-    pitches: [{ dictionary: "Pitch Probe", positions: [0, 2], transcriptions: ["school"] }],
+    frequencies: [{ dictionary: "Freq Probe", items: [{ value: 120, displayValue: "120" }, { value: 240, displayValue: "240" }] }],
+    pitches: [
+      { dictionary: "Pitch Probe", positions: [0, 2], transcriptions: ["school"] },
+      ...(dictionarySettings.deduplicatePitchAccents ? [{ dictionary: "Pitch Duplicate Probe", positions: [2], transcriptions: ["duplicate pitch"] }] : []),
+    ],
   };
 
   const extraResults: DictResult[] = longResult
@@ -537,6 +554,7 @@
         canNavigateForward={popup.historyForward.length > 0}
         restoreScrollTop={popup.restoreScrollTop}
         restoreScrollSignal={popup.restoreScrollSignal}
+        {dictionarySettings}
         {loadDictionaryStyles}
         loadDictionaryMediaResource={mediaMode === "none" ? undefined : loadDictionaryMediaResource}
         ankiTitle={() => "Payload prepared for Probe Book"}
@@ -576,6 +594,7 @@
     data-operation-events={operationEvents.join(",")}
     data-word-audio-prepare-count={wordAudioPrepareRequests.length}
     data-word-audio-last-request={JSON.stringify(wordAudioPrepareRequests[wordAudioPrepareRequests.length - 1] ?? null)}
+    data-dictionary-settings={JSON.stringify(dictionarySettings)}
     data-state={lookupState}
     aria-hidden="true"
     ></div>

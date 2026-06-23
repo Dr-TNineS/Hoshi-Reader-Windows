@@ -1,5 +1,6 @@
 <script lang="ts">
   import DictionaryManagementPanel from "./DictionaryManagementPanel.svelte";
+  import { defaultDictionarySettings, normalizeDictionarySettings, type DictionarySettings } from "./dictionary-settings";
   import type { DictionaryManifestEntry, DictionaryStatus } from "./types";
 
   const params = new URLSearchParams(window.location.search);
@@ -78,6 +79,8 @@
   let enableEvents = $state<string[]>([]);
   let moveEvents = $state<string[]>([]);
   let removeEvents = $state<string[]>([]);
+  let settings = $state<DictionarySettings>(defaultDictionarySettings);
+  let settingsEvents = $state<string[]>([]);
 
   const status: DictionaryStatus | null = mode === "error"
     ? { status: "error", message: "Cannot parse dictionary manifest: probe", loadedCount: 0, importedCount: 0 }
@@ -108,6 +111,11 @@
     removeEvents = [...removeEvents, dictionary.importId];
     dictionaries = dictionaries.filter((entry) => entry.importId !== dictionary.importId);
   }
+
+  function updateSettings(update: Partial<DictionarySettings>) {
+    settings = normalizeDictionarySettings({ ...settings, ...update });
+    settingsEvents = [...settingsEvents, Object.keys(update).sort().join("+")];
+  }
 </script>
 
 <main class="probe" data-ui-portal-root>
@@ -121,6 +129,8 @@
     onSetEnabled={setEnabled}
     onMove={moveDictionary}
     onRemove={removeDictionary}
+    {settings}
+    onSettingsChange={updateSettings}
   />
   <div
     class="probe-state"
@@ -129,6 +139,12 @@
     data-enable-events={enableEvents.join(",")}
     data-move-events={moveEvents.join(",")}
     data-remove-events={removeEvents.join(",")}
+    data-settings-events={settingsEvents.join(",")}
+    data-max-results={settings.maxResults}
+    data-scan-length={settings.scanLength}
+    data-low-ram={settings.lowRamDictionaryImport}
+    data-collapse-mode={settings.collapseMode}
+    data-compact-glossaries={settings.compactGlossaries}
     data-order={dictionaries.filter((dictionary) => dictionary.role === "term").sort((left, right) => left.order - right.order).map((dictionary) => dictionary.dictId).join(",")}
     aria-hidden="true"
   ></div>

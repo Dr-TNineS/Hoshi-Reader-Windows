@@ -93,6 +93,7 @@
   let triedAnkiSettings = false;
   let progressSaveVersion = 0;
   let cachedReadyDictionaryStatus: DictionaryStatus | null = null;
+  let lookupSettingsCacheKey = "";
   const lookupResultCache = new LookupResultCache<DictResult>(32);
 
   let tocEntries = $derived(meta ? flattenToc(meta.toc, meta) : []);
@@ -145,6 +146,18 @@
     if (!isTauriRuntime()) return;
     void loadAnkiSettings();
     void refreshLocalAudioStatus();
+  });
+
+  $effect(() => {
+    const nextKey = `${settings.dictionarySettings.maxResults}:${settings.dictionarySettings.scanLength}`;
+    if (!lookupSettingsCacheKey) {
+      lookupSettingsCacheKey = nextKey;
+      return;
+    }
+    if (nextKey === lookupSettingsCacheKey) return;
+    lookupSettingsCacheKey = nextKey;
+    invalidateDictionaryLookupCaches();
+    reloadLookupPopups();
   });
 
   function saveProgress(
@@ -730,7 +743,10 @@
         return;
       }
 
-      const summary = await invoke<DictImportBatchSummary>("dictionary_import_yomitan_zips", { zipPaths });
+      const summary = await invoke<DictImportBatchSummary>("dictionary_import_yomitan_zips", {
+        zipPaths,
+        lowRam: settings.dictionarySettings.lowRamDictionaryImport,
+      });
       dictionaryStatus = dictionaryBatchStatusLabel(summary);
       await refreshDictionaries();
       reloadLookupPopups();
@@ -761,7 +777,10 @@
         return;
       }
 
-      const summary = await invoke<DictImportBatchSummary>("dictionary_import_yomitan_folder", { folderPath: selected });
+      const summary = await invoke<DictImportBatchSummary>("dictionary_import_yomitan_folder", {
+        folderPath: selected,
+        lowRam: settings.dictionarySettings.lowRamDictionaryImport,
+      });
       dictionaryStatus = dictionaryBatchStatusLabel(summary);
       await refreshDictionaries();
       reloadLookupPopups();
@@ -1150,7 +1169,12 @@
 
       const lookupRequest = lookupResultCache.get(
         selection.text,
-        (text) => invoke<DictResult[]>("dict_lookup", { text, requestId }),
+        (text) => invoke<DictResult[]>("dict_lookup", {
+          text,
+          requestId,
+          maxResults: settings.dictionarySettings.maxResults,
+          scanLength: settings.dictionarySettings.scanLength,
+        }),
       );
       markLookupPerformance(requestId, "invoke-start", { cacheHit: lookupRequest.cacheHit });
       const results = await lookupRequest.promise;
@@ -1217,6 +1241,7 @@
       {readerThemeLabels}
       advancedSettings={settings.advancedSettings}
       lookupPopupSettings={settings.lookupPopupSettings}
+      dictionarySettings={settings.dictionarySettings}
       {dictionaryList}
       {dictionaryListStatus}
       {dictionaryListError}
@@ -1235,6 +1260,7 @@
       onSetLookupPopupWidth={settings.setLookupPopupWidth}
       onSetLookupPopupHeight={settings.setLookupPopupHeight}
       onSetLookupPopupScale={settings.setLookupPopupScale}
+      onDictionarySettingsChange={settings.updateDictionarySettings}
       onRefreshDictionaries={refreshDictionaries}
       onImportDictionary={importDictionary}
       onImportDictionaryFolder={importDictionaryFolder}
@@ -1273,6 +1299,8 @@
       appearancePalette={settings.appearancePalette}
       lookupHighlightCount={readerLookupHighlightCount}
       lookupHighlightSignal={readerLookupHighlightSignal}
+      scanLength={settings.dictionarySettings.scanLength}
+      scanNonJapaneseText={settings.dictionarySettings.scanNonJapaneseText}
       onProgressChange={handleReaderProgress}
       onSelectionChange={handleReaderSelection}
       {startAtEnd}
@@ -1280,6 +1308,7 @@
     <LookupPopupLayer
       popups={lookupPopups}
       popupSettings={settings.lookupPopupSettings}
+      dictionarySettings={settings.dictionarySettings}
       {ankiSettings}
       onClose={closePopup}
       onImportDictionary={importDictionary}

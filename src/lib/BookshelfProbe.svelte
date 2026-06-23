@@ -1,5 +1,6 @@
 <script lang="ts">
   import BookshelfView from "./BookshelfView.svelte";
+  import { defaultDictionarySettings } from "./dictionary-settings";
   import type { BookRecord } from "./storage";
 
   const books: BookRecord[] = [
@@ -33,6 +34,7 @@
     readerThemeLabels={{ light: "Light", dark: "Dark" }}
     advancedSettings={{ reopenLastBookOnStartup: true }}
     lookupPopupSettings={{ width: 320, height: 250, scale: 1 }}
+    dictionarySettings={defaultDictionarySettings}
     onOpenBook={() => {}}
     onContinueBook={() => {}}
     onForgetBook={(book) => forgetEvents = [...forgetEvents, book.bookId ?? book.path ?? "unknown"]}
@@ -41,6 +43,7 @@
     onSetLookupPopupWidth={() => {}}
     onSetLookupPopupHeight={() => {}}
     onSetLookupPopupScale={() => {}}
+    onDictionarySettingsChange={() => {}}
     onRefreshDictionaries={() => {}}
     onImportDictionary={() => {}}
     onImportDictionaryFolder={() => {}}

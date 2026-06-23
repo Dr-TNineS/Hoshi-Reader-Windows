@@ -19,9 +19,17 @@ use std::io::Read;
 use std::io::Write;
 
 #[cfg(hoshi_dicts_linked)]
-const MAX_LOOKUP_RESULTS: i32 = 16;
+const DEFAULT_MAX_LOOKUP_RESULTS: i32 = 16;
 #[cfg(hoshi_dicts_linked)]
-const SCAN_LENGTH: i32 = 16;
+const MIN_LOOKUP_RESULTS: i32 = 1;
+#[cfg(hoshi_dicts_linked)]
+const MAX_LOOKUP_RESULTS: i32 = 50;
+#[cfg(hoshi_dicts_linked)]
+const DEFAULT_SCAN_LENGTH: i32 = 16;
+#[cfg(hoshi_dicts_linked)]
+const MIN_SCAN_LENGTH: i32 = 1;
+#[cfg(hoshi_dicts_linked)]
+const MAX_SCAN_LENGTH: i32 = 64;
 #[cfg(hoshi_dicts_linked)]
 const DICTIONARY_IMPORT_WORKER_STACK: usize = 64 * 1024 * 1024;
 
@@ -190,6 +198,8 @@ impl DictState {
 pub fn dict_lookup(
     text: String,
     request_id: Option<u64>,
+    max_results: Option<i32>,
+    scan_length: Option<i32>,
     state: tauri::State<DictState>,
 ) -> Result<Vec<DictResult>, String> {
     let command_started = Instant::now();
@@ -205,17 +215,23 @@ pub fn dict_lookup(
             .backend
             .as_ref()
             .ok_or_else(|| runtime_error(&runtime))?;
+        let max_results =
+            clamp_lookup_bound(max_results, DEFAULT_MAX_LOOKUP_RESULTS, MIN_LOOKUP_RESULTS, MAX_LOOKUP_RESULTS);
+        let scan_length =
+            clamp_lookup_bound(scan_length, DEFAULT_SCAN_LENGTH, MIN_SCAN_LENGTH, MAX_SCAN_LENGTH);
         let lookup_started = Instant::now();
-        let mut results = backend.lookup(&text)?;
+        let mut results = backend.lookup(&text, max_results, scan_length)?;
         let native_lookup_ms = lookup_started.elapsed().as_secs_f64() * 1000.0;
         let override_started = Instant::now();
         apply_dictionary_title_overrides(&mut results, &runtime.dictionary_title_overrides);
         let title_override_ms = override_started.elapsed().as_secs_f64() * 1000.0;
         #[cfg(debug_assertions)]
         log::info!(
-            "lookup_perf request_id={} text_chars={} lock_wait_ms={:.3} native_lookup_ms={:.3} title_override_ms={:.3} total_ms={:.3} result_count={}",
+            "lookup_perf request_id={} text_chars={} max_results={} scan_length={} lock_wait_ms={:.3} native_lookup_ms={:.3} title_override_ms={:.3} total_ms={:.3} result_count={}",
             request_id.map(|value| value.to_string()).unwrap_or_else(|| "none".into()),
             text.chars().count(),
+            max_results,
+            scan_length,
             lock_wait_ms,
             native_lookup_ms,
             title_override_ms,
@@ -227,9 +243,14 @@ pub fn dict_lookup(
 
     #[cfg(not(hoshi_dicts_linked))]
     {
-        let _ = (request_id, lock_wait_ms);
+        let _ = (request_id, max_results, scan_length, lock_wait_ms);
         Err(runtime_error(&runtime))
     }
+}
+
+#[cfg(hoshi_dicts_linked)]
+fn clamp_lookup_bound(value: Option<i32>, fallback: i32, min: i32, max: i32) -> i32 {
+    value.unwrap_or(fallback).clamp(min, max)
 }
 
 #[tauri::command]
@@ -363,6 +384,7 @@ fn runtime_status(runtime: &DictRuntime) -> DictionaryStatus {
 #[tauri::command]
 pub async fn dictionary_import_yomitan_zip(
     zip_path: String,
+    low_ram: Option<bool>,
     app: AppHandle,
 ) -> Result<DictImportSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -372,6 +394,7 @@ pub async fn dictionary_import_yomitan_zip(
             &app,
             state.inner(),
             ReloadDictionaryRuntime::AfterImport,
+            low_ram.unwrap_or(false),
         )
     })
     .await
@@ -381,11 +404,12 @@ pub async fn dictionary_import_yomitan_zip(
 #[tauri::command]
 pub async fn dictionary_import_yomitan_zips(
     zip_paths: Vec<String>,
+    low_ram: Option<bool>,
     app: AppHandle,
 ) -> Result<DictImportBatchSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
         let state = app.state::<DictState>();
-        import_yomitan_zip_batch(zip_paths, 0, &app, state.inner())
+        import_yomitan_zip_batch(zip_paths, 0, &app, state.inner(), low_ram.unwrap_or(false))
     })
     .await
     .map_err(|e| format!("Dictionary import worker failed: {e}"))?
@@ -394,6 +418,7 @@ pub async fn dictionary_import_yomitan_zips(
 #[tauri::command]
 pub async fn dictionary_import_yomitan_folder(
     folder_path: String,
+    low_ram: Option<bool>,
     app: AppHandle,
 ) -> Result<DictImportBatchSummary, String> {
     tauri::async_runtime::spawn_blocking(move || {
@@ -417,6 +442,7 @@ pub async fn dictionary_import_yomitan_folder(
             skipped_count,
             &app,
             state.inner(),
+            low_ram.unwrap_or(false),
         )
     })
     .await
@@ -428,12 +454,13 @@ fn import_yomitan_zip_batch(
     skipped_count: usize,
     app: &AppHandle,
     state: &DictState,
+    low_ram: bool,
 ) -> Result<DictImportBatchSummary, String> {
     let mut imported = Vec::new();
     let mut failures = Vec::new();
 
     for zip_path in zip_paths {
-        match import_yomitan_zip(&zip_path, app, state, ReloadDictionaryRuntime::Deferred) {
+        match import_yomitan_zip(&zip_path, app, state, ReloadDictionaryRuntime::Deferred, low_ram) {
             Ok(summary) => imported.push(summary),
             Err(error) => failures.push(DictImportFailure {
                 path: zip_path,
@@ -469,6 +496,7 @@ fn import_yomitan_zip(
     app: &AppHandle,
     state: &DictState,
     reload_runtime: ReloadDictionaryRuntime,
+    low_ram: bool,
 ) -> Result<DictImportSummary, String> {
     let started = Instant::now();
     let source = PathBuf::from(zip_path);
@@ -497,14 +525,14 @@ fn import_yomitan_zip(
             .find(|dictionary| dictionary.import_id == dict_id)
             .map(Ok)
             .unwrap_or_else(|| {
-                let entries = dictionary_entries_for_import(
+                let entries = detected_dictionary_entries_for_import(
                     &dict_id,
                     read_imported_dictionary_title(&final_dir)
                         .unwrap_or_else(|| "Imported Dictionary".into()),
                     final_dir.to_string_lossy().into_owned(),
                     (0, 0, 0, 0, 0),
                     current_unix_time(),
-                );
+                )?;
                 upsert_dictionary_manifest_entries(&manifest_path, entries).and_then(|entries| {
                     entries
                         .into_iter()
@@ -555,6 +583,7 @@ fn import_yomitan_zip(
             app,
             state,
             reload_runtime,
+            low_ram,
         )
     }
 
@@ -563,6 +592,7 @@ fn import_yomitan_zip(
         let _ = imported_root;
         let _ = final_dir;
         let _ = state;
+        let _ = low_ram;
         Err("Dictionary importer is not linked. Install CMake/C++ build tools and rebuild HSW with hoshidicts.".into())
     }
 }
@@ -763,7 +793,12 @@ fn normalize_dictionary_manifest_entry(
     } else {
         entry.import_id.clone()
     };
-    let roles = dictionary_roles_from_counts(&entry);
+    let mut roles = dictionary_roles_from_counts(&entry);
+    if roles.is_empty() {
+        if let Some(role) = normalize_dictionary_role(&entry.kind) {
+            roles.push(role);
+        }
+    }
     roles
         .into_iter()
         .map(|role| {
@@ -779,19 +814,14 @@ fn normalize_dictionary_manifest_entry(
 
 fn dictionary_roles_from_counts(entry: &DictionaryManifestEntry) -> Vec<String> {
     let mut roles = Vec::new();
-    if entry.term_count > 0 || normalize_dictionary_role(&entry.kind).as_deref() == Some("term") {
+    if entry.term_count > 0 {
         roles.push("term".into());
     }
-    if entry.freq_count > 0
-        || normalize_dictionary_role(&entry.kind).as_deref() == Some("frequency")
-    {
+    if entry.freq_count > 0 {
         roles.push("frequency".into());
     }
-    if entry.pitch_count > 0 || normalize_dictionary_role(&entry.kind).as_deref() == Some("pitch") {
+    if entry.pitch_count > 0 {
         roles.push("pitch".into());
-    }
-    if roles.is_empty() {
-        roles.push("term".into());
     }
     roles
 }
@@ -866,7 +896,11 @@ fn dictionary_entries_for_import(
         media_count: counts.4,
         last_imported,
     };
-    dictionary_roles_from_counts(&template)
+    let roles = dictionary_roles_from_counts(&template);
+    if roles.is_empty() {
+        return Vec::new();
+    }
+    roles
         .into_iter()
         .map(|role| DictionaryManifestEntry {
             dict_id: role_dict_id(import_id, &role),
@@ -876,6 +910,20 @@ fn dictionary_entries_for_import(
             ..template.clone()
         })
         .collect()
+}
+
+fn detected_dictionary_entries_for_import(
+    import_id: &str,
+    title: String,
+    internal_path: String,
+    counts: (usize, usize, usize, usize, usize),
+    last_imported: u64,
+) -> Result<Vec<DictionaryManifestEntry>, String> {
+    let entries = dictionary_entries_for_import(import_id, title, internal_path, counts, last_imported);
+    if entries.is_empty() {
+        return Err("Failed to detect dictionary type.".into());
+    }
+    Ok(entries)
 }
 
 fn upsert_dictionary_manifest_entry(
@@ -1564,6 +1612,7 @@ fn import_yomitan_zip_linked(
     app: &AppHandle,
     state: &DictState,
     reload_runtime: ReloadDictionaryRuntime,
+    low_ram: bool,
 ) -> Result<DictImportSummary, String> {
     let total_started = Instant::now();
     let staging_root = imported_root.join(format!(".importing-{dict_id}"));
@@ -1608,7 +1657,7 @@ fn import_yomitan_zip_linked(
             restored_title = safe_zip.original_title;
             temp_paths.push(safe_zip.path.clone());
             let import_started = Instant::now();
-            let attempt = run_linked_import_attempt(&safe_zip.path, &staging_root)?;
+            let attempt = run_linked_import_attempt(&safe_zip.path, &staging_root, low_ram)?;
             log::info!(
                 "dictionary linked import completed in {}ms for {}",
                 import_started.elapsed().as_millis(),
@@ -1617,7 +1666,7 @@ fn import_yomitan_zip_linked(
             attempt
         } else {
             let import_started = Instant::now();
-            let attempt = run_linked_import_attempt(&ascii_source_zip, &staging_root)?;
+            let attempt = run_linked_import_attempt(&ascii_source_zip, &staging_root, low_ram)?;
             log::info!(
                 "dictionary linked import completed in {}ms for {}",
                 import_started.elapsed().as_millis(),
@@ -1644,7 +1693,7 @@ fn import_yomitan_zip_linked(
                 dict_id
             );
             let import_started = Instant::now();
-            attempt = run_linked_import_attempt(&safe_zip.path, &staging_root)?;
+            attempt = run_linked_import_attempt(&safe_zip.path, &staging_root, low_ram)?;
             log::info!(
                 "dictionary linked import retry completed in {}ms for {}",
                 import_started.elapsed().as_millis(),
@@ -1671,13 +1720,13 @@ fn import_yomitan_zip_linked(
         };
         let entries = upsert_dictionary_manifest_entries(
             manifest_path,
-            dictionary_entries_for_import(
+            detected_dictionary_entries_for_import(
                 dict_id,
                 title,
                 final_dir.to_string_lossy().into_owned(),
                 attempt.counts,
                 current_unix_time(),
-            ),
+            )?,
         )?;
         let entry = entries
             .first()
@@ -1746,13 +1795,14 @@ struct LookupSafeImportZip {
 fn run_linked_import_attempt(
     source: &Path,
     staging_root: &Path,
+    low_ram: bool,
 ) -> Result<LinkedImportAttempt, String> {
     let source = source.to_path_buf();
     let staging_root = staging_root.to_path_buf();
     std::thread::Builder::new()
         .name("hsw-dictionary-import".into())
         .stack_size(DICTIONARY_IMPORT_WORKER_STACK)
-        .spawn(move || run_linked_import_attempt_inner(&source, &staging_root))
+        .spawn(move || run_linked_import_attempt_inner(&source, &staging_root, low_ram))
         .map_err(|e| format!("Dictionary import worker failed: {e}"))?
         .join()
         .map_err(|_| "Dictionary import worker failed: worker thread panicked.".to_string())?
@@ -1762,6 +1812,7 @@ fn run_linked_import_attempt(
 fn run_linked_import_attempt_inner(
     source: &Path,
     staging_root: &Path,
+    low_ram: bool,
 ) -> Result<LinkedImportAttempt, String> {
     use std::ptr;
 
@@ -1788,8 +1839,14 @@ fn run_linked_import_attempt_inner(
         errors_json: ptr::null(),
     };
 
-    let status =
-        unsafe { ffi::dict_import_yomitan_zip(source_c.as_ptr(), staging_c.as_ptr(), 0, &mut raw) };
+    let status = unsafe {
+        ffi::dict_import_yomitan_zip(
+            source_c.as_ptr(),
+            staging_c.as_ptr(),
+            if low_ram { 1 } else { 0 },
+            &mut raw,
+        )
+    };
     let title = unsafe { c_string(raw.title) };
     let errors_json = unsafe { c_string(raw.errors_json) };
     let errors = serde_json::from_str::<Vec<String>>(&errors_json).unwrap_or_default();
@@ -2087,7 +2144,7 @@ impl DictBackend {
         }
     }
 
-    fn lookup(&self, text: &str) -> Result<Vec<DictResult>, String> {
+    fn lookup(&self, text: &str, max_results: i32, scan_length: i32) -> Result<Vec<DictResult>, String> {
         let text = CString::new(text.as_bytes())
             .map_err(|_| "Lookup text contains an interior NUL.".to_string())?;
         let mut out = Vec::<DictResult>::new();
@@ -2095,8 +2152,8 @@ impl DictBackend {
             ffi::lookup_engine_lookup(
                 self.engine,
                 text.as_ptr(),
-                MAX_LOOKUP_RESULTS,
-                SCAN_LENGTH,
+                max_results,
+                scan_length,
                 Some(collect_lookup_results),
                 &mut out as *mut Vec<DictResult> as *mut c_void,
             )
@@ -2368,6 +2425,35 @@ mod tests {
     }
 
     #[test]
+    fn legacy_manifest_zero_count_entries_without_role_do_not_invent_term_role() {
+        let root = temp_path("legacy_manifest_zero_counts");
+        let path = root.join("manifest.json");
+        fs::create_dir_all(&root).unwrap();
+        let legacy = serde_json::json!({
+            "dictionaries": [{
+                "dictId": "legacy-zero",
+                "title": "Legacy Zero Dictionary",
+                "kind": "unknown",
+                "enabled": true,
+                "order": 0,
+                "internalPath": "dictionaries/imported/legacy-zero",
+                "termCount": 0,
+                "metaCount": 0,
+                "freqCount": 0,
+                "pitchCount": 0,
+                "mediaCount": 0,
+                "lastImported": 123
+            }]
+        });
+        fs::write(&path, serde_json::to_string_pretty(&legacy).unwrap()).unwrap();
+
+        let manifest = read_dictionary_manifest(&path).unwrap();
+        assert!(manifest.dictionaries.is_empty());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn import_entries_are_split_by_detected_roles() {
         let entries = dictionary_entries_for_import(
             "abc",
@@ -2392,6 +2478,35 @@ mod tests {
                 ("abc:pitch", "pitch", "pitch"),
             ]
         );
+    }
+
+    #[test]
+    fn import_entries_only_include_positive_count_roles() {
+        let entries = dictionary_entries_for_import(
+            "freq-only",
+            "Frequency Dictionary".into(),
+            "dictionaries/imported/freq-only".into(),
+            (0, 0, 99, 0, 0),
+            123,
+        );
+
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].dict_id, "freq-only:frequency");
+        assert_eq!(entries[0].role, "frequency");
+    }
+
+    #[test]
+    fn detected_import_entries_fail_without_detected_roles() {
+        let error = detected_dictionary_entries_for_import(
+            "empty",
+            "Empty Dictionary".into(),
+            "dictionaries/imported/empty".into(),
+            (0, 0, 0, 0, 0),
+            123,
+        )
+        .unwrap_err();
+
+        assert_eq!(error, "Failed to detect dictionary type.");
     }
 
     #[test]
@@ -3198,7 +3313,7 @@ mod tests {
             restored_title = safe_zip.original_title;
             temp_paths.push(safe_zip.path.clone());
             let import_started = std::time::Instant::now();
-            let attempt = run_linked_import_attempt(&safe_zip.path, &staging_root).unwrap();
+            let attempt = run_linked_import_attempt(&safe_zip.path, &staging_root, false).unwrap();
             eprintln!(
                 "timing linked_import_ms={}",
                 import_started.elapsed().as_millis()
@@ -3206,7 +3321,7 @@ mod tests {
             attempt
         } else {
             let import_started = std::time::Instant::now();
-            let attempt = run_linked_import_attempt(&ascii_source_zip, &staging_root).unwrap();
+            let attempt = run_linked_import_attempt(&ascii_source_zip, &staging_root, false).unwrap();
             eprintln!(
                 "timing linked_import_ms={}",
                 import_started.elapsed().as_millis()
@@ -3229,7 +3344,7 @@ mod tests {
                 safe_zip_started.elapsed().as_millis()
             );
             let import_started = std::time::Instant::now();
-            attempt = run_linked_import_attempt(&safe_zip.path, &staging_root).unwrap();
+            attempt = run_linked_import_attempt(&safe_zip.path, &staging_root, false).unwrap();
             eprintln!(
                 "timing linked_import_retry_ms={}",
                 import_started.elapsed().as_millis()
@@ -3301,7 +3416,9 @@ mod tests {
             load_started.elapsed().as_millis()
         );
         let lookup_started = std::time::Instant::now();
-        let results = backend.lookup("学校").expect("real lookup succeeds");
+        let results = backend
+            .lookup("学校", DEFAULT_MAX_LOOKUP_RESULTS, DEFAULT_SCAN_LENGTH)
+            .expect("real lookup succeeds");
         eprintln!("timing lookup_ms={}", lookup_started.elapsed().as_millis());
         assert!(!results.is_empty(), "real lookup should return results");
 

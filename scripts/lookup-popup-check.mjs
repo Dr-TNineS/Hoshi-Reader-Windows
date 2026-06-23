@@ -72,6 +72,16 @@ async function openProbe(page, state, options = {}) {
   if (options.popupHeight) params.set("popupHeight", String(options.popupHeight));
   if (options.popupScale) params.set("popupScale", String(options.popupScale));
   if (options.showReading) params.set("showReading", "1");
+  if (options.scanLength) params.set("scanLength", String(options.scanLength));
+  if (options.scanNonJapaneseText === false) params.set("scanNonJapaneseText", "disabled");
+  if (options.collapseMode) params.set("collapseMode", options.collapseMode);
+  if (options.expandFirstDictionary) params.set("expandFirstDictionary", "enabled");
+  if (options.collapsedDictionaries) params.set("collapsedDictionaries", options.collapsedDictionaries.join("|"));
+  if (options.dictionaryCompactGlossaries === false) params.set("dictionaryCompactGlossaries", "disabled");
+  if (options.showExpressionTags) params.set("showExpressionTags", "enabled");
+  if (options.harmonicFrequency) params.set("harmonicFrequency", "enabled");
+  if (options.deduplicatePitchAccents) params.set("deduplicatePitchAccents", "enabled");
+  if (options.compactPitchAccents === false) params.set("compactPitchAccents", "disabled");
   await page.goto(`${origin}/?${params}`);
   await page.locator(".lookup-pop").waitFor({ timeout: 10000 });
 }
@@ -172,6 +182,12 @@ async function popupMetrics(page) {
         return image instanceof HTMLElement ? getComputedStyle(image).maxHeight : "";
       })(),
       glossaryGroups: document.querySelectorAll(".lookup-glossary-group").length,
+      openGlossaryGroups: document.querySelectorAll(".lookup-glossary-group[open]").length,
+      compactGlossariesClass: document.querySelector(".lookup-content")?.classList.contains("compact-glossaries") ?? false,
+      compactPitchClass: document.querySelector(".lookup-content")?.classList.contains("compact-pitch") ?? false,
+      expressionTags: Array.from(document.querySelectorAll(".lookup-glossary-group > .lookup-tags .lookup-tag")).map((node) => node.textContent ?? ""),
+      pitchPositions: Array.from(document.querySelectorAll(".pitch-position")).map((node) => node.textContent ?? ""),
+      dictionarySettings: JSON.parse(state?.getAttribute("data-dictionary-settings") ?? "{}"),
       redirectLinks: document.querySelectorAll(".lookup-glossary-content a[data-lookup-redirect]").length,
       canGoBack: !document.querySelector(".lookup-pop[data-popup-id='root'] button[aria-label='Back']")?.hasAttribute("disabled"),
       canGoForward: !document.querySelector(".lookup-pop[data-popup-id='root'] button[aria-label='Forward']")?.hasAttribute("disabled"),
@@ -379,8 +395,9 @@ async function main() {
     assert(ready.text.includes("school"), "Ready popup should render expression.", ready);
     assert(ready.contentFontFamily.includes("Yu Gothic UI"), "Popup content should use the Windows Japanese sans-serif stack.", ready);
     assert(ready.expressionFontSize === "26px" && ready.readingFontSize === "13px", "Scale 1 should use upstream expression and reading sizes.", ready);
-    assert(ready.glossaryFontSize === "15px" && ready.glossaryItemFontSize === "14px" && ready.glossaryDictionaryFontSize === "10px", "Scale 1 should preserve the upstream glossary type hierarchy.", ready);
-    assert(ready.glossaryLineHeight === "21px" && ready.pitchFontSize === "13px", "Scale 1 should use 1.4 glossary line height and 13 px pitch text.", ready);
+    assert(ready.glossaryFontSize === "14px" && ready.glossaryItemFontSize === "14px" && ready.glossaryDictionaryFontSize === "10px", "Scale 1 should apply compact glossary defaults while preserving the type hierarchy.", ready);
+    assert(Math.abs(parseFloat(ready.glossaryLineHeight) - 18.48) < 0.1 && ready.pitchFontSize === "12px", "Scale 1 should apply HSA compact glossary and pitch defaults.", ready);
+    assert(ready.compactGlossariesClass && ready.compactPitchClass, "HSA compact glossary and pitch defaults should be active.", ready);
     assert(ready.actionSlotWidth === "28px", "Scale 1 should keep result-level action slots at 28 px.", ready);
     assert(ready.lookupResultRows >= 5 && ready.text.includes("extra rendered lookup result 5"), "Ready popup should render all backend lookup results, not only the first three.", ready);
     assert(ready.text.includes("Jitendex.org [probe]"), "Ready popup should render dictionary source.", ready);
@@ -412,6 +429,22 @@ async function main() {
     assert(ready.frequencyGroups >= 1 && ready.frequencyDictLabels.includes("Freq Probe") && ready.text.includes("120"), "Ready popup should render frequency as dictionary pills.", ready);
     assert(ready.pitchGroups >= 1 && ready.pitchVisuals >= 1 && ready.text.includes("school"), "Ready popup should render pitch as grouped pitch rows.", ready);
     assert(ready.lookupDetailRows === 0 && !ready.text.includes("FreqPitch"), "Ready popup should not render old Freq/Pitch detail rows.", ready);
+
+    await openProbe(page, "ready", {
+      collapseMode: "collapseAll",
+      expandFirstDictionary: true,
+      showExpressionTags: true,
+      harmonicFrequency: true,
+      deduplicatePitchAccents: true,
+      compactPitchAccents: false,
+      dictionaryCompactGlossaries: false,
+    });
+    const settingsReady = await popupMetrics(page);
+    assert(settingsReady.openGlossaryGroups === 1, "Collapse-all with expand-first should keep only the first glossary group open.", settingsReady);
+    assert(settingsReady.expressionTags.includes("n") && settingsReady.expressionTags.includes("common"), "Show expression tags should reveal glossary term tags.", settingsReady);
+    assert(settingsReady.frequencyDictLabels.includes("Harmonic"), "Harmonic frequency should add an aggregate frequency pill.", settingsReady);
+    assert(settingsReady.pitchPositions.filter((value) => value === "[2]").length === 1, "Deduplicate pitch accents should remove repeated pitch positions across dictionaries.", settingsReady);
+    assert(!settingsReady.compactGlossariesClass && !settingsReady.compactPitchClass, "Compact settings should be toggleable in the popup renderer.", settingsReady);
     assert(ready.ankiAriaLabel === "Anki not configured" && ready.ankiDisabled, "Anki boundary should remain disabled.", ready);
     assert(ready.ankiTitle.includes("Probe Book"), "Anki payload title should be exposed as disabled affordance text.", ready);
     assert(ready.ankiPreviewButtons === 0 && ready.ankiPreviewRows === 0, "Manual Anki field preview controls should be removed.", ready);
@@ -786,7 +819,7 @@ async function main() {
     ));
     const scaled = await popupMetrics(page);
     assert(scaled.popup.width === 320 && scaled.popup.height === 250, "Content scale should not change the popup outer frame.", scaled);
-    assert(scaled.expressionFontSize === "39px" && scaled.readingFontSize === "19.5px" && scaled.glossaryFontSize === "22.5px", "Scale 1.5 should multiply the core popup type sizes.", scaled);
+    assert(scaled.expressionFontSize === "39px" && scaled.readingFontSize === "19.5px" && scaled.glossaryFontSize === "21px", "Scale 1.5 should multiply the compact popup type sizes.", scaled);
     assert(scaled.actionSlotWidth === "42px" && scaled.mediaImageMaxHeight === "270px", "Scale 1.5 should multiply result actions and media limits.", scaled);
 
     await page.setViewportSize({ width: 1280, height: 720 });

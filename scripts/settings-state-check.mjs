@@ -51,6 +51,12 @@ async function state(page) {
     popupScale: Number(element.getAttribute("data-popup-scale")),
     savedPopup: JSON.parse(element.getAttribute("data-saved-popup") ?? "[]"),
     normalizedInvalidPopup: JSON.parse(element.getAttribute("data-normalized-invalid-popup") ?? "{}"),
+    dictionaryMaxResults: Number(element.getAttribute("data-dictionary-max-results")),
+    dictionaryScanLength: Number(element.getAttribute("data-dictionary-scan-length")),
+    dictionaryHarmonic: element.getAttribute("data-dictionary-harmonic"),
+    dictionaryCompactGlossaries: element.getAttribute("data-dictionary-compact-glossaries"),
+    savedDictionary: JSON.parse(element.getAttribute("data-saved-dictionary") ?? "[]"),
+    normalizedInvalidDictionary: JSON.parse(element.getAttribute("data-normalized-invalid-dictionary") ?? "{}"),
   }));
 }
 
@@ -78,6 +84,9 @@ async function main() {
     assert(current.popupWidth === 320 && current.popupHeight === 250 && current.popupScale === 1, "Controller should expose loaded popup settings.", current);
     assert(current.savedPopup.length === 0, "Controller should not rewrite popup settings during startup.", current);
     assert(current.normalizedInvalidPopup.width === 320 && current.normalizedInvalidPopup.height === 100 && current.normalizedInvalidPopup.scale === 1, "Invalid popup settings should fall back or clamp safely.", current);
+    assert(current.dictionaryMaxResults === 12 && current.dictionaryScanLength === 24 && current.dictionaryHarmonic === "true", "Controller should expose loaded dictionary settings.", current);
+    assert(current.savedDictionary.length === 0, "Controller should not rewrite dictionary settings during startup.", current);
+    assert(current.normalizedInvalidDictionary.maxResults === 50 && current.normalizedInvalidDictionary.scanLength === 1 && current.normalizedInvalidDictionary.compactGlossaries === false && current.normalizedInvalidDictionary.compactPitchAccents === false, "Invalid dictionary settings should clamp and preserve supported booleans.", current);
 
     const lightTheme = page.getByRole("radio", { name: "Light", exact: true });
     const darkTheme = page.getByRole("radio", { name: "Dark", exact: true });
@@ -121,6 +130,11 @@ async function main() {
     assert(current.popupHeight === 800, "Popup height should clamp to its supported maximum.", current);
     assert(current.popupScale === 1.15, "Popup scale should snap to its 0.05 step.", current);
     assert(current.savedPopup.length === 3, "Each popup setting change should persist immediately.", current);
+
+    await page.getByRole("button", { name: "Clamp dictionary", exact: true }).click();
+    current = await state(page);
+    assert(current.dictionaryMaxResults === 50 && current.dictionaryScanLength === 1 && current.dictionaryCompactGlossaries === "false", "Dictionary setter should normalize HSA-aligned bounds.", current);
+    assert(current.savedDictionary.length === 1 && current.savedDictionary[0].maxResults === 50 && current.savedDictionary[0].scanLength === 1, "Dictionary setter should persist normalized settings.", current);
 
     console.log(JSON.stringify(current, null, 2));
   } finally {

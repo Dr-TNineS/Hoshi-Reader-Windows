@@ -64,6 +64,12 @@ async function panelMetrics(page) {
       enableEvents: state?.getAttribute("data-enable-events") ?? "",
       moveEvents: state?.getAttribute("data-move-events") ?? "",
       removeEvents: state?.getAttribute("data-remove-events") ?? "",
+      settingsEvents: state?.getAttribute("data-settings-events") ?? "",
+      maxResults: Number(state?.getAttribute("data-max-results") ?? 0),
+      scanLength: Number(state?.getAttribute("data-scan-length") ?? 0),
+      lowRam: state?.getAttribute("data-low-ram") ?? "",
+      collapseMode: state?.getAttribute("data-collapse-mode") ?? "",
+      compactGlossaries: state?.getAttribute("data-compact-glossaries") ?? "",
       order: state?.getAttribute("data-order") ?? "",
       horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
       panel: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom },
@@ -105,6 +111,7 @@ async function main() {
     assert(metrics.rows === 2, "Ready panel should list term dictionaries by default.", metrics);
     assert(metrics.text.includes("3/4 enabled dictionaries loaded."), "Ready panel should summarize status.", metrics);
     assert(metrics.text.includes("Term") && metrics.text.includes("Frequency") && metrics.text.includes("Pitch"), "Ready panel should expose dictionary type tabs.", metrics);
+    assert(metrics.text.includes("Lookup") && metrics.text.includes("Import") && metrics.text.includes("Collapse Dictionaries") && metrics.text.includes("Behaviour"), "Ready panel should expose HSA-style dictionary settings sections.", metrics);
     assert(metrics.text.includes("Jitendex.org [probe]"), "Ready panel should show dictionary titles.", metrics);
     assert(metrics.text.includes("432643 terms"), "Term panel should show term counts.", metrics);
     assert(metrics.text.includes("dictionaries/imported/jitendex"), "Ready panel should show internal path.", metrics);
@@ -130,6 +137,22 @@ async function main() {
     await page.getByRole("button", { name: "Import Files", exact: true }).click();
     metrics = await panelMetrics(page);
     assert(metrics.refreshClicks === 1 && metrics.importClicks === 1, "Refresh and import actions should be wired.", metrics);
+
+    await page.getByLabel("Max results").evaluate((input) => {
+      input.value = "99";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.getByLabel("Scan length").evaluate((input) => {
+      input.value = "0";
+      input.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.getByRole("switch", { name: "Low-RAM dictionary import" }).click();
+    await page.getByRole("button", { name: "Custom" }).click();
+    await page.getByRole("switch", { name: "Compact glossaries" }).click();
+    metrics = await panelMetrics(page);
+    assert(metrics.maxResults === 50 && metrics.scanLength === 1, "Dictionary numeric settings should clamp to HSA bounds.", metrics);
+    assert(metrics.lowRam === "true" && metrics.collapseMode === "custom" && metrics.compactGlossaries === "false", "Dictionary settings controls should update state.", metrics);
+    assert(metrics.settingsEvents.includes("lowRamDictionaryImport") && metrics.settingsEvents.includes("collapseMode"), "Dictionary settings controls should emit setting updates.", metrics);
 
     await page.getByRole("switch").nth(1).click();
     metrics = await panelMetrics(page);

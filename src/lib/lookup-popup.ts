@@ -39,8 +39,13 @@ export interface LookupPitchGroup {
   transcriptions: string[];
 }
 
-export function frequencyGroups(result: Pick<DictResult, "frequencies">): LookupFrequencyGroup[] {
-  return result.frequencies
+export interface LookupPopupRenderOptions {
+  harmonicFrequency?: boolean;
+  deduplicatePitchAccents?: boolean;
+}
+
+export function frequencyGroups(result: Pick<DictResult, "frequencies">, options: LookupPopupRenderOptions = {}): LookupFrequencyGroup[] {
+  const groups = result.frequencies
     .map((entry: FrequencyEntry) => ({
       dictionary: entry.dictionary || "Frequency",
       values: entry.items
@@ -49,15 +54,35 @@ export function frequencyGroups(result: Pick<DictResult, "frequencies">): Lookup
         .filter(Boolean),
     }))
     .filter((entry) => entry.values.length > 0);
+
+  if (!options.harmonicFrequency) return groups;
+
+  const numericValues = result.frequencies
+    .flatMap((entry) => entry.items.map((item) => item.value))
+    .filter((value) => Number.isFinite(value) && value > 0);
+  if (numericValues.length < 2) return groups;
+
+  const harmonic = Math.round(numericValues.length / numericValues.reduce((sum, value) => sum + (1 / value), 0));
+  return [...groups, { dictionary: "Harmonic", values: [String(harmonic)] }];
 }
 
-export function pitchGroups(result: Pick<DictResult, "pitches">): LookupPitchGroup[] {
+export function pitchGroups(result: Pick<DictResult, "pitches">, options: LookupPopupRenderOptions = {}): LookupPitchGroup[] {
+  const seenPositions = new Set<number>();
   return result.pitches
-    .map((entry: PitchEntry) => ({
-      dictionary: entry.dictionary || "Pitch",
-      positions: [...new Set(entry.positions.filter((position) => Number.isFinite(position)))],
-      transcriptions: [...new Set(entry.transcriptions.map((item) => item.trim()).filter(Boolean))],
-    }))
+    .map((entry: PitchEntry) => {
+      const positions = [...new Set(entry.positions.filter((position) => Number.isFinite(position)))]
+        .filter((position) => {
+          if (!options.deduplicatePitchAccents) return true;
+          if (seenPositions.has(position)) return false;
+          seenPositions.add(position);
+          return true;
+        });
+      return {
+        dictionary: entry.dictionary || "Pitch",
+        positions,
+        transcriptions: [...new Set(entry.transcriptions.map((item) => item.trim()).filter(Boolean))],
+      };
+    })
     .filter((entry) => entry.positions.length > 0 || entry.transcriptions.length > 0);
 }
 

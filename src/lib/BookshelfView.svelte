@@ -4,6 +4,7 @@
   import type { AnkiAudioSource, AnkiSettings, DictionaryManifestEntry, DictionaryStatus, LocalAudioStatus } from "./types";
   import AppearancePanel from "./AppearancePanel.svelte";
   import type { ReaderAppearance, ReaderTheme } from "./appearance";
+  import type { DictionarySettings } from "./dictionary-settings";
   import type { LookupPopupSettings } from "./lookup-popup-settings";
   import DictionaryManagementPanel from "./DictionaryManagementPanel.svelte";
   import ShortcutsPanel from "./ShortcutsPanel.svelte";
@@ -22,6 +23,7 @@
     readerThemeLabels,
     advancedSettings,
     lookupPopupSettings,
+    dictionarySettings,
     dictionaryList = [],
     dictionaryListStatus = null,
     dictionaryListError = "",
@@ -40,6 +42,7 @@
     onSetLookupPopupWidth,
     onSetLookupPopupHeight,
     onSetLookupPopupScale,
+    onDictionarySettingsChange,
     onRefreshDictionaries,
     onImportDictionary,
     onImportDictionaryFolder,
@@ -72,6 +75,7 @@
     readerThemeLabels: Record<ReaderTheme, string>;
     advancedSettings: AdvancedSettings;
     lookupPopupSettings: LookupPopupSettings;
+    dictionarySettings: DictionarySettings;
     dictionaryList?: DictionaryManifestEntry[];
     dictionaryListStatus?: DictionaryStatus | null;
     dictionaryListError?: string;
@@ -90,6 +94,7 @@
     onSetLookupPopupWidth: (width: number) => void;
     onSetLookupPopupHeight: (height: number) => void;
     onSetLookupPopupScale: (scale: number) => void;
+    onDictionarySettingsChange: (update: Partial<DictionarySettings>) => void;
     onRefreshDictionaries: () => void;
     onImportDictionary: () => void;
     onImportDictionaryFolder: () => void;
@@ -272,6 +277,8 @@
         onSetEnabled={onSetDictionaryEnabled}
         onMove={onMoveDictionary}
         onRemove={onRemoveDictionaryImport}
+        settings={dictionarySettings}
+        onSettingsChange={onDictionarySettingsChange}
       />
     {:else if activePanel === "anki"}
       <AnkiConnectPanel

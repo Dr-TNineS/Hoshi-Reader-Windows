@@ -19,13 +19,14 @@
     appearancePalette = undefined as ReaderAppearancePalette | undefined,
     lookupHighlightCount = 0,
     lookupHighlightSignal = 0,
+    scanLength = 16,
+    scanNonJapaneseText = true,
     onProgressChange = (_progress: ReaderProgress) => {},
     onSelectionChange = (_selection: ReaderSelection | null) => {},
   } = $props();
 
   const PAGE_EPSILON = 1;
   const MAX_SELECTION_TEXT = 80;
-  const MAX_HOVER_SELECTION_TEXT = 16;
   const MAX_SENTENCE_CONTEXT_TEXT = 1200;
   const SCAN_BOUNDARY_PATTERN = /[\s\u3000\u3001\u3002\uff01\uff1f\uff08\uff09\u300c\u300d\u300e\u300f\u3010\u3011\u2014\u2026.,!?;:()[\]{}"'<>/\\|]/u;
 
@@ -276,7 +277,7 @@
   }
 
   function selectionText(raw: string): string {
-    return raw.replace(/\s+/g, " ").trim().slice(0, MAX_SELECTION_TEXT);
+    return raw.replace(/\s+/g, " ").trim().slice(0, Math.min(MAX_SELECTION_TEXT, lookupScanLength()));
   }
 
   function nodeInsideContent(node: Node | null): boolean {
@@ -315,6 +316,15 @@
       (codePoint >= 0xf900 && codePoint <= 0xfaff) ||
       (codePoint >= 0xff66 && codePoint <= 0xff9f)
     );
+  }
+
+  function lookupScanLength(): number {
+    if (!Number.isFinite(scanLength)) return 16;
+    return Math.min(64, Math.max(1, Math.round(scanLength)));
+  }
+
+  function canScanCodePoint(codePoint: number | undefined): boolean {
+    return scanNonJapaneseText || isJapaneseCodePoint(codePoint);
   }
 
   function previousCodePointOffset(text: string, offset: number): number {
@@ -431,7 +441,13 @@
         ?? charRange.getBoundingClientRect();
       charRange.detach();
 
-      if (hit && !isScanBoundary(char) && anchorDomRect.width > 0 && anchorDomRect.height > 0) {
+      if (
+        hit &&
+        !isScanBoundary(char) &&
+        canScanCodePoint(text.codePointAt(offset)) &&
+        anchorDomRect.width > 0 &&
+        anchorDomRect.height > 0
+      ) {
         return { node: textNode, offset, rect: rectSnapshotFromDomRect(anchorDomRect) };
       }
     }
@@ -570,12 +586,13 @@
     let node: Text | null = hit.node;
     let offset = expandTokenStart(hit.node.textContent ?? "", hit.offset);
     const ranges: Range[] = [];
+    const maxLookupText = lookupScanLength();
 
-    while (node && text.length < MAX_HOVER_SELECTION_TEXT) {
+    while (node && text.length < maxLookupText) {
       const content = node.textContent ?? "";
       const start = offset;
 
-      while (offset < content.length && text.length < MAX_HOVER_SELECTION_TEXT) {
+      while (offset < content.length && text.length < maxLookupText) {
         const char = String.fromCodePoint(content.codePointAt(offset) ?? 0);
         if (isScanBoundary(char)) break;
         text += char;
@@ -589,7 +606,7 @@
         ranges.push(range);
       }
 
-      if (offset < content.length || text.length >= MAX_HOVER_SELECTION_TEXT) break;
+      if (offset < content.length || text.length >= maxLookupText) break;
 
       const next = walker.nextNode();
       node = next?.nodeType === Node.TEXT_NODE ? next as Text : null;

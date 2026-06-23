@@ -1,6 +1,13 @@
 <script lang="ts">
   import { Tabs } from "bits-ui";
   import {
+    DICTIONARY_MAX_RESULTS,
+    DICTIONARY_SCAN_LENGTH,
+    defaultDictionarySettings,
+    type DictionaryCollapseMode,
+    type DictionarySettings,
+  } from "./dictionary-settings";
+  import {
     dictionaryCountsLabel,
     dictionaryRole,
     dictionaryRoleLabels,
@@ -24,6 +31,8 @@
     onSetEnabled = (_dictionary: DictionaryManifestEntry, _enabled: boolean) => {},
     onMove = (_dictionary: DictionaryManifestEntry, _direction: -1 | 1) => {},
     onRemove = (_dictionary: DictionaryManifestEntry) => {},
+    settings = defaultDictionarySettings,
+    onSettingsChange = (_update: Partial<DictionarySettings>) => {},
   }: {
     dictionaries?: DictionaryManifestEntry[];
     status?: DictionaryStatus | null;
@@ -35,12 +44,32 @@
     onSetEnabled?: (dictionary: DictionaryManifestEntry, enabled: boolean) => void;
     onMove?: (dictionary: DictionaryManifestEntry, direction: -1 | 1) => void;
     onRemove?: (dictionary: DictionaryManifestEntry) => void;
+    settings?: DictionarySettings;
+    onSettingsChange?: (update: Partial<DictionarySettings>) => void;
   } = $props();
 
   let selectedRole = $state<DictionaryRole>("term");
+  const collapseModeLabels: Record<DictionaryCollapseMode, string> = {
+    expandAll: "Expand All",
+    collapseAll: "Collapse All",
+    custom: "Custom",
+  };
+  const collapseModes: DictionaryCollapseMode[] = ["expandAll", "collapseAll", "custom"];
+  let dictionaryTitles = $derived([...new Set(dictionaries.map((dictionary) => dictionary.title.trim()).filter(Boolean))].sort());
 
   function dictionariesForRole(role: DictionaryRole): DictionaryManifestEntry[] {
     return dictionaries.filter((dictionary) => dictionaryRole(dictionary) === role);
+  }
+
+  function updateNumber(key: "maxResults" | "scanLength", value: string) {
+    onSettingsChange({ [key]: Number(value) });
+  }
+
+  function setCollapsedDictionary(dictionary: string, collapsed: boolean) {
+    const next = new Set(settings.collapsedDictionaries);
+    if (collapsed) next.add(dictionary);
+    else next.delete(dictionary);
+    onSettingsChange({ collapsedDictionaries: [...next].sort() });
   }
 </script>
 
@@ -135,6 +164,119 @@
       {/each}
     </Tabs.Root>
   {/if}
+
+  <div class="dictionary-settings" aria-label="Dictionary settings">
+    <section class="settings-group">
+      <div class="settings-copy">
+        <h3>Lookup</h3>
+      </div>
+      <label class="settings-row">
+        <span>Scan non-Japanese text</span>
+        <UiSwitch
+          checked={settings.scanNonJapaneseText}
+          ariaLabel="Scan non-Japanese text"
+          onCheckedChange={(enabled) => onSettingsChange({ scanNonJapaneseText: enabled })}
+        />
+      </label>
+      <label class="settings-row range-row">
+        <span>Max results</span>
+        <input
+          type="number"
+          min={DICTIONARY_MAX_RESULTS.min}
+          max={DICTIONARY_MAX_RESULTS.max}
+          value={settings.maxResults}
+          oninput={(event) => updateNumber("maxResults", event.currentTarget.value)}
+        />
+      </label>
+      <label class="settings-row range-row">
+        <span>Scan length</span>
+        <input
+          type="number"
+          min={DICTIONARY_SCAN_LENGTH.min}
+          max={DICTIONARY_SCAN_LENGTH.max}
+          value={settings.scanLength}
+          oninput={(event) => updateNumber("scanLength", event.currentTarget.value)}
+        />
+      </label>
+    </section>
+
+    <section class="settings-group">
+      <div class="settings-copy">
+        <h3>Import</h3>
+      </div>
+      <label class="settings-row">
+        <span>Low-RAM dictionary import</span>
+        <UiSwitch
+          checked={settings.lowRamDictionaryImport}
+          ariaLabel="Low-RAM dictionary import"
+          onCheckedChange={(enabled) => onSettingsChange({ lowRamDictionaryImport: enabled })}
+        />
+      </label>
+    </section>
+
+    <section class="settings-group">
+      <div class="settings-copy">
+        <h3>Collapse Dictionaries</h3>
+      </div>
+      <div class="segmented" aria-label="Collapse mode">
+        {#each collapseModes as mode}
+          <button
+            class:active={settings.collapseMode === mode}
+            type="button"
+            onclick={() => onSettingsChange({ collapseMode: mode })}
+          >{collapseModeLabels[mode]}</button>
+        {/each}
+      </div>
+      <label class="settings-row">
+        <span>Expand first dictionary</span>
+        <UiSwitch
+          checked={settings.expandFirstDictionary}
+          ariaLabel="Expand first dictionary"
+          onCheckedChange={(enabled) => onSettingsChange({ expandFirstDictionary: enabled })}
+        />
+      </label>
+      {#if settings.collapseMode === "custom" && dictionaryTitles.length > 0}
+        <div class="collapsed-list" aria-label="Collapsed dictionaries">
+          {#each dictionaryTitles as title}
+            <label>
+              <input
+                type="checkbox"
+                checked={settings.collapsedDictionaries.includes(title)}
+                onchange={(event) => setCollapsedDictionary(title, event.currentTarget.checked)}
+              />
+              <span>{title}</span>
+            </label>
+          {/each}
+        </div>
+      {/if}
+    </section>
+
+    <section class="settings-group">
+      <div class="settings-copy">
+        <h3>Behaviour</h3>
+      </div>
+      <label class="settings-row">
+        <span>Compact glossaries</span>
+        <UiSwitch checked={settings.compactGlossaries} ariaLabel="Compact glossaries" onCheckedChange={(enabled) => onSettingsChange({ compactGlossaries: enabled })} />
+      </label>
+      <label class="settings-row">
+        <span>Show expression tags</span>
+        <UiSwitch checked={settings.showExpressionTags} ariaLabel="Show expression tags" onCheckedChange={(enabled) => onSettingsChange({ showExpressionTags: enabled })} />
+      </label>
+      <label class="settings-row">
+        <span>Harmonic frequency</span>
+        <UiSwitch checked={settings.harmonicFrequency} ariaLabel="Harmonic frequency" onCheckedChange={(enabled) => onSettingsChange({ harmonicFrequency: enabled })} />
+      </label>
+      <label class="settings-row">
+        <span>Deduplicate pitch accents</span>
+        <UiSwitch checked={settings.deduplicatePitchAccents} ariaLabel="Deduplicate pitch accents" onCheckedChange={(enabled) => onSettingsChange({ deduplicatePitchAccents: enabled })} />
+      </label>
+      <label class="settings-row">
+        <span>Compact pitch accents</span>
+        <UiSwitch checked={settings.compactPitchAccents} ariaLabel="Compact pitch accents" onCheckedChange={(enabled) => onSettingsChange({ compactPitchAccents: enabled })} />
+      </label>
+    </section>
+  </div>
 </section>
 
 <style>
@@ -163,6 +305,19 @@
   .dictionary-row-actions { display: flex; align-items: center; gap: 5px; }
   .err { color: var(--app-error, #ffb4ab); font-size: 13px; white-space: pre-wrap; }
   .empty { padding: 28px 0; color: var(--app-muted, #999999); font-size: 13px; }
+  .dictionary-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; padding-top: 4px; }
+  .settings-group { display: flex; flex-direction: column; gap: 8px; min-width: 0; padding: 10px; background: var(--app-bg, #000); border: 1px solid var(--app-border, #333333); border-radius: 6px; }
+  .settings-copy h3 { color: var(--app-text, #fff); font-size: 13px; font-weight: 600; }
+  .settings-row { display: flex; align-items: center; justify-content: space-between; gap: 12px; min-width: 0; color: var(--app-text, #fff); font-size: 12px; }
+  .settings-row span { min-width: 0; overflow-wrap: anywhere; }
+  .settings-row input[type="number"] { width: 72px; padding: 4px 6px; background: var(--app-control, #1b1b1b); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 4px; font-size: 12px; }
+  .range-row { align-items: center; }
+  .segmented { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 3px; padding: 3px; background: var(--app-control, #1b1b1b); border: 1px solid var(--app-border, #333333); border-radius: 6px; }
+  .segmented button { min-width: 0; padding: 5px 6px; background: transparent; color: var(--app-text, #fff); border: 0; border-radius: 4px; cursor: pointer; font-size: 11px; }
+  .segmented button.active { background: var(--app-primary, #d0bcff); color: var(--app-bg, #000); }
+  .collapsed-list { display: flex; flex-direction: column; gap: 6px; max-height: 120px; overflow-y: auto; padding-right: 2px; }
+  .collapsed-list label { display: flex; align-items: center; gap: 7px; min-width: 0; color: var(--app-text, #fff); font-size: 12px; }
+  .collapsed-list span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   @media (max-width: 640px) {
     .dictionary-head { flex-direction: column; }
     .dictionary-actions { width: 100%; }
@@ -171,5 +326,7 @@
     .dictionary-toggle { grid-column: 1 / -1; }
     .dictionary-main { grid-column: 1; }
     .dictionary-row-actions { grid-column: 1; }
+    .dictionary-settings { grid-template-columns: 1fr; }
+    .segmented { grid-template-columns: 1fr; }
   }
 </style>
