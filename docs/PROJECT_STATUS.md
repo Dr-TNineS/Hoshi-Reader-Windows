@@ -13,6 +13,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Stack: Tauri 2, Svelte 5, TypeScript, Vite, Rust.
 - Primary path: bookshelf -> import EPUB -> open reader -> select text -> lookup.
 - Imported EPUB files are copied into the app-owned library under Tauri app data.
+- EPUB import supports selecting one or more files and returns to the bookshelf after import; users open imported books from the bookshelf row.
 - Reading progress and session state are persisted in Tauri app data under `reading/state.json`.
 - Browser `localStorage` remains a non-Tauri fallback and one-time legacy migration source.
 - Local reference projects live under `reference/`; local hoshidicts build input lives under `third_party/hoshidicts`.
@@ -52,6 +53,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Read-only Shortcuts panel listing the currently implemented Reader keyboard and mouse shortcuts by feature group.
   - Resume from saved progress.
   - Tauri startup attempts to restore the last reader session when the Advanced startup option is enabled; disabling it leaves startup on the bookshelf without clearing the saved session.
+  - Importing an EPUB without opening it does not replace the saved reader session used by Advanced startup restore.
   - Tauri reading state stores recent books, progress, and session in `reading/state.json`.
   - Existing `localStorage` recent books/session are merged into reading state once on startup.
   - Legacy path-only records remain compatible when the original file still exists.

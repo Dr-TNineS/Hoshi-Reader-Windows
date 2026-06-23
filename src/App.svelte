@@ -279,15 +279,6 @@
       const status = epubImportStatus(importedBooks.length, sourcePaths.length, failures);
       debug = failures.length === 0 ? status : "Import finished with errors.";
       if (failures.length > 0) error = status;
-
-      if (sourcePaths.length === 1 && importedBooks.length === 1 && failures.length === 0) {
-        const imported = importedBooks[0];
-        await openBookLocator({
-          bookId: imported.bookId,
-          sourcePath: imported.sourcePath,
-          libraryPath: imported.libraryPath,
-        }, 0);
-      }
     } catch (e) {
       error = String(e);
       debug = "Err";
