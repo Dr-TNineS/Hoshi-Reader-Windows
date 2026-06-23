@@ -114,6 +114,20 @@ async function probeChapterIndex(page) {
   return Number(value);
 }
 
+async function probeProgressState(page) {
+  const state = page.locator(".probe-state");
+  return {
+    chapterIndex: Number(await state.getAttribute("data-chapter-index") ?? 0),
+    chapterProgress: Number(await state.getAttribute("data-progress") ?? 0),
+    chapterReadChars: Number(await state.getAttribute("data-chapter-read-chars") ?? 0),
+    bookReadChars: Number(await state.getAttribute("data-book-read-chars") ?? 0),
+    totalBookChars: Number(await state.getAttribute("data-total-book-chars") ?? 0),
+    fixtureChapterStart: Number(await state.getAttribute("data-fixture-chapter-start") ?? 0),
+    fixtureChapterCount: Number(await state.getAttribute("data-fixture-chapter-count") ?? 0),
+    header: await page.locator(".rh").textContent() ?? "",
+  };
+}
+
 async function waitForProbeChapter(page, chapterIndex) {
   await page.waitForFunction(
     (expected) => document.querySelector(".probe-state")?.getAttribute("data-chapter-index") === String(expected),
@@ -654,10 +668,34 @@ async function main() {
       await page.keyboard.press("ArrowLeft");
       await waitForPageIndex(page, pageNumber - 1);
     }
+    const beforeChapterBoundary = await probeProgressState(page);
     await page.keyboard.press("ArrowLeft");
     await waitForProbeChapter(page, 1);
+    await page.waitForFunction(() => {
+      const state = document.querySelector(".probe-state");
+      return state?.getAttribute("data-book-read-chars") === state?.getAttribute("data-fixture-chapter-start");
+    }, { timeout: 10000 });
+    const afterChapterBoundary = await probeProgressState(page);
     assert(await probeChapterIndex(page) === 1, "ArrowLeft at the final page should advance to the next chapter.");
     await waitForPageIndex(page, 0);
+    assert(
+      beforeChapterBoundary.bookReadChars >= beforeChapterBoundary.fixtureChapterStart &&
+        beforeChapterBoundary.bookReadChars <= beforeChapterBoundary.fixtureChapterStart + beforeChapterBoundary.fixtureChapterCount,
+      "Final-page progress should stay within the first chapter before advancing.",
+      { beforeChapterBoundary },
+    );
+    assert(
+      afterChapterBoundary.bookReadChars === afterChapterBoundary.fixtureChapterStart &&
+        afterChapterBoundary.fixtureChapterStart === beforeChapterBoundary.fixtureChapterStart + beforeChapterBoundary.fixtureChapterCount,
+      "Chapter-boundary progress should land exactly on the next chapter start.",
+      { beforeChapterBoundary, afterChapterBoundary },
+    );
+    assert(
+      afterChapterBoundary.bookReadChars - beforeChapterBoundary.bookReadChars ===
+        beforeChapterBoundary.fixtureChapterCount - beforeChapterBoundary.chapterReadChars,
+      "Chapter-boundary progress delta should equal only the unread tail of the previous chapter.",
+      { beforeChapterBoundary, afterChapterBoundary },
+    );
 
     await page.keyboard.press("ArrowRight");
     await waitForProbeChapter(page, 0);

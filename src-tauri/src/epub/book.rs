@@ -7,10 +7,14 @@ use std::sync::LazyLock;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 static RUBY_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"(?is)<r[tp]\b[^>]*>.*?</r[tp]>").unwrap());
+    LazyLock::new(|| Regex::new(r"(?s)<rt[^>]*>.*?</rt>").unwrap());
+static BODY_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)<body.*?</body>").unwrap());
+static SCRIPT_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)<script[^>]*>.*?</script>").unwrap());
+static STYLE_REGEX: LazyLock<Regex> =
+    LazyLock::new(|| Regex::new(r"(?s)<style[^>]*>.*?</style>").unwrap());
 static TAG_REGEX: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"(?is)<[^>]+>").unwrap());
-static ENTITY_REGEX: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"&#(?:x[0-9a-f]+|[0-9]+);|&[a-z][a-z0-9]+;").unwrap());
 
 pub struct EpubBook {
     pub epub: rbook::Epub,
@@ -196,47 +200,58 @@ fn contained_cover_path(root: &Path, candidate: &Path) -> Option<PathBuf> {
 }
 
 fn count_reader_chars(html: &str) -> usize {
-    let without_ruby = RUBY_REGEX.replace_all(html, "");
-    let without_tags = TAG_REGEX.replace_all(&without_ruby, "");
-    let decoded = decode_basic_entities(&without_tags);
-    decoded.chars().filter(|ch| is_reader_char(*ch)).count()
+    visible_reader_text(html)
+        .chars()
+        .filter(|ch| is_reader_char(*ch))
+        .count()
 }
 
-fn decode_basic_entities(text: &str) -> String {
-    ENTITY_REGEX
-        .replace_all(text, |caps: &regex::Captures| match &caps[0] {
-            "&amp;" => "&".to_string(),
-            "&lt;" => "<".to_string(),
-            "&gt;" => ">".to_string(),
-            "&quot;" => "\"".to_string(),
-            "&apos;" => "'".to_string(),
-            "&nbsp;" => "".to_string(),
-            entity if entity.starts_with("&#x") || entity.starts_with("&#X") => {
-                u32::from_str_radix(&entity[3..entity.len() - 1], 16)
-                    .ok()
-                    .and_then(char::from_u32)
-                    .map(|ch| ch.to_string())
-                    .unwrap_or_default()
-            }
-            entity if entity.starts_with("&#") => entity[2..entity.len() - 1]
-                .parse::<u32>()
-                .ok()
-                .and_then(char::from_u32)
-                .map(|ch| ch.to_string())
-                .unwrap_or_default(),
-            _ => "".to_string(),
-        })
-        .into_owned()
+fn visible_reader_text(html: &str) -> String {
+    let body = BODY_REGEX
+        .find(html)
+        .map(|matched| matched.as_str())
+        .unwrap_or(html);
+    let without_ruby = RUBY_REGEX.replace_all(body, "");
+    let without_script = SCRIPT_REGEX.replace_all(&without_ruby, "");
+    let without_style = STYLE_REGEX.replace_all(&without_script, "");
+    let without_tags = TAG_REGEX.replace_all(&without_style, "");
+    without_tags
+        .replace("&nbsp;", " ")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
 }
 
 fn is_reader_char(ch: char) -> bool {
-    ch.is_ascii_alphanumeric()
-        || ('\u{3040}'..='\u{30ff}').contains(&ch)
-        || ('\u{31f0}'..='\u{31ff}').contains(&ch)
-        || ('\u{3400}'..='\u{9fff}').contains(&ch)
-        || ('\u{f900}'..='\u{faff}').contains(&ch)
-        || ('\u{ff10}'..='\u{ff9f}').contains(&ch)
-        || matches!(ch, '々' | '〆' | '〻' | '〇' | '○' | '◯')
+    let code = ch as u32;
+    matches!(
+        code,
+        0x30..=0x39
+            | 0x41..=0x5a
+            | 0x61..=0x7a
+            | 0x25cb
+            | 0x25ef
+            | 0x3005..=0x3007
+            | 0x303b
+            | 0x3041..=0x3096
+            | 0x309d..=0x309e
+            | 0x30a1..=0x30fa
+            | 0x30fc
+            | 0xff10..=0xff19
+            | 0xff21..=0xff3a
+            | 0xff41..=0xff5a
+            | 0xff66..=0xff9d
+            | 0x2e80..=0x2fdf
+            | 0x3400..=0x4dbf
+            | 0x4e00..=0x9fff
+            | 0x20000..=0x2a6df
+            | 0x2a700..=0x2b73f
+            | 0x2b740..=0x2b81f
+            | 0x2b820..=0x2ceaf
+            | 0x2ceb0..=0x2ebef
+            | 0x30000..=0x3134f
+            | 0x31350..=0x323af
+    )
 }
 
 impl Drop for EpubBook {
@@ -360,5 +375,26 @@ mod tests {
     fn reader_char_count_ignores_markup_and_ruby() {
         let html = r#"<p>五月<ruby>雨<rt>あめ</rt><rp>（</rp></ruby>&nbsp;A1</p>"#;
         assert_eq!(count_reader_chars(html), 5);
+    }
+
+    #[test]
+    fn reader_char_count_matches_hsa_visible_text_filter() {
+        let html = r#"
+<html>
+  <head><style>漢字Ａ1</style></head>
+  <body>
+    <script>漢字Ｂ2</script>
+    <p>日々○◯〻ぁゖゝゞァヺー０９ＡＺａｚｦﾝ⺀⿟㐀䶿一鿿𠀀𪛟𪜀𫜿𫝀𫠟𫠠𬺯𬺰𮯯𰀀𱍏𱍐𲎯</p>
+    <p>。、!? &amp; &lt; &gt; &nbsp; &#x65e5; &quot;</p>
+  </body>
+</html>
+"#;
+        assert_eq!(count_reader_chars(html), 49);
+    }
+
+    #[test]
+    fn reader_visible_text_prefers_body_when_available() {
+        let html = r#"<html><head><title>外</title></head><body><p>内A</p></body></html>"#;
+        assert_eq!(count_reader_chars(html), 2);
     }
 }

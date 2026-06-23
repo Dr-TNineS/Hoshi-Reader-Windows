@@ -1,6 +1,36 @@
-// Reader core - ported from Hoshi Reader Mac reader.js
+// Reader core - ported from Hoshi Reader Mac reader.js, with HSA-aligned reader text counting.
 
-const CJK_REGEX = /[0-9A-Za-z○▷〆〃々ヿ一-鿿豈-﫿︰-﹏\p{Radical}\p{Unified_Ideograph}]+/gimu;
+function inRange(value: number, start: number, end: number): boolean {
+  return value >= start && value <= end;
+}
+
+export function isReaderMatchableCodePoint(codePoint: number): boolean {
+  return inRange(codePoint, 0x30, 0x39) ||
+    inRange(codePoint, 0x41, 0x5a) ||
+    inRange(codePoint, 0x61, 0x7a) ||
+    codePoint === 0x25cb ||
+    codePoint === 0x25ef ||
+    inRange(codePoint, 0x3005, 0x3007) ||
+    codePoint === 0x303b ||
+    inRange(codePoint, 0x3041, 0x3096) ||
+    inRange(codePoint, 0x309d, 0x309e) ||
+    inRange(codePoint, 0x30a1, 0x30fa) ||
+    codePoint === 0x30fc ||
+    inRange(codePoint, 0xff10, 0xff19) ||
+    inRange(codePoint, 0xff21, 0xff3a) ||
+    inRange(codePoint, 0xff41, 0xff5a) ||
+    inRange(codePoint, 0xff66, 0xff9d) ||
+    inRange(codePoint, 0x2e80, 0x2fdf) ||
+    inRange(codePoint, 0x3400, 0x4dbf) ||
+    inRange(codePoint, 0x4e00, 0x9fff) ||
+    inRange(codePoint, 0x20000, 0x2a6df) ||
+    inRange(codePoint, 0x2a700, 0x2b73f) ||
+    inRange(codePoint, 0x2b740, 0x2b81f) ||
+    inRange(codePoint, 0x2b820, 0x2ceaf) ||
+    inRange(codePoint, 0x2ceb0, 0x2ebef) ||
+    inRange(codePoint, 0x30000, 0x3134f) ||
+    inRange(codePoint, 0x31350, 0x323af);
+}
 
 export function isVertical(container: HTMLElement): boolean {
   return getComputedStyle(container).writingMode === "vertical-rl";
@@ -12,7 +42,12 @@ export function isFurigana(node: Node): boolean {
 }
 
 export function countChars(text: string): number {
-  return Array.from(normalizeText(text)).length;
+  let count = 0;
+  for (const ch of text) {
+    const codePoint = ch.codePointAt(0);
+    if (codePoint !== undefined && isReaderMatchableCodePoint(codePoint)) count += 1;
+  }
+  return count;
 }
 
 export function textEndOffsets(text: string): number[] {
@@ -38,7 +73,12 @@ export function rawOffsetForReaderChars(text: string, targetChars: number): numb
 }
 
 export function normalizeText(text: string): string {
-  return text.replace(new RegExp(CJK_REGEX.source.replace(/^\[/, "[^"), "gimu"), "");
+  let normalized = "";
+  for (const ch of text) {
+    const codePoint = ch.codePointAt(0);
+    if (codePoint !== undefined && isReaderMatchableCodePoint(codePoint)) normalized += ch;
+  }
+  return normalized;
 }
 
 export function createWalker(root: Node): TreeWalker {

@@ -66,7 +66,8 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Basic image load/reflow handling, SVG cover replacement, gaiji image handling, and block image handling.
   - Reader progress based on visible text position.
   - Reader chrome aligns with HSA by showing whole-book character progress and percentage instead of exposing spine chapter counts or per-spine page counts; spine remains the internal load/navigation unit while TOC remains a directory view.
-- Reader visual probe fixture and `npm run check:reader-visual` cover baseline pagination geometry, final-page alignment, block image rendering, Shift-hover and left-click lookup selection, per-frame latest-coordinate coalescing, DOM character-position dedupe, sub-8px adjacent-character lookup, pending-frame cancellation, pending/matched highlight timing, plain mouse drag selection not opening lookup, narrow-window overflow, Ctrl chapter navigation, and page-boundary chapter navigation.
+  - Reader character counting uses the HSA matchable-codepoint rule for frontend DOM progress and Rust EPUB book metadata.
+- Reader visual probe fixture and `npm run check:reader-visual` cover baseline pagination geometry, final-page alignment, block image rendering, HSA-aligned progress counting at chapter boundaries, Shift-hover and left-click lookup selection, per-frame latest-coordinate coalescing, DOM character-position dedupe, sub-8px adjacent-character lookup, pending-frame cancellation, pending/matched highlight timing, plain mouse drag selection not opening lookup, narrow-window overflow, Ctrl chapter navigation, and page-boundary chapter navigation.
 - Reader TOC probe fixture and `npm run check:reader-toc` cover trigger semantics, initial/restored focus, nonmodal interaction, Escape priority, chapter jumps, and narrow-window bounds.
 - Reader selection and popup:
   - Captures selected reader text with rect and chapter index.
@@ -172,7 +173,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Without imported dictionaries in the app data manifest, `dict_status` reports `noDictionaries`.
 - Compatibility dictionary imports that hit Windows code-page failures may still lack packed media files, so affected dictionaries such as the current app-data `MK3Fix0213.zip` import can remain media-unavailable until reimported with `media.idx`/`media.bin`.
 - Reader layout correctness for arbitrary EPUBs is not fully verified.
-- Rust-side character counts and frontend DOM-based progress need further cross-validation.
+- Real multi-book runtime validation of HSA-aligned reader character progress remains not verified.
 - Cover/image rendering depends on temporary extraction path mapping and asset URL rewriting.
 - Running the frontend outside Tauri only provides partial behavior because native EPUB commands require Tauri.
 

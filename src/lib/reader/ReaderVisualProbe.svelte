@@ -1,5 +1,6 @@
 <script lang="ts">
   import Reader from "./Reader.svelte";
+  import { countChars } from "../reader";
   import { readerAppearancePalette } from "../appearance";
   import { lookupHighlightText as renderedLookupHighlightTextFor, READER_LOOKUP_HIGHLIGHT } from "../lookup-highlight";
   import type { ReaderProgress, ReaderSelection } from "../types";
@@ -16,18 +17,39 @@
     </svg>
   `);
 
+  type FixtureChapter = {
+    html: string;
+    charCount: number;
+    startChars: number;
+  };
+
   function chapterParagraphs(label: string, count: number) {
-    return Array.from({ length: count }, (_, index) => `
+    const paragraphs = Array.from({ length: count }, (_, index) => {
+      const mixed = index % 5 === 0
+        ? " 日々○◯〻ぁゖゝゞァヺー０９ＡＺａｚｦﾝ⺀⿟㐀䶿一鿿𠀀𪛟𪜀𫜿𫝀𫠟𫠠𬺯𬺰𮯯𰀀𱍏𱍐𲎯"
+        : "";
+      const visible = `
+      ${label}第${index + 1}段。星の読書室には、静かなページ送りと、縦書きの余白を確かめるための文章が並んでいる。
+      これは視覚回帰チェック用の固定本文であり、章末の揃い、通常ページ、狭い画面での横溢れを測る。
+      雨音のように同じ調子の文を少しずつ続け、十分なページ数を作る。${mixed}
+    `;
+      const html = `
     <p>
       ${label}第${index + 1}段。星の読書室には、静かなページ送りと、縦書きの余白を確かめるための文章が並んでいる。
       これは視覚回帰チェック用の固定本文であり、章末の揃い、通常ページ、狭い画面での横溢れを測る。
-      雨音のように同じ調子の文を少しずつ続け、十分なページ数を作る。
+      <ruby>雨<rt>あめ</rt><rp>（</rp></ruby>音のように同じ調子の文を少しずつ続け、十分なページ数を作る。${mixed}
     </p>
-  `).join("");
+  `;
+      return { html, visible };
+    });
+    return {
+      html: paragraphs.map((paragraph) => paragraph.html).join(""),
+      text: paragraphs.map((paragraph) => paragraph.visible).join(""),
+    };
   }
 
-  function chapterContent(title: string, paragraphs: string, includeImage = false) {
-    return `
+  function chapterContent(title: string, paragraphs: ReturnType<typeof chapterParagraphs>, includeImage = false) {
+    const html = `
     <section class="main">
       <h1>${title}</h1>
       ${includeImage ? `
@@ -35,15 +57,25 @@
           <img src="data:image/svg+xml,${imageSvg}" alt="Reader visual probe cover" />
         </p>
       ` : ""}
-      ${paragraphs}
+      ${paragraphs.html}
     </section>
   `;
+    return {
+      html,
+      charCount: countChars(`${title}${paragraphs.text}`),
+    };
   }
 
-  const chapters = [
+  const chapterFixtures = [
     chapterContent("視覚回帰サンプル 一", chapterParagraphs("一章", 36), true),
     chapterContent("視覚回帰サンプル 二", chapterParagraphs("二章", 20)),
   ];
+  const chapters: FixtureChapter[] = chapterFixtures.reduce<FixtureChapter[]>((acc, chapter) => {
+    const startChars = acc.reduce((total, existing) => total + existing.charCount, 0);
+    acc.push({ ...chapter, startChars });
+    return acc;
+  }, []);
+  const totalBookChars = chapters.reduce((total, chapter) => total + chapter.charCount, 0);
 
   let chapterIndex = $state(0);
   let startAtEnd = $state(false);
@@ -116,9 +148,10 @@
 </script>
 
 <Reader
-  content={chapters[chapterIndex]}
+  content={chapters[chapterIndex].html}
   {chapterIndex}
-  totalBookChars={3600}
+  chapterStartChars={chapters[chapterIndex].startChars}
+  {totalBookChars}
   {startAtEnd}
   {appearancePalette}
   onNextChapter={nextChapter}
@@ -135,6 +168,11 @@
   aria-hidden="true"
   data-chapter-index={chapterIndex}
   data-progress={lastProgress?.chapterProgress ?? 0}
+  data-chapter-read-chars={lastProgress?.chapterReadChars ?? 0}
+  data-book-read-chars={lastProgress?.bookReadChars ?? 0}
+  data-total-book-chars={lastProgress?.totalBookChars ?? totalBookChars}
+  data-fixture-chapter-start={chapters[chapterIndex].startChars}
+  data-fixture-chapter-count={chapters[chapterIndex].charCount}
   data-selection={lastSelection?.text ?? ""}
   data-dom-selection={visibleSelectionText}
   data-highlight-text={lookupHighlightText}
