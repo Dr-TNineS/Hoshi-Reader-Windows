@@ -1990,15 +1990,14 @@ fn decode_zip_entry_name(raw: &[u8]) -> Result<String, String> {
             .map_err(|e| format!("Dictionary zip entry name is not UTF-8: {e}"));
     }
 
-    if let Ok(name) = std::str::from_utf8(raw) {
-        return Ok(name.to_string());
+    let (decoded, _, had_errors) = encoding_rs::GBK.decode(raw);
+    if !had_errors {
+        return Ok(decoded.into_owned());
     }
 
-    let (decoded, _, had_errors) = encoding_rs::GBK.decode(raw);
-    if had_errors {
-        return Err("Dictionary zip entry name is not UTF-8 or GBK.".into());
-    }
-    Ok(decoded.into_owned())
+    std::str::from_utf8(raw)
+        .map(str::to_owned)
+        .map_err(|e| format!("Dictionary zip entry name is not UTF-8 or GBK: {e}"))
 }
 
 #[cfg(any(hoshi_dicts_linked, test))]
@@ -2507,6 +2506,8 @@ mod tests {
                 (b"term_bank_1.json", term_bank.as_bytes()),
                 (b"styles.css", b".tag { color: red; }".as_slice()),
                 (b"gaiji/\xb2\xce\xbf\xbc\x31.svg", svg.as_slice()),
+                (b"gaiji/bs\xd2\xbb.svg", svg.as_slice()),
+                (b"gaiji/ws\xd2\xbb.svg", svg.as_slice()),
             ],
         );
 
@@ -2519,6 +2520,10 @@ mod tests {
             .map(|index| archive.by_index(index).unwrap().name().to_string())
             .collect::<Vec<_>>();
         assert!(names.contains(&"gaiji/参考1.svg".to_string()));
+        assert!(names.contains(&"gaiji/bs一.svg".to_string()));
+        assert!(names.contains(&"gaiji/ws一.svg".to_string()));
+        assert!(!names.contains(&"gaiji/bsһ.svg".to_string()));
+        assert!(!names.contains(&"gaiji/wsһ.svg".to_string()));
         assert!(names.contains(&"term_bank_1.json".to_string()));
 
         let mut media = Vec::new();
@@ -2528,6 +2533,14 @@ mod tests {
             .read_to_end(&mut media)
             .unwrap();
         assert_eq!(media, svg);
+
+        let mut bs_media = Vec::new();
+        archive
+            .by_name("gaiji/bs一.svg")
+            .unwrap()
+            .read_to_end(&mut bs_media)
+            .unwrap();
+        assert_eq!(bs_media, svg);
 
         let mut rewritten_index = String::new();
         archive
@@ -3544,6 +3557,18 @@ mod tests {
             media.starts_with(b"<svg") || media.starts_with(br#"<?xml"#),
             "packed gaiji media should be SVG"
         );
+        for gaiji_path in [
+            concat!("gaiji/bs", "\u{4e00}", ".svg"),
+            concat!("gaiji/ws", "\u{4e00}", ".svg"),
+        ] {
+            let media = read_packed_dictionary_media(&imported_dir, gaiji_path)
+                .unwrap()
+                .unwrap_or_else(|| panic!("{gaiji_path} should be packed"));
+            assert!(
+                media.starts_with(b"<svg") || media.starts_with(br#"<?xml"#),
+                "{gaiji_path} should be SVG"
+            );
+        }
 
         cleanup_dictionary_import_temps(&staging_root, &[ascii_source_zip, compat_zip.path]);
         let _ = fs::remove_dir_all(root);

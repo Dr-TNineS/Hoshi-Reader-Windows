@@ -177,9 +177,23 @@ async function popupMetrics(page) {
       mediaErrors: document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='error']").length,
       mediaLoading: document.querySelectorAll(".lookup-glossary-content .gloss-media-placeholder[data-media-status='loading']").length,
       mediaImages: document.querySelectorAll(".lookup-glossary-content .gloss-media-image").length,
+      gaijiMediaImages: document.querySelectorAll('.lookup-glossary-content [data-sc-img][data-sc-class="gaiji"] .gloss-media-image').length,
       mediaImageMaxHeight: (() => {
-        const image = document.querySelector(".lookup-glossary-content .gloss-media-image");
+        const image = Array.from(document.querySelectorAll(".lookup-glossary-content .gloss-media-image"))
+          .find((node) => node instanceof HTMLElement && !node.closest('[data-sc-img][data-sc-class="gaiji"]'));
         return image instanceof HTMLElement ? getComputedStyle(image).maxHeight : "";
+      })(),
+      gaijiImageMaxHeight: (() => {
+        const image = document.querySelector('.lookup-glossary-content [data-sc-img][data-sc-class="gaiji"] .gloss-media-image');
+        return image instanceof HTMLElement ? getComputedStyle(image).maxHeight : "";
+      })(),
+      gaijiImageDisplay: (() => {
+        const image = document.querySelector('.lookup-glossary-content [data-sc-img][data-sc-class="gaiji"] .gloss-media-image');
+        return image instanceof HTMLElement ? getComputedStyle(image).display : "";
+      })(),
+      gaijiContainerWidth: (() => {
+        const container = document.querySelector('.lookup-glossary-content [data-sc-img][data-sc-class="gaiji"] .gloss-image-container');
+        return container instanceof HTMLElement ? getComputedStyle(container).width : "";
       })(),
       glossaryGroups: document.querySelectorAll(".lookup-glossary-group").length,
       openGlossaryGroups: document.querySelectorAll(".lookup-glossary-group[open]").length,
@@ -408,10 +422,12 @@ async function main() {
     assert(ready.structuredListItems >= 2 && ready.structuredBreaks >= 1, "Ready popup should preserve structured glossary list and line breaks.", ready);
     assert(ready.structuredTables >= 1, "Ready popup should preserve structured glossary tables.", ready);
     assert(ready.structuredRuby >= 1, "Ready popup should preserve structured glossary ruby.", ready);
-    assert(ready.mediaPlaceholders >= 2, "Ready popup should render safe placeholders for dictionary media.", ready);
-    assert(ready.mediaLoaded >= 2 && ready.mediaImages >= 2, "Ready popup should lazy-load tag and type dictionary media into images.", ready);
+    assert(ready.mediaPlaceholders >= 6, "Ready popup should render safe placeholders for dictionary media.", ready);
+    assert(ready.mediaLoaded >= 6 && ready.mediaImages >= 6, "Ready popup should lazy-load tag and type dictionary media into images.", ready);
+    assert(ready.gaijiMediaImages >= 5, "Ready popup should hydrate MK3 gaiji SVG media into inline images.", ready);
     assert(ready.mediaErrors === 0 && ready.mediaLoading === 0, "Successful dictionary media should not remain loading or error.", ready);
     assert(ready.mediaImageMaxHeight === "180px", "Dictionary media image should be constrained inside the popup.", ready);
+    assert(ready.gaijiImageMaxHeight !== "180px" && ready.gaijiContainerWidth !== "" && Number.parseFloat(ready.gaijiContainerWidth) < 32, "MK3 gaiji SVG media should stay inline and small rather than rendering as block media cards.", ready);
     assert(ready.glossaryGroups >= 2, "Ready popup should group glossary entries by dictionary.", ready);
     assert(ready.redirectLinks >= 1, "Ready popup should render dictionary cross-reference links.", ready);
     assert(!ready.canGoBack && !ready.canGoForward, "Root popup should start without redirect history.", ready);
@@ -466,7 +482,9 @@ async function main() {
     const ankiAdded = await popupMetrics(page);
     assert(ankiAdded.ankiAddCount === 1, "Add Anki should call the note creation callback once.", ankiAdded);
     assert(ankiAdded.ankiStoreCount === 1, "Add Anki should store dictionary media before note creation.", ankiAdded);
-    assert(ankiAdded.ankiLastMedia.length === 2 && ankiAdded.ankiLastMedia.every((item) => item.filename.startsWith("hsw_")), "Stored media request should use deterministic HSW filenames.", ankiAdded);
+    assert(ankiAdded.ankiLastMedia.length >= 6 && ankiAdded.ankiLastMedia.every((item) => item.filename.startsWith("hsw_")), "Stored media request should use deterministic HSW filenames.", ankiAdded);
+    assert(ankiAdded.ankiLastMedia.some((item) => item.path === "gaiji/bs一.svg") && ankiAdded.ankiLastMedia.some((item) => item.path === "gaiji/ws一.svg"), "Stored media request should include MK3 bs/ws one gaiji references.", ankiAdded);
+    assert(ankiAdded.ankiLastMedia.some((item) => item.path === "gaiji/参照.svg"), "Stored media request should include MK3 reference gaiji references.", ankiAdded);
     assert(ankiAdded.ankiLastMedia.some((item) => item.path === "gaiji/参考.svg"), "Stored media request should include Yomitan type:image gaiji references.", ankiAdded);
     assert(ankiAdded.ankiLastDeck === "Mining" && ankiAdded.ankiLastModel === "Hoshi Vocabulary", "Add Anki should send selected deck and note type.", ankiAdded);
     assert(ankiAdded.ankiLastRequest.tags.join(" ") === "hoshi-reader mining", "Add Anki should send configured whitespace-separated tags.", ankiAdded);
@@ -478,6 +496,9 @@ async function main() {
     assert(ankiAdded.ankiLastFields.Meaning.includes("yomitan-glossary"), "Add Anki should wrap glossary HTML in an HSA/Lapis-compatible glossary container.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Meaning.includes('data-dictionary="Jitendex.org [probe]"'), "Add Anki should preserve dictionary identity for note template CSS.", ankiAdded);
     assert(ankiAdded.ankiLastFields.Meaning.includes('data-sc-headword="school"'), "Add Anki should preserve structured glossary data attributes.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.Meaning.includes('data-sc-red=""') && ankiAdded.ankiLastFields.Meaning.includes("color:#ff3333"), "Add Anki should preserve MK3 red bracket styling inside glossary HTML.", ankiAdded);
+    assert(ankiAdded.ankiLastFields.Meaning.includes('<img class="gloss-image gloss-media-image" src="stored_hsw_') && ankiAdded.ankiLastFields.Meaning.includes('data-sc-class="gaiji"'), "Add Anki should render inline gaiji media as stored SVG images inside glossary HTML.", ankiAdded);
+    assert(!ankiAdded.ankiLastFields.Meaning.includes(">gaiji/bs一.svg<") && !ankiAdded.ankiLastFields.Meaning.includes(">gaiji/参照.svg<"), "Add Anki should not leave MK3 gaiji media paths as glossary text.", ankiAdded);
     assert(ankiAdded.ankiLastFields.JmOnly.includes("school; a place of study") && ankiAdded.ankiLastFields.JmOnly.includes('data-dictionary="JMdict [probe]"'), "Add Anki should send dictionary-specific glossary values with template-compatible wrappers.", ankiAdded);
     assert(ankiAdded.ankiLastFields.MissingDict === "", "Unknown dictionary-specific glossary tokens should render empty.", ankiAdded);
     assert(ankiAdded.ankiAudioStoreCount === 1, "Add Anki should store remote word audio before note creation.", ankiAdded);

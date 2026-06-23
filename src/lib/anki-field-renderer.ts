@@ -177,9 +177,9 @@ function tokenValue(token: string, payload: LookupAnkiPayload, compactGlossaries
     case "popup-selection-text":
       return payload.selectedText;
     case "glossary-first":
-      return payload.glossary[0] ? renderAnkiGlossaryEntries([payload.glossary[0]], compactGlossaries) : "";
+      return payload.glossary[0] ? renderAnkiGlossaryEntries([payload.glossary[0]], compactGlossaries, payload.media) : "";
     case "glossary":
-      return renderAnkiGlossaryEntries(payload.glossary, compactGlossaries);
+      return renderAnkiGlossaryEntries(payload.glossary, compactGlossaries, payload.media);
     case "sentence":
       return sentenceValue(payload);
     case "document-title":
@@ -294,10 +294,10 @@ function defaultTemplateForField(field: string): string {
 
 function glossaryTextForDictionary(dictionary: string, payload: LookupAnkiPayload, compactGlossaries: boolean): string {
   const exact = payload.glossary.filter((entry) => entry.dict === dictionary);
-  if (exact.length > 0) return renderAnkiGlossaryEntries(exact, compactGlossaries);
+  if (exact.length > 0) return renderAnkiGlossaryEntries(exact, compactGlossaries, payload.media);
 
   const normalized = normalizeDictionaryName(dictionary);
-  return renderAnkiGlossaryEntries(payload.glossary.filter((entry) => normalizeDictionaryName(entry.dict) === normalized), compactGlossaries);
+  return renderAnkiGlossaryEntries(payload.glossary.filter((entry) => normalizeDictionaryName(entry.dict) === normalized), compactGlossaries, payload.media);
 }
 
 export function payloadWithStoredRemoteAudio(
@@ -314,17 +314,46 @@ export function payloadWithStoredBookCover(
   return { ...payload, coverFilename: filename };
 }
 
+const ANKI_GLOSSARY_STYLE = `<style>
+.yomitan-glossary [data-sc-red]{color:#ff3333}
+.yomitan-glossary .gloss-image-link{display:inline-block;max-width:100%;text-decoration:none;color:inherit}
+.yomitan-glossary .gloss-image-container{display:inline-flex;max-width:100%;align-items:center;justify-content:center;vertical-align:middle}
+.yomitan-glossary .gloss-image{display:block;max-width:100%;max-height:180px;object-fit:contain}
+.yomitan-glossary [data-sc-img][data-sc-class="gaiji"]{display:inline-block;line-height:1;vertical-align:-.12em}
+.yomitan-glossary [data-sc-img][data-sc-class="gaiji"] .gloss-image-link{display:inline-block!important;padding:0!important;border:0!important;background:transparent!important;vertical-align:baseline}
+.yomitan-glossary [data-sc-img][data-sc-class="gaiji"] .gloss-image-container{display:inline-flex!important;width:1.15em!important;height:1.15em!important;margin-inline-end:.15em;vertical-align:-.15em}
+.yomitan-glossary [data-sc-img][data-sc-class="gaiji"] .gloss-image{width:100%!important;height:100%!important;max-width:1.15em!important;max-height:1.15em!important;object-fit:contain}
+</style>`;
 const COMPACT_GLOSSARY_STYLE = "<style>.yomitan-glossary ol,.yomitan-glossary ul{margin:.2em 0;padding-left:1.25em}.yomitan-glossary li{margin:.1em 0}.yomitan-glossary p{margin:.15em 0}</style>";
 
-function renderAnkiGlossaryEntries(entries: GlossaryEntry[], compactGlossaries = false): string {
-  const items = entries.map((entry, index) => renderAnkiGlossaryEntry(entry, index)).filter(Boolean).join("");
+function renderAnkiGlossaryEntries(
+  entries: GlossaryEntry[],
+  compactGlossaries = false,
+  media: LookupAnkiMediaReference[] = [],
+): string {
+  const mediaByKey = new Map(media.map((item) => [mediaKey(item.dictionary, item.path), item]));
+  const items = entries.map((entry, index) => renderAnkiGlossaryEntry(entry, index, mediaByKey)).filter(Boolean).join("");
   if (!items) return "";
-  const style = compactGlossaries ? COMPACT_GLOSSARY_STYLE : "";
+  const style = `${ANKI_GLOSSARY_STYLE}${compactGlossaries ? COMPACT_GLOSSARY_STYLE : ""}`;
   return `${style}<div style="text-align: left;" class="yomitan-glossary"><ol>${items}</ol></div>`;
 }
 
-function renderAnkiGlossaryEntry(entry: GlossaryEntry, index: number): string {
-  const content = renderGlossaryContent(entry.text, entry.dict);
+function renderAnkiGlossaryEntry(
+  entry: GlossaryEntry,
+  index: number,
+  mediaByKey: Map<string, LookupAnkiMediaReference>,
+): string {
+  const content = renderGlossaryContent(entry.text, entry.dict, {
+    mediaResolver: (dictionary, path) => {
+      const media = mediaByKey.get(mediaKey(dictionary, path));
+      if (!media?.filename) return null;
+      return {
+        src: media.filename,
+        alt: media.alt,
+        title: media.title,
+      };
+    },
+  });
   const dictionary = entry.dict || "Dictionary";
   const tags = splitTags(entry.definitionTags).filter((tag) => !/^\d+$/.test(tag)).join(", ");
   const label = tags

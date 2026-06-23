@@ -341,23 +341,38 @@
     const originalLabel = placeholder.textContent?.trim() || "Dictionary media";
     placeholder.dataset.mediaStatus = "loading";
     placeholder.classList.add("gloss-media-placeholder-loading");
-    placeholder.textContent = "Loading media...";
+    const loadingContainer = placeholder.querySelector(".gloss-image-container");
+    if (loadingContainer) {
+      loadingContainer.textContent = "Loading media...";
+    } else {
+      placeholder.textContent = "Loading media...";
+    }
     try {
       const resource = await loadDictionaryMedia(dictionary, path);
       if (!placeholder.isConnected) return;
 
       const image = document.createElement("img");
-      image.className = "gloss-media-image";
+      image.className = "gloss-image gloss-media-image";
       image.alt = originalLabel;
       image.src = `data:${resource.mimeType};base64,${resource.dataBase64}`;
-      placeholder.replaceChildren(image);
+      const container = placeholder.querySelector(".gloss-image-container");
+      if (container) {
+        container.replaceChildren(image);
+      } else {
+        placeholder.replaceChildren(image);
+      }
       placeholder.dataset.mediaStatus = "loaded";
       placeholder.classList.remove("gloss-media-placeholder-loading");
       placeholder.classList.add("gloss-media-placeholder-loaded");
       if (requestId > 0) markLookupPerformance(requestId, "first-media-ready", { dictionary, path });
     } catch {
       if (!placeholder.isConnected) return;
-      placeholder.textContent = "Media unavailable";
+      const container = placeholder.querySelector(".gloss-image-container");
+      if (container) {
+        container.textContent = "Media unavailable";
+      } else {
+        placeholder.textContent = "Media unavailable";
+      }
       placeholder.dataset.mediaStatus = "error";
       placeholder.classList.remove("gloss-media-placeholder-loading");
       placeholder.classList.add("gloss-media-placeholder-error");
@@ -901,11 +916,16 @@
   .lookup-glossary-content :global(a) { color: var(--app-primary, #d0bcff); }
   .lookup-glossary-content :global(a[data-lookup-redirect]) { border-bottom: 1px dotted currentColor; cursor: pointer; text-decoration: none; }
   .lookup-glossary-content :global(rt) { color: var(--app-muted, #999999); font-size: 0.72em; }
-  .lookup-glossary-content :global(.gloss-media-placeholder) { display: inline-block; max-width: 100%; padding: calc(4px * var(--popup-scale, 1)) calc(7px * var(--popup-scale, 1)); border: 1px dashed var(--app-border, #333333); border-radius: calc(4px * var(--popup-scale, 1)); color: var(--app-muted, #999999); background: var(--app-control, #1b1b1b); font-size: calc(11px * var(--popup-scale, 1)); }
+  .lookup-glossary-content :global(.gloss-media-placeholder) { display: inline-block; max-width: 100%; padding: calc(4px * var(--popup-scale, 1)) calc(7px * var(--popup-scale, 1)); border: 1px dashed var(--app-border, #333333); border-radius: calc(4px * var(--popup-scale, 1)); color: var(--app-muted, #999999); background: var(--app-control, #1b1b1b); font-size: calc(11px * var(--popup-scale, 1)); text-decoration: none; }
+  .lookup-glossary-content :global(.gloss-image-container) { display: inline-flex; max-width: 100%; align-items: center; justify-content: center; vertical-align: middle; }
   .lookup-glossary-content :global(.gloss-media-placeholder-loading) { color: var(--app-text, #fff); border-color: var(--app-muted, #999999); }
   .lookup-glossary-content :global(.gloss-media-placeholder-loaded) { display: block; padding: calc(2px * var(--popup-scale, 1)); border-style: solid; }
   .lookup-glossary-content :global(.gloss-media-placeholder-error) { color: var(--app-error, #ffb4ab); border-color: var(--app-error, #ffb4ab); }
   .lookup-glossary-content :global(.gloss-media-image) { display: block; max-width: 100%; max-height: calc(180px * var(--popup-scale, 1)); object-fit: contain; }
+  .lookup-glossary-content :global([data-sc-img][data-sc-class="gaiji"]) { display: inline-block; line-height: 1; vertical-align: -0.12em; }
+  .lookup-glossary-content :global([data-sc-img][data-sc-class="gaiji"] .gloss-media-placeholder) { display: inline-block !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; color: inherit; vertical-align: baseline; }
+  .lookup-glossary-content :global([data-sc-img][data-sc-class="gaiji"] .gloss-image-container) { display: inline-flex !important; width: calc(1.15em * var(--popup-scale, 1)) !important; height: calc(1.15em * var(--popup-scale, 1)) !important; margin-inline-end: calc(0.15em * var(--popup-scale, 1)); vertical-align: -0.15em; }
+  .lookup-glossary-content :global([data-sc-img][data-sc-class="gaiji"] .gloss-media-image) { width: 100% !important; height: 100% !important; max-width: calc(1.15em * var(--popup-scale, 1)) !important; max-height: calc(1.15em * var(--popup-scale, 1)) !important; object-fit: contain; vertical-align: middle; }
   .anki-preview { display: flex; flex-direction: column; gap: calc(4px * var(--popup-scale, 1)); padding: calc(6px * var(--popup-scale, 1)) calc(8px * var(--popup-scale, 1)); background: var(--app-bg, #000); border: 1px solid var(--app-border, #333333); border-radius: calc(4px * var(--popup-scale, 1)); }
   .anki-action-message { margin: 0; font-size: calc(11px * var(--popup-scale, 1)); line-height: 1.35; overflow-wrap: anywhere; }
   .anki-action-message.ok { color: #9ad5b5; }

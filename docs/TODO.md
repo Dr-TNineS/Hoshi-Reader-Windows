@@ -50,7 +50,7 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Current: Slice 5I-0, Windows audio decode/clipping capability spike.
    - Next: Slice 5I, per-book Sasayaki sidecar and import.
    - Completed on 2026-06-23: HSA Anki field rendering parity bugfix for `{furigana-plain}`, `{sentence}`, and `{pitch-accent-positions}`.
-   - Current: Slice 2C in `docs/DICTIONARY_POPUP_HSA_ALIGNMENT.md`, legacy-encoded Yomitan ZIP media import for popup gaiji SVGs.
+   - Current: Slice 2D in `docs/DICTIONARY_POPUP_HSA_ALIGNMENT.md`, MK3 gaiji image wrapper/CSS parity and Anki inline glossary media.
    - Completed on 2026-06-23: Slice 2B in `docs/DICTIONARY_POPUP_HSA_ALIGNMENT.md`, packed hoshidicts media support for lookup popup gaiji SVGs.
    - Slices 5A-5H are complete at their documented validation levels. Do not promote automated results to real runtime verification.
 7. Before reader layout changes, re-check `docs/reader-layout-baseline.md`.
@@ -59,8 +59,8 @@ This file is the short operational handoff for future agents. Keep detailed stat
 
 ## Active Blockers
 
-- Active MK3 compatibility work must preserve `gaiji/...` media and normalize legacy ZIP filenames before hoshidicts import; packed media is readable when `media.idx`/`media.bin` exist, even if manifest `mediaCount=0`.
-- Old compatibility imports with `mediaCount=0` still need reimport after Slice 2C; do not infer from those records that the source ZIP lacks media.
+- Active MK3 popup/Anki work must preserve Yomitan image wrappers, dictionary `data-sc-*` styling hooks, and stored inline SVG media in Anki glossary fields.
+- Old MK3 imports that decoded `gaiji/bs一.svg` or `gaiji/ws一.svg` as `gaiji/bsһ.svg` / `gaiji/wsһ.svg` still need reimport after Slice 2D.
 
 ## Required Validation
 

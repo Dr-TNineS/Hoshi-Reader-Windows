@@ -294,6 +294,41 @@ Validation:
 - `cd src-tauri; cargo test --lib`
 - VS developer-shell linked check and ignored real MK3 import test.
 
+### Slice 2D: MK3 Gaiji Wrapper and Anki Inline Media
+
+Status: active on 2026-06-23.
+
+Goal: render MK3 gaiji SVGs with Yomitan-compatible image wrappers and carry
+stored inline SVGs plus core `data-sc-*` styles into Anki glossary fields.
+
+Key changes:
+
+- Decode legacy ZIP media filenames so `gaiji/bs一.svg` and `gaiji/ws一.svg`
+  remain keyed with Japanese `一`, not Cyrillic `һ`.
+- Render structured image records with `.gloss-image-link`,
+  `.gloss-image-container`, `.gloss-image`, and preserved `data-sc-*` hooks.
+- Keep gaiji images inline/small while preserving block sizing for normal
+  dictionary media.
+- Replace Anki glossary inline media placeholders with stored media filenames
+  and include minimal card CSS for MK3 red bracket/gaiji styling.
+
+Acceptance:
+
+- Lookup `目` displays `bs一`, `ws一`, `bs二`, and `参照` gaiji SVGs without
+  `Media unavailable` and without oversized generic media cards.
+- Anki glossary fields contain `<img src="hsw_...svg">` for inline gaiji and
+  preserve red bracket styling.
+- `{dictionary-media}` still renders the standalone media list.
+
+Validation:
+
+- `npm run check`
+- `npm run build`
+- `npm run check:lookup-popup`
+- `npm run check:anki-connect`
+- `cd src-tauri; cargo test --lib`
+- VS developer-shell linked check and ignored real MK3 import test.
+
 ### Slice 3: HSA-Style Redirect History
 
 Goal: add back/forward history for same-popup redirects without replacing the

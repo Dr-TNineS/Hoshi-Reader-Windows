@@ -55,11 +55,27 @@
   const glossaryText = longResult
     ? Array.from({ length: 16 }, (_, index) => `structured glossary line ${index + 1}: a school or learning place`).join("; ")
     : "school; a place of study";
+  const mk3Gaiji = (path: string, alt: string) => ({
+    tag: "img",
+    path,
+    alt,
+    data: { img: "", gaiji: "", class: "gaiji", alt, src: path },
+  });
   const structuredGlossaryText = JSON.stringify([
     {
       type: "structured-content",
       content: [
         { tag: "div", data: { class: "probe-entry", headword: "school" }, content: "classroom school room" },
+        {
+          tag: "div",
+          data: { class: "probe-mk3-head" },
+          content: [
+            { tag: "span", data: { red: "" }, content: "\u3010" },
+            "\u76ee",
+            { tag: "span", data: { red: "" }, content: "\u3011" },
+            "\uff08\u25bd\u773c\uff09",
+          ],
+        },
         { tag: "div", data: { class: "probe-japanese-prefix" }, content: "Aことは A" },
         { tag: "div", data: { class: "probe-japanese-quote" }, content: "って「ことと言いなさい」" },
         { tag: "div", data: { class: "probe-japanese-plain" }, content: "ことは純日文" },
@@ -92,6 +108,11 @@
           ],
         },
         { tag: "img", path: "images/school.svg", alt: "school icon" },
+        mk3Gaiji("gaiji/bs\u4e00.svg", "black square one"),
+        mk3Gaiji("gaiji/ws\u4e00.svg", "white square one"),
+        mk3Gaiji("gaiji/bs\u4e8c.svg", "black square two"),
+        mk3Gaiji("gaiji/\u53c2\u7167.svg", "reference arrow"),
+        { type: "image", path: "gaiji/\u53c2\u80031.svg", alt: "reference gaiji", data: { img: "", gaiji: "", class: "gaiji", alt: "reference gaiji", src: "gaiji/\u53c2\u80031.svg" } },
         { type: "image", path: "gaiji/参考.svg", alt: "reference gaiji" },
       ],
     },

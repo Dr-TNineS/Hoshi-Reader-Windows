@@ -122,13 +122,23 @@ export function glossaryGroups(result: DictResult): GlossaryGroup[] {
   return [...groups.values()];
 }
 
-export function renderGlossaryContent(text: string, dictionary = ""): string {
+export interface RenderGlossaryMediaResource {
+  src: string;
+  alt?: string;
+  title?: string;
+}
+
+export interface RenderGlossaryOptions {
+  mediaResolver?: (dictionary: string, path: string) => RenderGlossaryMediaResource | null;
+}
+
+export function renderGlossaryContent(text: string, dictionary = "", options: RenderGlossaryOptions = {}): string {
   const trimmed = text.trim();
   if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return escapeHtml(text);
 
   try {
     const parsed = JSON.parse(trimmed) as unknown;
-    return renderStructuredContent(parsed, "", dictionary) || escapeHtml(text);
+    return renderStructuredContent(parsed, "", dictionary, options) || escapeHtml(text);
   } catch {
     return escapeHtml(text);
   }
@@ -144,7 +154,7 @@ export function scopeDictionaryCss(css: string, popupId: string): string {
   return scopeCssRules(cleaned, scope).trim();
 }
 
-function renderStructuredContent(value: unknown, parentTag = "", dictionary = ""): string {
+function renderStructuredContent(value: unknown, parentTag = "", dictionary = "", options: RenderGlossaryOptions = {}): string {
   if (typeof value === "string") return renderText(value);
   if (Array.isArray(value)) {
     if (value.every((item) => typeof item === "string") && value.length > 1 && parentTag !== "span") {
@@ -153,20 +163,20 @@ function renderStructuredContent(value: unknown, parentTag = "", dictionary = ""
 
     const items = value.map((item) => isStructuredContentWrapper(item) ? (item as { content?: unknown }).content : item);
     if (items.every((item) => isStructuredTag(item, "a")) && items.length > 1) {
-      return `<ul class="glossary-list">${items.map((item) => `<li>${renderStructuredContent(item, "", dictionary)}</li>`).join("")}</ul>`;
+      return `<ul class="glossary-list">${items.map((item) => `<li>${renderStructuredContent(item, "", dictionary, options)}</li>`).join("")}</ul>`;
     }
 
-    return value.map((item) => renderStructuredContent(item, parentTag, dictionary)).join("");
+    return value.map((item) => renderStructuredContent(item, parentTag, dictionary, options)).join("");
   }
   if (!value || typeof value !== "object") return "";
 
   const record = value as Record<string, unknown>;
   if (record.type === "structured-content") {
-    return `<span class="structured-content">${renderStructuredContent(record.content, "span", dictionary)}</span>`;
+    return `<span class="structured-content">${renderStructuredContent(record.content, "span", dictionary, options)}</span>`;
   }
 
   const tag = typeof record.tag === "string" ? record.tag.toLowerCase() : "";
-  if (isStructuredImageRecord(record)) return renderStructuredImage(record, dictionary);
+  if (isStructuredImageRecord(record)) return renderStructuredImage(record, dictionary, options);
   const safeTag = safeStructuredTag(tag);
   if (safeTag === "br") return "<br>";
 
@@ -174,6 +184,7 @@ function renderStructuredContent(value: unknown, parentTag = "", dictionary = ""
     typeof record.content !== "undefined" ? record.content : record.text,
     safeTag,
     dictionary,
+    options,
   );
   const attributes = structuredAttributes(record, safeTag);
   const html = `<${safeTag}${attributes}>${content}</${safeTag}>`;
@@ -187,7 +198,7 @@ function isStructuredImageRecord(record: Record<string, unknown>): boolean {
   return tag === "img" || tag === "image" || type === "image";
 }
 
-function renderStructuredImage(record: Record<string, unknown>, dictionary: string): string {
+function renderStructuredImage(record: Record<string, unknown>, dictionary: string, options: RenderGlossaryOptions): string {
   const path = typeof record.path === "string"
     ? record.path
     : typeof record.src === "string"
@@ -195,10 +206,20 @@ function renderStructuredImage(record: Record<string, unknown>, dictionary: stri
       : "";
   const title = typeof record.title === "string" ? record.title : path;
   const alt = typeof record.alt === "string" ? record.alt : title;
+  const dataAttrs = structuredDataAttributes(record);
+  const resolved = path ? options.mediaResolver?.(dictionary, path) ?? null : null;
+  const statusAttr = resolved ? " data-media-status=\"loaded\"" : "";
   const pathAttr = path ? ` data-media-path="${escapeAttribute(path)}"` : "";
   const dictionaryAttr = dictionary ? ` data-media-dictionary="${escapeAttribute(dictionary)}"` : "";
   const titleAttr = title ? ` title="${escapeAttribute(title)}"` : "";
-  return `<span class="gloss-media-placeholder"${pathAttr}${dictionaryAttr}${titleAttr}>${escapeHtml(alt || "Dictionary media")}</span>`;
+  const displayAlt = resolved?.alt ?? alt;
+  const image = resolved
+    ? `<img class="gloss-image gloss-media-image" src="${escapeAttribute(resolved.src)}" alt="${escapeAttribute(displayAlt)}">`
+    : `<span class="gloss-media-label">${escapeHtml(alt || "Dictionary media")}</span>`;
+  const gaijiStyle = isGaijiImageRecord(record)
+    ? ` style="width:1.15em !important;height:1.15em !important;margin-inline-end:0.15em;vertical-align:-0.15em;"`
+    : "";
+  return `<span${dataAttrs.length ? ` ${dataAttrs.join(" ")}` : ""}><a class="gloss-image-link gloss-media-placeholder"${pathAttr}${dictionaryAttr}${titleAttr}${statusAttr}><span class="gloss-image-container"${gaijiStyle}>${image}</span></a></span>`;
 }
 
 function renderText(text: string): string {
@@ -234,6 +255,13 @@ function structuredAttributes(record: Record<string, unknown>, tag: string): str
   if (typeof record.colspan === "number") attrs.push(`colspan="${record.colspan}"`);
   if (typeof record.rowspan === "number") attrs.push(`rowspan="${record.rowspan}"`);
 
+  attrs.push(...structuredDataAttributes(record));
+
+  return attrs.length ? ` ${attrs.join(" ")}` : "";
+}
+
+function structuredDataAttributes(record: Record<string, unknown>): string[] {
+  const attrs: string[] = [];
   const data = record.data;
   if (data && typeof data === "object") {
     for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
@@ -242,8 +270,14 @@ function structuredAttributes(record: Record<string, unknown>, tag: string): str
       attrs.push(`${prefix}${toKebabCase(key)}="${escapeAttribute(String(value))}"`);
     }
   }
+  return attrs;
+}
 
-  return attrs.length ? ` ${attrs.join(" ")}` : "";
+function isGaijiImageRecord(record: Record<string, unknown>): boolean {
+  const data = record.data;
+  if (!data || typeof data !== "object") return false;
+  const fields = data as Record<string, unknown>;
+  return fields.gaiji !== undefined || fields.class === "gaiji";
 }
 
 function structuredRedirectTarget(record: Record<string, unknown>): string {
