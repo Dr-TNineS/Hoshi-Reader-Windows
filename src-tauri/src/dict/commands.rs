@@ -12,10 +12,10 @@ use tauri::{AppHandle, Manager};
 use crate::dict::ffi;
 #[cfg(hoshi_dicts_linked)]
 use std::ffi::{c_void, CStr, CString};
-#[cfg(hoshi_dicts_linked)]
+#[cfg(any(hoshi_dicts_linked, test))]
 use std::fs::File;
 use std::io::Read;
-#[cfg(hoshi_dicts_linked)]
+#[cfg(any(hoshi_dicts_linked, test))]
 use std::io::Write;
 
 #[cfg(hoshi_dicts_linked)]
@@ -215,10 +215,18 @@ pub fn dict_lookup(
             .backend
             .as_ref()
             .ok_or_else(|| runtime_error(&runtime))?;
-        let max_results =
-            clamp_lookup_bound(max_results, DEFAULT_MAX_LOOKUP_RESULTS, MIN_LOOKUP_RESULTS, MAX_LOOKUP_RESULTS);
-        let scan_length =
-            clamp_lookup_bound(scan_length, DEFAULT_SCAN_LENGTH, MIN_SCAN_LENGTH, MAX_SCAN_LENGTH);
+        let max_results = clamp_lookup_bound(
+            max_results,
+            DEFAULT_MAX_LOOKUP_RESULTS,
+            MIN_LOOKUP_RESULTS,
+            MAX_LOOKUP_RESULTS,
+        );
+        let scan_length = clamp_lookup_bound(
+            scan_length,
+            DEFAULT_SCAN_LENGTH,
+            MIN_SCAN_LENGTH,
+            MAX_SCAN_LENGTH,
+        );
         let lookup_started = Instant::now();
         let mut results = backend.lookup(&text, max_results, scan_length)?;
         let native_lookup_ms = lookup_started.elapsed().as_secs_f64() * 1000.0;
@@ -460,7 +468,13 @@ fn import_yomitan_zip_batch(
     let mut failures = Vec::new();
 
     for zip_path in zip_paths {
-        match import_yomitan_zip(&zip_path, app, state, ReloadDictionaryRuntime::Deferred, low_ram) {
+        match import_yomitan_zip(
+            &zip_path,
+            app,
+            state,
+            ReloadDictionaryRuntime::Deferred,
+            low_ram,
+        ) {
             Ok(summary) => imported.push(summary),
             Err(error) => failures.push(DictImportFailure {
                 path: zip_path,
@@ -919,7 +933,8 @@ fn detected_dictionary_entries_for_import(
     counts: (usize, usize, usize, usize, usize),
     last_imported: u64,
 ) -> Result<Vec<DictionaryManifestEntry>, String> {
-    let entries = dictionary_entries_for_import(import_id, title, internal_path, counts, last_imported);
+    let entries =
+        dictionary_entries_for_import(import_id, title, internal_path, counts, last_imported);
     if entries.is_empty() {
         return Err("Failed to detect dictionary type.".into());
     }
@@ -1637,27 +1652,27 @@ fn import_yomitan_zip_linked(
 
         let mut restored_title = None;
         let preflight_started = Instant::now();
-        let prefer_lookup_safe = prefers_lookup_safe_import_first(&ascii_source_zip)?;
+        let prefer_compat_import = prefers_compat_import_first(&ascii_source_zip)?;
         log::info!(
-            "dictionary import preflight completed in {}ms for {} (lookup_safe_first={})",
+            "dictionary import preflight completed in {}ms for {} (compat_import_first={})",
             preflight_started.elapsed().as_millis(),
             dict_id,
-            prefer_lookup_safe
+            prefer_compat_import
         );
-        let mut attempt = if prefer_lookup_safe {
-            let safe_zip_path = imported_root.join(format!(".importing-{dict_id}.lookup-safe.zip"));
-            let safe_zip_started = Instant::now();
-            let safe_zip =
-                create_lookup_safe_import_zip(&ascii_source_zip, &safe_zip_path, dict_id)?;
+        let mut attempt = if prefer_compat_import {
+            let compat_zip_path = imported_root.join(format!(".importing-{dict_id}.compat.zip"));
+            let compat_zip_started = Instant::now();
+            let compat_zip =
+                create_compat_import_zip(&ascii_source_zip, &compat_zip_path, dict_id)?;
             log::info!(
-                "dictionary import lookup-safe zip completed in {}ms for {}",
-                safe_zip_started.elapsed().as_millis(),
+                "dictionary import compatibility zip completed in {}ms for {}",
+                compat_zip_started.elapsed().as_millis(),
                 dict_id
             );
-            restored_title = safe_zip.original_title;
-            temp_paths.push(safe_zip.path.clone());
+            restored_title = compat_zip.original_title;
+            temp_paths.push(compat_zip.path.clone());
             let import_started = Instant::now();
-            let attempt = run_linked_import_attempt(&safe_zip.path, &staging_root, low_ram)?;
+            let attempt = run_linked_import_attempt(&compat_zip.path, &staging_root, low_ram)?;
             log::info!(
                 "dictionary linked import completed in {}ms for {}",
                 import_started.elapsed().as_millis(),
@@ -1675,7 +1690,7 @@ fn import_yomitan_zip_linked(
             attempt
         };
 
-        if !prefer_lookup_safe
+        if !prefer_compat_import
             && !attempt.ok()
             && is_windows_code_page_import_error(&attempt.errors)
         {
@@ -1683,24 +1698,24 @@ fn import_yomitan_zip_linked(
             fs::create_dir_all(&staging_root)
                 .map_err(|e| format!("Cannot recreate dictionary import staging dir: {e}"))?;
 
-            let safe_zip_path = imported_root.join(format!(".importing-{dict_id}.lookup-safe.zip"));
-            let safe_zip_started = Instant::now();
-            let safe_zip =
-                create_lookup_safe_import_zip(&ascii_source_zip, &safe_zip_path, dict_id)?;
+            let compat_zip_path = imported_root.join(format!(".importing-{dict_id}.compat.zip"));
+            let compat_zip_started = Instant::now();
+            let compat_zip =
+                create_compat_import_zip(&ascii_source_zip, &compat_zip_path, dict_id)?;
             log::info!(
-                "dictionary import lookup-safe retry zip completed in {}ms for {}",
-                safe_zip_started.elapsed().as_millis(),
+                "dictionary import compatibility retry zip completed in {}ms for {}",
+                compat_zip_started.elapsed().as_millis(),
                 dict_id
             );
             let import_started = Instant::now();
-            attempt = run_linked_import_attempt(&safe_zip.path, &staging_root, low_ram)?;
+            attempt = run_linked_import_attempt(&compat_zip.path, &staging_root, low_ram)?;
             log::info!(
                 "dictionary linked import retry completed in {}ms for {}",
                 import_started.elapsed().as_millis(),
                 dict_id
             );
-            restored_title = safe_zip.original_title;
-            temp_paths.push(safe_zip.path);
+            restored_title = compat_zip.original_title;
+            temp_paths.push(compat_zip.path);
         }
 
         if !attempt.ok() {
@@ -1785,8 +1800,8 @@ impl LinkedImportAttempt {
     }
 }
 
-#[cfg(hoshi_dicts_linked)]
-struct LookupSafeImportZip {
+#[cfg(any(hoshi_dicts_linked, test))]
+struct CompatImportZip {
     path: PathBuf,
     original_title: Option<String>,
 }
@@ -1876,8 +1891,9 @@ fn is_windows_code_page_import_error(errors: &[String]) -> bool {
         .any(|error| error.contains("Unicode character") || error.contains("multi-byte code page"))
 }
 
-#[cfg(hoshi_dicts_linked)]
-fn prefers_lookup_safe_import_first(source: &Path) -> Result<bool, String> {
+#[cfg(any(hoshi_dicts_linked, test))]
+#[allow(dead_code)]
+fn prefers_compat_import_first(source: &Path) -> Result<bool, String> {
     if !cfg!(windows) {
         return Ok(false);
     }
@@ -1890,8 +1906,10 @@ fn prefers_lookup_safe_import_first(source: &Path) -> Result<bool, String> {
         let file = archive
             .by_index(i)
             .map_err(|e| format!("Cannot read dictionary zip entry: {e}"))?;
-        let name = file.name().replace('\\', "/");
-        if !is_lookup_safe_yomitan_entry(&name) && !name.is_ascii() {
+        let decoded_name = decode_zip_entry_name(file.name_raw())?;
+        let name = validate_compat_zip_entry_name(&decoded_name)?;
+        let zip_name = file.name().replace('\\', "/");
+        if name != zip_name || (!is_lookup_compat_core_entry(&name) && !name.is_ascii()) {
             return Ok(true);
         }
     }
@@ -1899,12 +1917,12 @@ fn prefers_lookup_safe_import_first(source: &Path) -> Result<bool, String> {
     Ok(false)
 }
 
-#[cfg(hoshi_dicts_linked)]
-fn create_lookup_safe_import_zip(
+#[cfg(any(hoshi_dicts_linked, test))]
+fn create_compat_import_zip(
     source: &Path,
     output: &Path,
     dict_id: &str,
-) -> Result<LookupSafeImportZip, String> {
+) -> Result<CompatImportZip, String> {
     if let Some(parent) = output.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("Cannot create dictionary compatibility zip dir: {e}"))?;
@@ -1923,8 +1941,9 @@ fn create_lookup_safe_import_zip(
         let mut file = archive
             .by_index(i)
             .map_err(|e| format!("Cannot read dictionary zip entry: {e}"))?;
-        let name = file.name().replace('\\', "/");
-        if !is_lookup_safe_yomitan_entry(&name) {
+        let decoded_name = decode_zip_entry_name(file.name_raw())?;
+        let name = validate_compat_zip_entry_name(&decoded_name)?;
+        if name.ends_with('/') {
             continue;
         }
 
@@ -1957,14 +1976,62 @@ fn create_lookup_safe_import_zip(
     .ok()
     .and_then(|index| index.title)
     .filter(|title| !title.trim().is_empty());
-    Ok(LookupSafeImportZip {
+    Ok(CompatImportZip {
         path: output.to_path_buf(),
         original_title,
     })
 }
 
-#[cfg(hoshi_dicts_linked)]
-fn is_lookup_safe_yomitan_entry(name: &str) -> bool {
+#[cfg(any(hoshi_dicts_linked, test))]
+fn decode_zip_entry_name(raw: &[u8]) -> Result<String, String> {
+    if raw.is_ascii() {
+        return std::str::from_utf8(raw)
+            .map(str::to_owned)
+            .map_err(|e| format!("Dictionary zip entry name is not UTF-8: {e}"));
+    }
+
+    if let Ok(name) = std::str::from_utf8(raw) {
+        return Ok(name.to_string());
+    }
+
+    let (decoded, _, had_errors) = encoding_rs::GBK.decode(raw);
+    if had_errors {
+        return Err("Dictionary zip entry name is not UTF-8 or GBK.".into());
+    }
+    Ok(decoded.into_owned())
+}
+
+#[cfg(any(hoshi_dicts_linked, test))]
+fn validate_compat_zip_entry_name(name: &str) -> Result<String, String> {
+    let normalized = name.replace('\\', "/");
+    if normalized.trim().is_empty() || normalized.contains('\0') {
+        return Err("Dictionary zip contains an invalid empty entry path.".into());
+    }
+
+    let path = Path::new(&normalized);
+    if path.is_absolute() {
+        return Err(format!(
+            "Dictionary zip entry path must be relative: {normalized}"
+        ));
+    }
+
+    for component in path.components() {
+        match component {
+            Component::Normal(_) => {}
+            _ => {
+                return Err(format!(
+                    "Dictionary zip entry path must stay inside the archive: {normalized}"
+                ));
+            }
+        }
+    }
+
+    Ok(normalized)
+}
+
+#[cfg(any(hoshi_dicts_linked, test))]
+#[allow(dead_code)]
+fn is_lookup_compat_core_entry(name: &str) -> bool {
     name == "index.json"
         || name == "styles.css"
         || is_numbered_yomitan_bank(name, "term_bank_", ".json")
@@ -1972,7 +2039,8 @@ fn is_lookup_safe_yomitan_entry(name: &str) -> bool {
         || is_numbered_yomitan_bank(name, "tag_bank_", ".json")
 }
 
-#[cfg(hoshi_dicts_linked)]
+#[cfg(any(hoshi_dicts_linked, test))]
+#[allow(dead_code)]
 fn is_numbered_yomitan_bank(name: &str, prefix: &str, suffix: &str) -> bool {
     let Some(number) = name
         .strip_prefix(prefix)
@@ -1983,7 +2051,7 @@ fn is_numbered_yomitan_bank(name: &str, prefix: &str, suffix: &str) -> bool {
     !number.is_empty() && number.bytes().all(|byte| byte.is_ascii_digit())
 }
 
-#[cfg(hoshi_dicts_linked)]
+#[cfg(any(hoshi_dicts_linked, test))]
 fn rewrite_index_title_for_compat_import(
     index_json: &str,
     dict_id: &str,
@@ -2144,7 +2212,12 @@ impl DictBackend {
         }
     }
 
-    fn lookup(&self, text: &str, max_results: i32, scan_length: i32) -> Result<Vec<DictResult>, String> {
+    fn lookup(
+        &self,
+        text: &str,
+        max_results: i32,
+        scan_length: i32,
+    ) -> Result<Vec<DictResult>, String> {
         let text = CString::new(text.as_bytes())
             .map_err(|_| "Lookup text contains an interior NUL.".to_string())?;
         let mut out = Vec::<DictResult>::new();
@@ -2284,6 +2357,85 @@ mod tests {
         fs::write(dir.join("media.idx"), index).unwrap();
     }
 
+    fn push_u16_le(bytes: &mut Vec<u8>, value: u16) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn push_u32_le(bytes: &mut Vec<u8>, value: u32) {
+        bytes.extend_from_slice(&value.to_le_bytes());
+    }
+
+    fn crc32(bytes: &[u8]) -> u32 {
+        let mut crc = 0xffff_ffffu32;
+        for byte in bytes {
+            crc ^= *byte as u32;
+            for _ in 0..8 {
+                let mask = 0u32.wrapping_sub(crc & 1);
+                crc = (crc >> 1) ^ (0xedb8_8320 & mask);
+            }
+        }
+        !crc
+    }
+
+    fn write_raw_stored_zip(path: &Path, entries: &[(&[u8], &[u8])]) {
+        let mut zip = Vec::new();
+        let mut central = Vec::new();
+
+        for (raw_name, content) in entries {
+            let offset = zip.len() as u32;
+            let crc = crc32(content);
+            let size = content.len() as u32;
+            let name_len = raw_name.len() as u16;
+
+            push_u32_le(&mut zip, 0x0403_4b50);
+            push_u16_le(&mut zip, 20);
+            push_u16_le(&mut zip, 0);
+            push_u16_le(&mut zip, 0);
+            push_u16_le(&mut zip, 0);
+            push_u16_le(&mut zip, 0);
+            push_u32_le(&mut zip, crc);
+            push_u32_le(&mut zip, size);
+            push_u32_le(&mut zip, size);
+            push_u16_le(&mut zip, name_len);
+            push_u16_le(&mut zip, 0);
+            zip.extend_from_slice(raw_name);
+            zip.extend_from_slice(content);
+
+            push_u32_le(&mut central, 0x0201_4b50);
+            push_u16_le(&mut central, 20);
+            push_u16_le(&mut central, 20);
+            push_u16_le(&mut central, 0);
+            push_u16_le(&mut central, 0);
+            push_u16_le(&mut central, 0);
+            push_u16_le(&mut central, 0);
+            push_u32_le(&mut central, crc);
+            push_u32_le(&mut central, size);
+            push_u32_le(&mut central, size);
+            push_u16_le(&mut central, name_len);
+            push_u16_le(&mut central, 0);
+            push_u16_le(&mut central, 0);
+            push_u16_le(&mut central, 0);
+            push_u16_le(&mut central, 0);
+            push_u32_le(&mut central, 0);
+            push_u32_le(&mut central, offset);
+            central.extend_from_slice(raw_name);
+        }
+
+        let central_offset = zip.len() as u32;
+        let central_size = central.len() as u32;
+        zip.extend_from_slice(&central);
+        push_u32_le(&mut zip, 0x0605_4b50);
+        push_u16_le(&mut zip, 0);
+        push_u16_le(&mut zip, 0);
+        push_u16_le(&mut zip, entries.len() as u16);
+        push_u16_le(&mut zip, entries.len() as u16);
+        push_u32_le(&mut zip, central_size);
+        push_u32_le(&mut zip, central_offset);
+        push_u16_le(&mut zip, 0);
+
+        fs::write(path, zip).unwrap();
+    }
+
     #[test]
     fn prepares_ascii_dictionary_import_source_from_non_ascii_filename() {
         let root = temp_path("ascii_import_source");
@@ -2325,7 +2477,7 @@ mod tests {
         fs::create_dir_all(&staging_root).unwrap();
         fs::create_dir_all(&imported_root).unwrap();
         let source_temp = imported_root.join(".importing-abc.source.zip");
-        let safe_temp = imported_root.join(".importing-abc.lookup-safe.zip");
+        let safe_temp = imported_root.join(".importing-abc.compat.zip");
         fs::write(&source_temp, b"source").unwrap();
         fs::write(&safe_temp, b"safe").unwrap();
 
@@ -2334,6 +2486,90 @@ mod tests {
         assert!(!staging_root.exists());
         assert!(!source_temp.exists());
         assert!(!safe_temp.exists());
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn compat_import_zip_decodes_legacy_gbk_gaiji_media_name() {
+        let root = temp_path("compat_gbk_gaiji");
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("source.zip");
+        let output = root.join("compat.zip");
+        let index = br#"{"title":"Original MK3","format":3}"#;
+        let term_bank =
+            r#"[["声","こえ","","",0,[{"type":"image","path":"gaiji/参考1.svg"}],0,0,""]]"#;
+        let svg = br#"<svg xmlns="http://www.w3.org/2000/svg"><text>ref1</text></svg>"#;
+        write_raw_stored_zip(
+            &source,
+            &[
+                (b"index.json", index.as_slice()),
+                (b"term_bank_1.json", term_bank.as_bytes()),
+                (b"styles.css", b".tag { color: red; }".as_slice()),
+                (b"gaiji/\xb2\xce\xbf\xbc\x31.svg", svg.as_slice()),
+            ],
+        );
+
+        let compat = create_compat_import_zip(&source, &output, "abc").unwrap();
+        assert_eq!(compat.original_title.as_deref(), Some("Original MK3"));
+
+        let file = File::open(&compat.path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        let names = (0..archive.len())
+            .map(|index| archive.by_index(index).unwrap().name().to_string())
+            .collect::<Vec<_>>();
+        assert!(names.contains(&"gaiji/参考1.svg".to_string()));
+        assert!(names.contains(&"term_bank_1.json".to_string()));
+
+        let mut media = Vec::new();
+        archive
+            .by_name("gaiji/参考1.svg")
+            .unwrap()
+            .read_to_end(&mut media)
+            .unwrap();
+        assert_eq!(media, svg);
+
+        let mut rewritten_index = String::new();
+        archive
+            .by_name("index.json")
+            .unwrap()
+            .read_to_string(&mut rewritten_index)
+            .unwrap();
+        assert!(rewritten_index.contains("hoshi-import-abc"));
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn compat_zip_entry_validation_rejects_escape_paths() {
+        for path in ["../gaiji/ref.svg", "/gaiji/ref.svg", "C:/gaiji/ref.svg"] {
+            let error = validate_compat_zip_entry_name(path).unwrap_err();
+            assert!(
+                error.contains("relative") || error.contains("inside"),
+                "{path} produced unexpected error: {error}"
+            );
+        }
+    }
+
+    #[test]
+    fn compat_import_zip_preserves_ascii_media_entries() {
+        let root = temp_path("compat_ascii_media");
+        fs::create_dir_all(&root).unwrap();
+        let source = root.join("source.zip");
+        let output = root.join("compat.zip");
+        write_raw_stored_zip(
+            &source,
+            &[
+                (b"index.json", br#"{"title":"ASCII","format":3}"#.as_slice()),
+                (b"term_bank_1.json", b"[]".as_slice()),
+                (b"gaiji/ref.svg", b"<svg></svg>".as_slice()),
+            ],
+        );
+
+        let compat = create_compat_import_zip(&source, &output, "abc").unwrap();
+        let file = File::open(&compat.path).unwrap();
+        let mut archive = zip::ZipArchive::new(file).unwrap();
+        assert!(archive.by_name("gaiji/ref.svg").is_ok());
 
         let _ = fs::remove_dir_all(root);
     }
@@ -2785,10 +3021,10 @@ mod tests {
     }
 
     #[test]
-    fn dictionary_import_cleanup_removes_staging_and_safe_zip() {
+    fn dictionary_import_cleanup_removes_staging_and_compat_zip() {
         let root = temp_path("dict_cleanup");
         let staging_root = root.join(".importing-abc");
-        let safe_zip = root.join(".importing-abc.lookup-safe.zip");
+        let safe_zip = root.join(".importing-abc.compat.zip");
         fs::create_dir_all(&staging_root).unwrap();
         fs::write(staging_root.join("temp"), "temp").unwrap();
         fs::write(&safe_zip, "zip").unwrap();
@@ -3270,6 +3506,52 @@ mod tests {
     #[cfg(hoshi_dicts_linked)]
     #[test]
     #[ignore]
+    fn imports_real_mk3_zip_with_legacy_encoded_media() {
+        let zip_path = std::env::var("HSW_REAL_MK3_ZIP").expect("HSW_REAL_MK3_ZIP is required");
+        let source = PathBuf::from(zip_path);
+        assert!(source.is_file(), "real MK3 dictionary zip must exist");
+
+        let root = temp_path("real_mk3_media_import");
+        let staging_root = root.join("staging");
+        let imported_root = root.join("imported");
+        fs::create_dir_all(&staging_root).unwrap();
+        fs::create_dir_all(&imported_root).unwrap();
+
+        let dict_id = dictionary_zip_id(&source).unwrap();
+        let ascii_source_zip =
+            prepare_ascii_dictionary_import_source(&source, &imported_root, &dict_id).unwrap();
+        let compat_zip_path = imported_root.join(format!(".importing-{dict_id}.compat.zip"));
+        assert!(prefers_compat_import_first(&ascii_source_zip).unwrap());
+        let compat_zip =
+            create_compat_import_zip(&ascii_source_zip, &compat_zip_path, &dict_id).unwrap();
+        let attempt = run_linked_import_attempt(&compat_zip.path, &staging_root, false).unwrap();
+        assert!(
+            attempt.ok(),
+            "importer failed: {}",
+            import_error_message(&attempt.errors)
+        );
+        assert!(attempt.counts.0 > 0, "MK3 import must contain terms");
+        assert!(attempt.counts.4 > 0, "MK3 import must preserve media");
+
+        let imported_dir = find_single_imported_dictionary_dir(&staging_root).unwrap();
+        assert!(imported_dir.join("media.idx").is_file());
+        assert!(imported_dir.join("media.bin").is_file());
+        let gaiji_path = concat!("gaiji/", "\u{53c2}\u{8003}", "1.svg");
+        let media = read_packed_dictionary_media(&imported_dir, gaiji_path)
+            .unwrap()
+            .expect("gaiji/参考1.svg should be packed");
+        assert!(
+            media.starts_with(b"<svg") || media.starts_with(br#"<?xml"#),
+            "packed gaiji media should be SVG"
+        );
+
+        cleanup_dictionary_import_temps(&staging_root, &[ascii_source_zip, compat_zip.path]);
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[cfg(hoshi_dicts_linked)]
+    #[test]
+    #[ignore]
     fn imports_real_yomitan_zip_and_loads_runtime() {
         let total_started = std::time::Instant::now();
         let zip_path =
@@ -3295,25 +3577,26 @@ mod tests {
         temp_paths.push(ascii_source_zip.clone());
         let mut restored_title = None;
         let preflight_started = std::time::Instant::now();
-        let prefer_lookup_safe = prefers_lookup_safe_import_first(&ascii_source_zip).unwrap();
+        let prefer_compat_import = prefers_compat_import_first(&ascii_source_zip).unwrap();
         eprintln!(
-            "timing preflight_ms={} prefer_lookup_safe={}",
+            "timing preflight_ms={} prefer_compat_import={}",
             preflight_started.elapsed().as_millis(),
-            prefer_lookup_safe
+            prefer_compat_import
         );
-        let mut attempt = if prefer_lookup_safe {
-            let safe_zip_path = imported_root.join(format!(".importing-{dict_id}.lookup-safe.zip"));
-            let safe_zip_started = std::time::Instant::now();
-            let safe_zip =
-                create_lookup_safe_import_zip(&ascii_source_zip, &safe_zip_path, &dict_id).unwrap();
+        let mut attempt = if prefer_compat_import {
+            let compat_zip_path = imported_root.join(format!(".importing-{dict_id}.compat.zip"));
+            let compat_zip_started = std::time::Instant::now();
+            let compat_zip =
+                create_compat_import_zip(&ascii_source_zip, &compat_zip_path, &dict_id).unwrap();
             eprintln!(
-                "timing safe_zip_ms={}",
-                safe_zip_started.elapsed().as_millis()
+                "timing compat_zip_ms={}",
+                compat_zip_started.elapsed().as_millis()
             );
-            restored_title = safe_zip.original_title;
-            temp_paths.push(safe_zip.path.clone());
+            restored_title = compat_zip.original_title;
+            temp_paths.push(compat_zip.path.clone());
             let import_started = std::time::Instant::now();
-            let attempt = run_linked_import_attempt(&safe_zip.path, &staging_root, false).unwrap();
+            let attempt =
+                run_linked_import_attempt(&compat_zip.path, &staging_root, false).unwrap();
             eprintln!(
                 "timing linked_import_ms={}",
                 import_started.elapsed().as_millis()
@@ -3321,7 +3604,8 @@ mod tests {
             attempt
         } else {
             let import_started = std::time::Instant::now();
-            let attempt = run_linked_import_attempt(&ascii_source_zip, &staging_root, false).unwrap();
+            let attempt =
+                run_linked_import_attempt(&ascii_source_zip, &staging_root, false).unwrap();
             eprintln!(
                 "timing linked_import_ms={}",
                 import_started.elapsed().as_millis()
@@ -3329,28 +3613,28 @@ mod tests {
             attempt
         };
 
-        if !prefer_lookup_safe
+        if !prefer_compat_import
             && !attempt.ok()
             && is_windows_code_page_import_error(&attempt.errors)
         {
             let _ = fs::remove_dir_all(&staging_root);
             fs::create_dir_all(&staging_root).unwrap();
-            let safe_zip_path = imported_root.join(format!(".importing-{dict_id}.lookup-safe.zip"));
-            let safe_zip_started = std::time::Instant::now();
-            let safe_zip =
-                create_lookup_safe_import_zip(&ascii_source_zip, &safe_zip_path, &dict_id).unwrap();
+            let compat_zip_path = imported_root.join(format!(".importing-{dict_id}.compat.zip"));
+            let compat_zip_started = std::time::Instant::now();
+            let compat_zip =
+                create_compat_import_zip(&ascii_source_zip, &compat_zip_path, &dict_id).unwrap();
             eprintln!(
-                "timing safe_zip_ms={}",
-                safe_zip_started.elapsed().as_millis()
+                "timing compat_zip_ms={}",
+                compat_zip_started.elapsed().as_millis()
             );
             let import_started = std::time::Instant::now();
-            attempt = run_linked_import_attempt(&safe_zip.path, &staging_root, false).unwrap();
+            attempt = run_linked_import_attempt(&compat_zip.path, &staging_root, false).unwrap();
             eprintln!(
                 "timing linked_import_retry_ms={}",
                 import_started.elapsed().as_millis()
             );
-            restored_title = safe_zip.original_title;
-            temp_paths.push(safe_zip.path);
+            restored_title = compat_zip.original_title;
+            temp_paths.push(compat_zip.path);
         }
         assert!(
             attempt.ok(),

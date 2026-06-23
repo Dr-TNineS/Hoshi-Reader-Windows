@@ -149,6 +149,11 @@ recognizes Yomitan-style `type: "image"` records. Manual popup runtime
 validation with a media-preserving 明鏡 import remains not verified because the
 current local app-data 明鏡 import has no `media.idx`/`media.bin`.
 
+Current note: Slice 2C is active. `MK3Fix0407.zip` stores `gaiji/...` media
+filenames with a legacy non-UTF-8 encoding while term bank JSON references
+normal UTF-8 paths. HSW must preserve those media files and normalize entry
+names before hoshidicts import; old `mediaCount=0` imports must be reimported.
+
 ## Follow-Up Implementation Slices
 
 ### Slice 1: HSA-Style Renderer Parity
@@ -258,6 +263,36 @@ Completed validation on 2026-06-23:
 - `npm run check:lookup-popup`
 - `cd src-tauri; cargo test --lib`
 - VS developer-shell `cd /d D:\Hoshi-Reader-Windows\src-tauri && cargo check`
+
+### Slice 2C: Legacy ZIP Media Import
+
+Status: active on 2026-06-23.
+
+Goal: import MK3-style Yomitan ZIPs whose media filenames are stored with a
+legacy encoding, so hoshidicts writes packed media keys matching UTF-8 glossary
+paths such as `gaiji/参考1.svg`.
+
+Key changes:
+
+- Rewrite Windows compatibility import ZIPs with UTF-8 entry names before
+  hoshidicts import.
+- Preserve dictionary media entries instead of filtering compatibility ZIPs down
+  to lookup JSON/CSS files.
+- Keep `dictionary_media(dictionary, path)` and popup rendering unchanged.
+
+Acceptance:
+
+- `MK3Fix0407.zip` imports with `media.idx`/`media.bin` and nonzero media count.
+- `gaiji/参考1.svg` and similar SVG paths render inline after reimport.
+- Legacy unsafe ZIP paths are rejected before compatibility ZIP generation.
+
+Validation:
+
+- `npm run check`
+- `npm run build`
+- `npm run check:lookup-popup`
+- `cd src-tauri; cargo test --lib`
+- VS developer-shell linked check and ignored real MK3 import test.
 
 ### Slice 3: HSA-Style Redirect History
 
