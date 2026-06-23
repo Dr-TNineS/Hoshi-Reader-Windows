@@ -1,10 +1,10 @@
-﻿# Hoshi Reader Windows
+<div align="center">
+ 
+ # Hoshi Reader Windows
 
-![Language](D:\Hoshi-Reader-Windows\Hoshi-Reader-Windows.svg+xml)
-
-![Platform](D:\Hoshi-Reader-Windows\platform-Windows-0078D4.svg+xml)
-
-![License](D:\Hoshi-Reader-Windows\Hoshi-Reader-Windows-1782173967400-15.svg+xml)
+![Language](https://img.shields.io/github/languages/top/Dr-TNineS/Hoshi-Reader-Windows)
+![Platform](https://img.shields.io/badge/platform-Windows-0078D4)
+![License](https://img.shields.io/github/license/Dr-TNineS/Hoshi-Reader-Windows)
 
 Hoshi Reader Windows is a Japanese EPUB reader with Yomitan dictionary support, built for desktop immersion learning on Windows.
 
@@ -13,6 +13,21 @@ It brings together vertical Japanese reading, popup dictionary lookup, AnkiConne
 The reading and lookup experience is primarily aligned with Hoshi Reader Android, while the desktop UI, panel layout, and interaction design also draw inspiration from Hoshi Reader Mac.
 
 > **Work in progress:** Hoshi Reader Windows is actively developed. The core reading, dictionary, and Anki workflow is available, while sync, statistics, Sasayaki audiobook support, horizontal layout, and broader release validation are still in progress.
+
+<!--
+<p align="center">
+    <img src="Pictures/books_windows.png" width="32%" alt="Bookshelf">
+    <img src="Pictures/reader_windows.png" width="32%" alt="Reader">
+    <img src="Pictures/popup_dict_windows.png" width="32%" alt="Popup dictionary">
+</p>
+<p align="center">
+    <img src="Pictures/dictionaries_windows.png" width="32%" alt="Dictionary management">
+    <img src="Pictures/appearance_windows.png" width="32%" alt="Appearance settings">
+    <img src="Pictures/anki_windows.png" width="32%" alt="Anki settings">
+</p>
+-->
+
+</div>
 
 ## Status
 
