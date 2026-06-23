@@ -224,6 +224,19 @@
     books = mergeLibraryBooks(books, libraryBooks);
   }
 
+  function fileNameForStatus(path: string): string {
+    return path.split(/[\\/]/).pop() || path;
+  }
+
+  function epubImportStatus(importedCount: number, totalCount: number, failures: string[]): string {
+    if (failures.length === 0) {
+      return importedCount === 1 ? "Imported 1 EPUB." : `Imported ${importedCount} EPUBs.`;
+    }
+
+    const failureDetails = failures.map((failure) => `- ${failure}`).join("\n");
+    return `Imported ${importedCount} of ${totalCount} EPUBs.\nFailed:\n${failureDetails}`;
+  }
+
   async function openBook() {
     if (bookImportBusy) return;
     try {
@@ -235,21 +248,46 @@
 
       bookImportBusy = true;
       const selected = await open({
-        multiple: false,
+        multiple: true,
         filters: [{ name: "EPUB", extensions: ["epub"] }],
       });
       if (!selected) {
         debug = "Import cancelled.";
         return;
       }
-      debug = "Importing...";
-      const imported = await invoke<LibraryBookRecord>("library_import_epub", { sourcePath: selected });
+
+      const sourcePaths = Array.isArray(selected) ? selected : [selected];
+      if (sourcePaths.length === 0) {
+        debug = "Import cancelled.";
+        return;
+      }
+
+      debug = sourcePaths.length === 1 ? "Importing..." : `Importing ${sourcePaths.length} EPUBs...`;
+      error = "";
+      const importedBooks: LibraryBookRecord[] = [];
+      const failures: string[] = [];
+      for (const sourcePath of sourcePaths) {
+        try {
+          const imported = await invoke<LibraryBookRecord>("library_import_epub", { sourcePath });
+          importedBooks.push(imported);
+        } catch (e) {
+          failures.push(`${fileNameForStatus(sourcePath)}: ${String(e)}`);
+        }
+      }
+
       await refreshLibraryBooks();
-      await openBookLocator({
-        bookId: imported.bookId,
-        sourcePath: imported.sourcePath,
-        libraryPath: imported.libraryPath,
-      }, 0);
+      const status = epubImportStatus(importedBooks.length, sourcePaths.length, failures);
+      debug = failures.length === 0 ? status : "Import finished with errors.";
+      if (failures.length > 0) error = status;
+
+      if (sourcePaths.length === 1 && importedBooks.length === 1 && failures.length === 0) {
+        const imported = importedBooks[0];
+        await openBookLocator({
+          bookId: imported.bookId,
+          sourcePath: imported.sourcePath,
+          libraryPath: imported.libraryPath,
+        }, 0);
+      }
     } catch (e) {
       error = String(e);
       debug = "Err";
