@@ -10,7 +10,7 @@ Hoshi Reader Windows is a Japanese EPUB reader with Yomitan dictionary support, 
 
 It brings together vertical Japanese reading, popup dictionary lookup, AnkiConnect mining, local EPUB library management, and desktop-oriented keyboard and mouse interaction in a Windows/Tauri application.
 
-The reading and lookup experience is primarily aligned with Hoshi Reader Android, while the desktop UI, panel layout, and interaction design also draw inspiration from Hoshi Reader Mac.
+The reading and lookup experience is primarily aligned with [Hoshi Reader Android](https://github.com/HuangAntimony/Hoshi-Reader-Android), while the desktop UI, panel layout, and interaction design also draw inspiration from [Hoshi Reader Mac](https://github.com/W1ght/Hoshi-Reader-Mac).
 
 > **Work in progress:** Hoshi Reader Windows is actively developed. The core reading, dictionary, and Anki workflow is available, while sync, statistics, Sasayaki audiobook support, horizontal layout, and broader release validation are still in progress.
 
