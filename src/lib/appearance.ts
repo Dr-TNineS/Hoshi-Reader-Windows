@@ -27,7 +27,7 @@ export type ReaderAppearancePalette = {
 const APPEARANCE_KEY = "hoshi_reader_appearance";
 
 export const defaultReaderAppearance: ReaderAppearance = {
-  theme: "dark",
+  theme: "light",
 };
 
 export const readerThemeLabels: Record<ReaderTheme, string> = {
