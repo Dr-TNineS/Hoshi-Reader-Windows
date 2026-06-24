@@ -2,7 +2,7 @@
   import { convertFileSrc } from "@tauri-apps/api/core";
   import AnkiConnectPanel from "./AnkiConnectPanel.svelte";
   import SasayakiBookPanel from "./SasayakiBookPanel.svelte";
-  import type { AnkiAudioSource, AnkiSettings, DictionaryManifestEntry, DictionaryStatus, LocalAudioStatus, SasayakiStatus } from "./types";
+  import type { AnkiAudioSource, AnkiSettings, DictionaryManifestEntry, DictionaryStatus, LocalAudioStatus, SasayakiCueItem, SasayakiStatus } from "./types";
   import AppearancePanel from "./AppearancePanel.svelte";
   import type { ReaderAppearance, ReaderTheme } from "./appearance";
   import type { DictionarySettings } from "./dictionary-settings";
@@ -68,12 +68,16 @@
     onMoveLocalAudioSource = (_source: string, _direction: -1 | 1) => {},
     sasayakiBookId = null,
     sasayakiStatus = null,
+    sasayakiCues = [],
     sasayakiMessage = "",
     sasayakiError = "",
     sasayakiBusy = false,
     onLoadSasayaki = (_book: BookRecord) => {},
     onImportSasayaki = (_book: BookRecord, _copyAudio: boolean) => {},
     onRemoveSasayaki = (_book: BookRecord) => {},
+    onRematchSasayaki = (_book: BookRecord, _searchWindow: number) => {},
+    onCorrectSasayakiCue = (_book: BookRecord, _cueId: string, _chapterIndex: number, _start: number, _length: number) => {},
+    onClearSasayakiCorrection = (_book: BookRecord, _cueId: string) => {},
   }: {
     books: BookRecord[];
     error?: string;
@@ -128,12 +132,16 @@
     onMoveLocalAudioSource?: (source: string, direction: -1 | 1) => void;
     sasayakiBookId?: string | null;
     sasayakiStatus?: SasayakiStatus | null;
+    sasayakiCues?: SasayakiCueItem[];
     sasayakiMessage?: string;
     sasayakiError?: string;
     sasayakiBusy?: boolean;
     onLoadSasayaki?: (book: BookRecord) => void;
     onImportSasayaki?: (book: BookRecord, copyAudio: boolean) => void;
     onRemoveSasayaki?: (book: BookRecord) => void;
+    onRematchSasayaki?: (book: BookRecord, searchWindow: number) => void;
+    onCorrectSasayakiCue?: (book: BookRecord, cueId: string, chapterIndex: number, start: number, length: number) => void;
+    onClearSasayakiCorrection?: (book: BookRecord, cueId: string) => void;
   } = $props();
 
   type ShelfPanel = "library" | "dictionaries" | "anki" | "appearance" | "advanced" | "shortcuts";
@@ -299,12 +307,16 @@
             <SasayakiBookPanel
               book={selectedSasayakiBook}
               status={sasayakiBookId === selectedSasayakiBook.bookId ? sasayakiStatus : null}
+              cues={sasayakiBookId === selectedSasayakiBook.bookId ? sasayakiCues : []}
               message={sasayakiBookId === selectedSasayakiBook.bookId ? sasayakiMessage : ""}
               error={sasayakiBookId === selectedSasayakiBook.bookId ? sasayakiError : ""}
               busy={sasayakiBookId === selectedSasayakiBook.bookId && sasayakiBusy}
               onClose={() => selectedSasayakiBook = null}
               onImport={(copyAudio) => onImportSasayaki(selectedSasayakiBook!, copyAudio)}
               onRemove={() => onRemoveSasayaki(selectedSasayakiBook!)}
+              onRematch={(searchWindow) => onRematchSasayaki(selectedSasayakiBook!, searchWindow)}
+              onCorrect={(cueId, chapterIndex, start, length) => onCorrectSasayakiCue(selectedSasayakiBook!, cueId, chapterIndex, start, length)}
+              onClearCorrection={(cueId) => onClearSasayakiCorrection(selectedSasayakiBook!, cueId)}
             />
           {/if}
         </div>

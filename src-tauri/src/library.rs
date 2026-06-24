@@ -202,6 +202,10 @@ pub(crate) fn library_book_dir(app: &AppHandle, book_id: &str) -> Result<PathBuf
     library_book_dir_from_root(&root, book_id)
 }
 
+pub(crate) fn library_book_file(app: &AppHandle, book_id: &str) -> Result<PathBuf, String> {
+    Ok(library_book_dir(app, book_id)?.join("book.epub"))
+}
+
 fn library_book_dir_from_root(root: &Path, book_id: &str) -> Result<PathBuf, String> {
     if book_id.trim().is_empty() {
         return Err("Library book id is empty.".into());

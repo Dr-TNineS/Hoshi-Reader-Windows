@@ -51,6 +51,8 @@
     LocalAudioStatus,
     ReaderProgress,
     ReaderSelection,
+    SasayakiCueItem,
+    SasayakiCuePage,
     SasayakiStatus,
   } from "./lib/types";
   import type { BookLocator, BookRecord, LibraryBookRecord } from "./lib/storage";
@@ -89,6 +91,7 @@
   let localAudioStatus = $state<LocalAudioStatus>({ imported: false, sizeBytes: null, sources: [] });
   let sasayakiBookId = $state<string | null>(null);
   let sasayakiStatus = $state<SasayakiStatus | null>(null);
+  let sasayakiCues = $state<SasayakiCueItem[]>([]);
   let sasayakiMessage = $state("");
   let sasayakiError = $state("");
   let sasayakiBusy = $state(false);
@@ -319,6 +322,7 @@
         sasayakiRequestId += 1;
         sasayakiBookId = null;
         sasayakiStatus = null;
+        sasayakiCues = [];
         sasayakiMessage = "";
         sasayakiError = "";
       }
@@ -335,6 +339,7 @@
     const requestId = ++sasayakiRequestId;
     sasayakiBookId = book.bookId;
     sasayakiStatus = null;
+    sasayakiCues = [];
     sasayakiMessage = "Loading Sasayaki status...";
     sasayakiError = "";
     if (!isTauriRuntime()) {
@@ -347,8 +352,17 @@
       if (requestId !== sasayakiRequestId || sasayakiBookId !== book.bookId) return;
       sasayakiStatus = next;
       sasayakiMessage = sasayakiStatus.configured
-        ? "Sasayaki audio and subtitles are ready for the matching slice."
+        ? "Sasayaki audio and subtitles are ready to match."
         : "Choose linked or copied audio, then select its UTF-8 SRT subtitles.";
+      if (next.configured) {
+        const page = await invoke<SasayakiCuePage>("sasayaki_list_cues", {
+          bookId: book.bookId,
+          offset: 0,
+          limit: 100,
+        });
+        if (requestId !== sasayakiRequestId || sasayakiBookId !== book.bookId) return;
+        sasayakiCues = page.items;
+      }
     } catch (e) {
       if (requestId !== sasayakiRequestId || sasayakiBookId !== book.bookId) return;
       sasayakiMessage = "";
@@ -391,6 +405,7 @@
       });
       if (requestId !== sasayakiRequestId || sasayakiBookId !== book.bookId) return;
       sasayakiStatus = next;
+      sasayakiCues = [];
       sasayakiMessage = copyAudio
         ? "Copied Sasayaki audio and subtitles into app storage."
         : "Linked the external audiobook and copied its subtitles into app storage.";
@@ -399,6 +414,109 @@
         sasayakiBookId !== book.bookId
         || (requestId !== null && requestId !== sasayakiRequestId)
       ) return;
+      sasayakiMessage = "";
+      sasayakiError = String(e);
+    } finally {
+      if (sasayakiBusyBookId === book.bookId) {
+        sasayakiBusy = false;
+        sasayakiBusyBookId = null;
+      }
+    }
+  }
+
+  async function refreshSasayakiCues(book: BookRecord) {
+    if (!book.bookId || !isTauriRuntime()) return;
+    const page = await invoke<SasayakiCuePage>("sasayaki_list_cues", {
+      bookId: book.bookId,
+      offset: 0,
+      limit: 100,
+    });
+    if (sasayakiBookId === book.bookId) sasayakiCues = page.items;
+  }
+
+  async function rematchSasayaki(book: BookRecord, searchWindow: number) {
+    if (!book.bookId || sasayakiBusy || !isTauriRuntime()) return;
+    const requestId = ++sasayakiRequestId;
+    sasayakiBusy = true;
+    sasayakiBusyBookId = book.bookId;
+    sasayakiError = "";
+    sasayakiMessage = "Matching subtitle cues to this EPUB...";
+    try {
+      const next = await invoke<SasayakiStatus>("sasayaki_rematch", {
+        bookId: book.bookId,
+        searchWindow,
+      });
+      if (requestId !== sasayakiRequestId || sasayakiBookId !== book.bookId) return;
+      sasayakiStatus = next;
+      await refreshSasayakiCues(book);
+      sasayakiMessage = `Matched ${next.matchedCount} of ${next.cueCount} cues.`;
+    } catch (e) {
+      if (requestId !== sasayakiRequestId || sasayakiBookId !== book.bookId) return;
+      sasayakiMessage = "";
+      sasayakiError = String(e);
+    } finally {
+      if (sasayakiBusyBookId === book.bookId) {
+        sasayakiBusy = false;
+        sasayakiBusyBookId = null;
+      }
+    }
+  }
+
+  async function correctSasayakiCue(
+    book: BookRecord,
+    cueId: string,
+    chapterIndex: number,
+    start: number,
+    length: number,
+  ) {
+    if (!book.bookId || sasayakiBusy || !isTauriRuntime()) return;
+    const requestId = ++sasayakiRequestId;
+    sasayakiBusy = true;
+    sasayakiBusyBookId = book.bookId;
+    sasayakiError = "";
+    sasayakiMessage = `Saving correction for cue ${cueId}...`;
+    try {
+      const next = await invoke<SasayakiStatus>("sasayaki_correct_cue", {
+        bookId: book.bookId,
+        cueId,
+        chapterIndex,
+        start,
+        length,
+      });
+      if (requestId !== sasayakiRequestId || sasayakiBookId !== book.bookId) return;
+      sasayakiStatus = next;
+      await refreshSasayakiCues(book);
+      sasayakiMessage = `Saved correction for cue ${cueId}.`;
+    } catch (e) {
+      if (requestId !== sasayakiRequestId || sasayakiBookId !== book.bookId) return;
+      sasayakiMessage = "";
+      sasayakiError = String(e);
+    } finally {
+      if (sasayakiBusyBookId === book.bookId) {
+        sasayakiBusy = false;
+        sasayakiBusyBookId = null;
+      }
+    }
+  }
+
+  async function clearSasayakiCorrection(book: BookRecord, cueId: string) {
+    if (!book.bookId || sasayakiBusy || !isTauriRuntime()) return;
+    const requestId = ++sasayakiRequestId;
+    sasayakiBusy = true;
+    sasayakiBusyBookId = book.bookId;
+    sasayakiError = "";
+    sasayakiMessage = `Clearing correction for cue ${cueId}...`;
+    try {
+      const next = await invoke<SasayakiStatus>("sasayaki_clear_correction", {
+        bookId: book.bookId,
+        cueId,
+      });
+      if (requestId !== sasayakiRequestId || sasayakiBookId !== book.bookId) return;
+      sasayakiStatus = next;
+      await refreshSasayakiCues(book);
+      sasayakiMessage = `Cleared correction for cue ${cueId}.`;
+    } catch (e) {
+      if (requestId !== sasayakiRequestId || sasayakiBookId !== book.bookId) return;
       sasayakiMessage = "";
       sasayakiError = String(e);
     } finally {
@@ -425,6 +543,7 @@
       const next = await invoke<SasayakiStatus>("sasayaki_remove", { bookId: book.bookId });
       if (requestId !== sasayakiRequestId || sasayakiBookId !== book.bookId) return;
       sasayakiStatus = next;
+      sasayakiCues = [];
       sasayakiMessage = "Removed Sasayaki data. Linked external audio was not deleted.";
     } catch (e) {
       if (requestId !== sasayakiRequestId || sasayakiBookId !== book.bookId) return;
@@ -1410,6 +1529,7 @@
       {localAudioStatus}
       {sasayakiBookId}
       {sasayakiStatus}
+      {sasayakiCues}
       {sasayakiMessage}
       {sasayakiError}
       sasayakiBusy={sasayakiBusy && sasayakiBusyBookId === sasayakiBookId}
@@ -1447,6 +1567,9 @@
       onLoadSasayaki={loadSasayaki}
       onImportSasayaki={importSasayaki}
       onRemoveSasayaki={removeSasayaki}
+      onRematchSasayaki={rematchSasayaki}
+      onCorrectSasayakiCue={correctSasayakiCue}
+      onClearSasayakiCorrection={clearSasayakiCorrection}
     />
   {:else}
     <Reader

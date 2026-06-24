@@ -1,5 +1,6 @@
 use crate::audio_clip::{validate_audio_file, VERIFIED_AUDIO_CLIP_FORMATS};
-use crate::library::library_book_dir;
+use crate::epub::book::{filtered_reader_text, EpubBook};
+use crate::library::{library_book_dir, library_book_file};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::{Read, Write};
@@ -12,6 +13,10 @@ const MAX_SRT_BYTES: u64 = 16 * 1024 * 1024;
 const SIDECAR_DIR_NAME: &str = "Sasayaki";
 const STAGING_DIR_NAME: &str = ".Sasayaki-importing";
 const BACKUP_DIR_NAME: &str = ".Sasayaki-replacing";
+const DEFAULT_SEARCH_WINDOW: usize = 200;
+const MIN_SEARCH_WINDOW: usize = 50;
+const MAX_SEARCH_WINDOW: usize = 1000;
+const MAX_CUE_PAGE_SIZE: usize = 200;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -22,6 +27,10 @@ struct SasayakiSidecar {
     subtitles: SasayakiSubtitle,
     cues: Vec<SasayakiCue>,
     match_data: SasayakiMatchData,
+    #[serde(default)]
+    corrections: Vec<SasayakiCorrection>,
+    #[serde(default = "default_search_window")]
+    search_window: usize,
     playback: SasayakiPlaybackData,
     updated_at: u64,
 }
@@ -81,6 +90,15 @@ struct SasayakiMatch {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+struct SasayakiCorrection {
+    cue_id: String,
+    chapter_index: usize,
+    start: usize,
+    length: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 struct SasayakiPlaybackData {
     last_position: f64,
     delay: f64,
@@ -111,6 +129,8 @@ pub struct SasayakiStatus {
     cue_count: usize,
     matched_count: usize,
     unmatched_count: usize,
+    corrected_count: usize,
+    match_rate: f64,
     last_position: f64,
     delay: f64,
     rate: f32,
@@ -130,11 +150,35 @@ impl Default for SasayakiStatus {
             cue_count: 0,
             matched_count: 0,
             unmatched_count: 0,
+            corrected_count: 0,
+            match_rate: 0.0,
             last_position: 0.0,
             delay: 0.0,
             rate: 1.0,
         }
     }
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SasayakiCueItem {
+    id: String,
+    start_time: f64,
+    end_time: f64,
+    text: String,
+    matched: bool,
+    corrected: bool,
+    chapter_index: Option<usize>,
+    start: Option<usize>,
+    length: Option<usize>,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SasayakiCuePage {
+    total: usize,
+    offset: usize,
+    items: Vec<SasayakiCueItem>,
 }
 
 #[tauri::command]
@@ -167,6 +211,61 @@ pub fn sasayaki_remove(book_id: String, app: AppHandle) -> Result<SasayakiStatus
     remove_from_book_dir(&book_dir, &book_id)
 }
 
+#[tauri::command]
+pub fn sasayaki_rematch(
+    book_id: String,
+    search_window: usize,
+    app: AppHandle,
+) -> Result<SasayakiStatus, String> {
+    let book_dir = library_book_dir(&app, &book_id)?;
+    let book_file = library_book_file(&app, &book_id)?;
+    rematch_book(&book_dir, &book_file, &book_id, search_window)
+}
+
+#[tauri::command]
+pub fn sasayaki_list_cues(
+    book_id: String,
+    offset: usize,
+    limit: usize,
+    app: AppHandle,
+) -> Result<SasayakiCuePage, String> {
+    let book_dir = library_book_dir(&app, &book_id)?;
+    cue_page_from_book_dir(&book_dir, &book_id, offset, limit)
+}
+
+#[tauri::command]
+pub fn sasayaki_correct_cue(
+    book_id: String,
+    cue_id: String,
+    chapter_index: usize,
+    start: usize,
+    length: usize,
+    app: AppHandle,
+) -> Result<SasayakiStatus, String> {
+    let book_dir = library_book_dir(&app, &book_id)?;
+    let book_file = library_book_file(&app, &book_id)?;
+    correct_cue(
+        &book_dir,
+        &book_file,
+        &book_id,
+        &cue_id,
+        chapter_index,
+        start,
+        length,
+    )
+}
+
+#[tauri::command]
+pub fn sasayaki_clear_correction(
+    book_id: String,
+    cue_id: String,
+    app: AppHandle,
+) -> Result<SasayakiStatus, String> {
+    let book_dir = library_book_dir(&app, &book_id)?;
+    let book_file = library_book_file(&app, &book_id)?;
+    clear_correction(&book_dir, &book_file, &book_id, &cue_id)
+}
+
 fn import_into_book_dir(
     book_dir: &Path,
     book_id: &str,
@@ -180,6 +279,7 @@ fn import_into_book_dir(
     let audio_extension = verified_audio_extension(&canonical_audio)?;
     validate_audio_file(&canonical_audio)?;
     let normalized_srt = read_valid_srt(&canonical_srt)?;
+    let cues = parse_srt(&normalized_srt)?;
     let audio_size = fs::metadata(&canonical_audio)
         .map_err(|error| format!("Cannot read audio metadata: {error}"))?
         .len();
@@ -226,8 +326,13 @@ fn import_into_book_dir(
                 original_file_name: srt_original_name,
                 size_bytes: normalized_srt.len() as u64,
             },
-            cues: Vec::new(),
-            match_data: SasayakiMatchData::default(),
+            match_data: SasayakiMatchData {
+                matches: Vec::new(),
+                unmatched: cues.len(),
+            },
+            cues,
+            corrections: Vec::new(),
+            search_window: DEFAULT_SEARCH_WINDOW,
             playback: SasayakiPlaybackData::default(),
             updated_at: now_millis()?,
         };
@@ -270,6 +375,164 @@ fn remove_from_book_dir(book_dir: &Path, book_id: &str) -> Result<SasayakiStatus
     Ok(SasayakiStatus::default())
 }
 
+fn rematch_book(
+    book_dir: &Path,
+    book_file: &Path,
+    book_id: &str,
+    search_window: usize,
+) -> Result<SasayakiStatus, String> {
+    validate_book_context(book_dir, book_id)?;
+    let root = book_dir.join(SIDECAR_DIR_NAME);
+    let mut sidecar = read_sidecar(&root)?;
+    if sidecar.book_id != book_id {
+        return Err("Sasayaki sidecar belongs to a different book.".into());
+    }
+    validate_sidecar_files(&root, &sidecar)?;
+    let subtitle = contained_file(
+        &root
+            .canonicalize()
+            .map_err(|error| format!("Cannot resolve Sasayaki directory: {error}"))?,
+        &sidecar.subtitles.file_name,
+        "subtitle",
+    )?;
+    let text = read_valid_srt(&subtitle)?;
+    sidecar.cues = parse_srt(&text)?;
+    let book = EpubBook::open(&book_file.to_string_lossy())?;
+    sidecar.search_window = normalize_search_window(search_window);
+    sidecar.match_data = match_cues(
+        &book,
+        &sidecar.cues,
+        &sidecar.corrections,
+        sidecar.search_window,
+    )?;
+    sidecar.updated_at = now_millis()?;
+    write_sidecar_atomic(&root, &sidecar)?;
+    status_from_sidecar(&sidecar)
+}
+
+fn cue_page_from_book_dir(
+    book_dir: &Path,
+    book_id: &str,
+    offset: usize,
+    limit: usize,
+) -> Result<SasayakiCuePage, String> {
+    validate_book_context(book_dir, book_id)?;
+    let root = book_dir.join(SIDECAR_DIR_NAME);
+    let sidecar = read_sidecar(&root)?;
+    if sidecar.book_id != book_id {
+        return Err("Sasayaki sidecar belongs to a different book.".into());
+    }
+    validate_sidecar_files(&root, &sidecar)?;
+    let limit = limit.clamp(1, MAX_CUE_PAGE_SIZE);
+    let matches = sidecar
+        .match_data
+        .matches
+        .iter()
+        .map(|matched| (matched.id.as_str(), matched))
+        .collect::<std::collections::HashMap<_, _>>();
+    let corrected = sidecar
+        .corrections
+        .iter()
+        .map(|correction| correction.cue_id.as_str())
+        .collect::<std::collections::HashSet<_>>();
+    let items = sidecar
+        .cues
+        .iter()
+        .skip(offset)
+        .take(limit)
+        .map(|cue| {
+            let matched = matches.get(cue.id.as_str()).copied();
+            SasayakiCueItem {
+                id: cue.id.clone(),
+                start_time: cue.start_time,
+                end_time: cue.end_time,
+                text: cue.text.clone(),
+                matched: matched.is_some(),
+                corrected: corrected.contains(cue.id.as_str()),
+                chapter_index: matched.map(|value| value.chapter_index),
+                start: matched.map(|value| value.start),
+                length: matched.map(|value| value.length),
+            }
+        })
+        .collect();
+    Ok(SasayakiCuePage {
+        total: sidecar.cues.len(),
+        offset,
+        items,
+    })
+}
+
+fn correct_cue(
+    book_dir: &Path,
+    book_file: &Path,
+    book_id: &str,
+    cue_id: &str,
+    chapter_index: usize,
+    start: usize,
+    length: usize,
+) -> Result<SasayakiStatus, String> {
+    validate_book_context(book_dir, book_id)?;
+    let root = book_dir.join(SIDECAR_DIR_NAME);
+    let mut sidecar = read_sidecar(&root)?;
+    if !sidecar.cues.iter().any(|cue| cue.id == cue_id) {
+        return Err(format!("Sasayaki cue not found: {cue_id}"));
+    }
+    let book = EpubBook::open(&book_file.to_string_lossy())?;
+    validate_correction(&book, chapter_index, start, length)?;
+    let correction = SasayakiCorrection {
+        cue_id: cue_id.to_string(),
+        chapter_index,
+        start,
+        length,
+    };
+    if let Some(existing) = sidecar
+        .corrections
+        .iter_mut()
+        .find(|value| value.cue_id == cue_id)
+    {
+        *existing = correction;
+    } else {
+        sidecar.corrections.push(correction);
+    }
+    sidecar.match_data = match_cues(
+        &book,
+        &sidecar.cues,
+        &sidecar.corrections,
+        normalize_search_window(sidecar.search_window),
+    )?;
+    sidecar.updated_at = now_millis()?;
+    write_sidecar_atomic(&root, &sidecar)?;
+    status_from_sidecar(&sidecar)
+}
+
+fn clear_correction(
+    book_dir: &Path,
+    book_file: &Path,
+    book_id: &str,
+    cue_id: &str,
+) -> Result<SasayakiStatus, String> {
+    validate_book_context(book_dir, book_id)?;
+    let root = book_dir.join(SIDECAR_DIR_NAME);
+    let mut sidecar = read_sidecar(&root)?;
+    let before = sidecar.corrections.len();
+    sidecar
+        .corrections
+        .retain(|correction| correction.cue_id != cue_id);
+    if sidecar.corrections.len() == before {
+        return Err(format!("Sasayaki correction not found: {cue_id}"));
+    }
+    let book = EpubBook::open(&book_file.to_string_lossy())?;
+    sidecar.match_data = match_cues(
+        &book,
+        &sidecar.cues,
+        &sidecar.corrections,
+        normalize_search_window(sidecar.search_window),
+    )?;
+    sidecar.updated_at = now_millis()?;
+    write_sidecar_atomic(&root, &sidecar)?;
+    status_from_sidecar(&sidecar)
+}
+
 fn status_from_sidecar(sidecar: &SasayakiSidecar) -> Result<SasayakiStatus, String> {
     let (storage, file_name, extension, size_bytes, audio_available) = match &sidecar.audio {
         SasayakiAudioSource::External {
@@ -291,6 +554,8 @@ fn status_from_sidecar(sidecar: &SasayakiSidecar) -> Result<SasayakiStatus, Stri
             ..
         } => ("copied", original_file_name, extension, *size_bytes, true),
     };
+    let total = sidecar.cues.len();
+    let matched = sidecar.match_data.matches.len();
     Ok(SasayakiStatus {
         configured: true,
         audio_storage: Some(storage.into()),
@@ -300,13 +565,310 @@ fn status_from_sidecar(sidecar: &SasayakiSidecar) -> Result<SasayakiStatus, Stri
         audio_available,
         subtitle_file_name: Some(sidecar.subtitles.original_file_name.clone()),
         subtitle_size_bytes: Some(sidecar.subtitles.size_bytes),
-        cue_count: sidecar.cues.len(),
-        matched_count: sidecar.match_data.matches.len(),
+        cue_count: total,
+        matched_count: matched,
         unmatched_count: sidecar.match_data.unmatched,
+        corrected_count: sidecar.corrections.len(),
+        match_rate: if total == 0 {
+            0.0
+        } else {
+            matched as f64 / total as f64 * 100.0
+        },
         last_position: sidecar.playback.last_position,
         delay: sidecar.playback.delay,
         rate: sidecar.playback.rate,
     })
+}
+
+#[derive(Debug, Clone)]
+struct MatchChapter {
+    chapter_index: usize,
+    start: usize,
+    text: Vec<char>,
+}
+
+impl MatchChapter {
+    fn end(&self) -> usize {
+        self.start + self.text.len()
+    }
+}
+
+fn parse_srt(text: &str) -> Result<Vec<SasayakiCue>, String> {
+    let mut cues = Vec::new();
+    let mut previous_number = 0_u64;
+    let mut previous_start = -1.0_f64;
+    for (block_index, block) in text.split("\n\n").enumerate() {
+        let lines = block.lines().collect::<Vec<_>>();
+        if lines.iter().all(|line| line.trim().is_empty()) {
+            continue;
+        }
+        if lines.len() < 3 {
+            return Err(format!(
+                "SRT block {} must contain a number, timing row, and text.",
+                block_index + 1
+            ));
+        }
+        let number = lines[0]
+            .trim()
+            .parse::<u64>()
+            .map_err(|_| format!("SRT block {} has an invalid cue number.", block_index + 1))?;
+        if number == 0 || number <= previous_number {
+            return Err(format!(
+                "SRT cue numbers must be positive and strictly increasing; found {number} after {previous_number}."
+            ));
+        }
+        let (start_time, end_time) = parse_timing_row(lines[1], number)?;
+        if start_time < previous_start {
+            return Err(format!("SRT cue {number} starts before the previous cue."));
+        }
+        let cue_text = lines[2..]
+            .iter()
+            .map(|line| line.trim())
+            .filter(|line| !line.is_empty())
+            .collect::<Vec<_>>()
+            .join(" ");
+        if cue_text.is_empty() {
+            return Err(format!("SRT cue {number} has no text."));
+        }
+        cues.push(SasayakiCue {
+            id: number.to_string(),
+            start_time,
+            end_time,
+            text: cue_text,
+        });
+        previous_number = number;
+        previous_start = start_time;
+    }
+    if cues.is_empty() {
+        return Err("Sasayaki subtitle file contains no valid cues.".into());
+    }
+    Ok(cues)
+}
+
+fn parse_timing_row(row: &str, cue_number: u64) -> Result<(f64, f64), String> {
+    let (start, end) = row
+        .split_once("-->")
+        .ok_or_else(|| format!("SRT cue {cue_number} has no --> timing separator."))?;
+    let start = parse_srt_timestamp(start.trim(), cue_number)?;
+    let end = parse_srt_timestamp(
+        end.split_whitespace().next().unwrap_or("").trim(),
+        cue_number,
+    )?;
+    if end <= start {
+        return Err(format!("SRT cue {cue_number} must end after it starts."));
+    }
+    Ok((start, end))
+}
+
+fn parse_srt_timestamp(value: &str, cue_number: u64) -> Result<f64, String> {
+    let normalized = value.replace(',', ".");
+    let parts = normalized.split(':').collect::<Vec<_>>();
+    if parts.len() != 3 {
+        return Err(format!(
+            "SRT cue {cue_number} has an invalid timestamp: {value}."
+        ));
+    }
+    let hours = parts[0]
+        .parse::<u64>()
+        .map_err(|_| format!("SRT cue {cue_number} has an invalid hour."))?;
+    let minutes = parts[1]
+        .parse::<u64>()
+        .map_err(|_| format!("SRT cue {cue_number} has an invalid minute."))?;
+    let seconds = parts[2]
+        .parse::<f64>()
+        .map_err(|_| format!("SRT cue {cue_number} has an invalid second."))?;
+    if minutes >= 60 || !(0.0..60.0).contains(&seconds) {
+        return Err(format!(
+            "SRT cue {cue_number} has a timestamp outside normal minute/second ranges."
+        ));
+    }
+    Ok(hours as f64 * 3600.0 + minutes as f64 * 60.0 + seconds)
+}
+
+fn match_cues(
+    book: &EpubBook,
+    cues: &[SasayakiCue],
+    corrections: &[SasayakiCorrection],
+    search_window: usize,
+) -> Result<SasayakiMatchData, String> {
+    let chapters = match_chapters(book)?;
+    let mut source = Vec::new();
+    for chapter in &chapters {
+        source.extend(chapter.text.iter().copied());
+    }
+    let correction_map = corrections
+        .iter()
+        .map(|correction| (correction.cue_id.as_str(), correction))
+        .collect::<std::collections::HashMap<_, _>>();
+    let mut cursor = initial_match_start(&source, cues);
+    let mut matches = Vec::new();
+
+    for cue in cues {
+        if let Some(correction) = correction_map.get(cue.id.as_str()) {
+            validate_correction(
+                book,
+                correction.chapter_index,
+                correction.start,
+                correction.length,
+            )?;
+            matches.push(SasayakiMatch {
+                id: cue.id.clone(),
+                start_time: cue.start_time,
+                end_time: cue.end_time,
+                text: cue.text.clone(),
+                chapter_index: correction.chapter_index,
+                start: correction.start,
+                length: correction.length,
+            });
+            if let Some(chapter) = chapters
+                .iter()
+                .find(|chapter| chapter.chapter_index == correction.chapter_index)
+            {
+                cursor = chapter.start + correction.start + correction.length;
+            }
+            continue;
+        }
+
+        let filtered = filtered_reader_text(&cue.text).chars().collect::<Vec<_>>();
+        if filtered.is_empty() || (cue.text.starts_with('※') && filtered.len() < 5) {
+            continue;
+        }
+        let end = source.len().min(
+            cursor
+                .saturating_add(filtered.len())
+                .saturating_add(search_window),
+        );
+        let Some(index) = find_text(&source, &filtered, cursor, end) else {
+            continue;
+        };
+        let match_end = index + filtered.len();
+        let Some(chapter) = chapters
+            .iter()
+            .find(|chapter| index >= chapter.start && index < chapter.end())
+        else {
+            continue;
+        };
+        if match_end > chapter.end() {
+            continue;
+        }
+        cursor = match_end;
+        matches.push(SasayakiMatch {
+            id: cue.id.clone(),
+            start_time: cue.start_time,
+            end_time: cue.end_time,
+            text: cue.text.clone(),
+            chapter_index: chapter.chapter_index,
+            start: index - chapter.start,
+            length: filtered.len(),
+        });
+    }
+
+    Ok(SasayakiMatchData {
+        unmatched: cues.len().saturating_sub(matches.len()),
+        matches,
+    })
+}
+
+fn match_chapters(book: &EpubBook) -> Result<Vec<MatchChapter>, String> {
+    let manifest = book.manifest();
+    let spine = book.spine();
+    let guide_toc_hrefs = book
+        .epub
+        .toc()
+        .landmarks()
+        .into_iter()
+        .flat_map(|root| root.iter())
+        .filter(|entry| entry.kind_raw() == Some("toc"))
+        .filter_map(|entry| entry.href().map(|href| href.path().decode().into_owned()))
+        .collect::<std::collections::HashSet<_>>();
+    let mut chapters = Vec::new();
+    let mut start = 0;
+    for (chapter_index, spine_entry) in spine.iter().enumerate() {
+        if !spine_entry.linear {
+            continue;
+        }
+        let Some(manifest_entry) = manifest.iter().find(|entry| entry.id == spine_entry.idref)
+        else {
+            continue;
+        };
+        let is_nav = manifest_entry
+            .properties
+            .as_deref()
+            .unwrap_or("")
+            .split_whitespace()
+            .any(|property| property == "nav");
+        if is_nav || guide_toc_hrefs.contains(&manifest_entry.href) {
+            continue;
+        }
+        let text = filtered_reader_text(&book.read_spine_item_text(chapter_index as u32)?)
+            .chars()
+            .collect::<Vec<_>>();
+        chapters.push(MatchChapter {
+            chapter_index,
+            start,
+            text,
+        });
+        start = chapters.last().map(MatchChapter::end).unwrap_or(start);
+    }
+    Ok(chapters)
+}
+
+fn initial_match_start(source: &[char], cues: &[SasayakiCue]) -> usize {
+    cues.iter()
+        .take(15)
+        .filter(|cue| !cue.text.starts_with('※'))
+        .filter_map(|cue| {
+            let text = filtered_reader_text(&cue.text).chars().collect::<Vec<_>>();
+            (text.len() >= 6)
+                .then(|| find_text(source, &text, 0, source.len()))
+                .flatten()
+        })
+        .min()
+        .unwrap_or(0)
+}
+
+fn find_text(source: &[char], text: &[char], start: usize, end: usize) -> Option<usize> {
+    if text.is_empty() || start > end || text.len() > end.saturating_sub(start) {
+        return None;
+    }
+    (start..=end - text.len()).find(|index| source[*index..*index + text.len()] == *text)
+}
+
+fn validate_correction(
+    book: &EpubBook,
+    chapter_index: usize,
+    start: usize,
+    length: usize,
+) -> Result<(), String> {
+    if length == 0 {
+        return Err("Sasayaki correction length must be greater than zero.".into());
+    }
+    let chapter_length = match_chapters(book)?
+        .into_iter()
+        .find(|chapter| chapter.chapter_index == chapter_index)
+        .map(|chapter| chapter.text.len())
+        .ok_or_else(|| {
+            format!(
+                "Sasayaki correction cannot target missing, navigation, guide TOC, or non-linear chapter {chapter_index}."
+            )
+        })?;
+    let end = start
+        .checked_add(length)
+        .ok_or_else(|| "Sasayaki correction range overflowed.".to_string())?;
+    if end > chapter_length {
+        return Err(format!(
+            "Sasayaki correction range exceeds chapter {chapter_index} length {chapter_length}."
+        ));
+    }
+    Ok(())
+}
+
+fn normalize_search_window(value: usize) -> usize {
+    value.clamp(MIN_SEARCH_WINDOW, MAX_SEARCH_WINDOW)
+}
+
+fn default_search_window() -> usize {
+    DEFAULT_SEARCH_WINDOW
 }
 
 fn validate_book_context(book_dir: &Path, book_id: &str) -> Result<(), String> {
@@ -488,6 +1050,35 @@ fn write_sidecar(root: &Path, sidecar: &SasayakiSidecar) -> Result<(), String> {
     write_file_synced(&root.join("sidecar.json"), &json)
 }
 
+fn write_sidecar_atomic(root: &Path, sidecar: &SasayakiSidecar) -> Result<(), String> {
+    let json = serde_json::to_vec_pretty(sidecar)
+        .map_err(|error| format!("Cannot serialize Sasayaki sidecar: {error}"))?;
+    let path = root.join("sidecar.json");
+    let temp = root.join("sidecar.json.tmp");
+    let backup = root.join("sidecar.json.replacing");
+    write_file_synced(&temp, &json)?;
+    if path.exists() {
+        if backup.exists() {
+            fs::remove_file(&backup)
+                .map_err(|error| format!("Cannot clear stale Sasayaki sidecar backup: {error}"))?;
+        }
+        fs::rename(&path, &backup)
+            .map_err(|error| format!("Cannot stage old Sasayaki sidecar: {error}"))?;
+    }
+    if let Err(error) = fs::rename(&temp, &path) {
+        if backup.exists() {
+            let _ = fs::rename(&backup, &path);
+        }
+        let _ = fs::remove_file(&temp);
+        return Err(format!("Cannot install Sasayaki sidecar: {error}"));
+    }
+    if backup.exists() {
+        fs::remove_file(&backup)
+            .map_err(|error| format!("Cannot clear Sasayaki sidecar backup: {error}"))?;
+    }
+    Ok(())
+}
+
 fn write_file_synced(path: &Path, bytes: &[u8]) -> Result<(), String> {
     let mut file = fs::File::create(path)
         .map_err(|error| format!("Cannot create staged Sasayaki file: {error}"))?;
@@ -556,6 +1147,7 @@ fn now_millis() -> Result<u64, String> {
 mod tests {
     use super::*;
     use hound::{SampleFormat, WavSpec, WavWriter};
+    use zip::write::FileOptions;
 
     fn temp_book(name: &str) -> PathBuf {
         let root =
@@ -591,6 +1183,194 @@ mod tests {
         .unwrap();
     }
 
+    fn write_match_epub(path: &Path) {
+        let file = fs::File::create(path).unwrap();
+        let mut zip = zip::ZipWriter::new(file);
+        let options = FileOptions::default();
+        zip.start_file("mimetype", options).unwrap();
+        zip.write_all(b"application/epub+zip").unwrap();
+        zip.start_file("META-INF/container.xml", options).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<container version="1.0" xmlns="urn:oasis:names:tc:opendocument:xmlns:container">
+  <rootfiles><rootfile full-path="content.opf" media-type="application/oebps-package+xml"/></rootfiles>
+</container>"#,
+        )
+        .unwrap();
+        zip.start_file("content.opf", options).unwrap();
+        zip.write_all(
+            br#"<?xml version="1.0" encoding="UTF-8"?>
+<package xmlns="http://www.idpf.org/2007/opf" version="3.0">
+  <metadata xmlns:dc="http://purl.org/dc/elements/1.1/"><dc:title>Match Book</dc:title></metadata>
+  <manifest>
+    <item id="nav" href="nav.xhtml" media-type="application/xhtml+xml" properties="nav"/>
+    <item id="one" href="one.xhtml" media-type="application/xhtml+xml"/>
+    <item id="two" href="two.xhtml" media-type="application/xhtml+xml"/>
+  </manifest>
+  <spine>
+    <itemref idref="nav"/>
+    <itemref idref="one"/>
+    <itemref idref="two"/>
+  </spine>
+</package>"#,
+        )
+        .unwrap();
+        zip.start_file("nav.xhtml", options).unwrap();
+        zip.write_all(
+            r#"<html><body><nav epub:type="toc" xmlns:epub="http://www.idpf.org/2007/ops">目次だけ</nav></body></html>"#
+                .as_bytes(),
+        )
+        .unwrap();
+        zip.start_file("one.xhtml", options).unwrap();
+        zip.write_all(
+            r#"<html><body><p><ruby>学校<rt>がっこう</rt></ruby>です。始まり本文。同じ文、同じ文。章末</p></body></html>"#
+                .as_bytes(),
+        )
+        .unwrap();
+        zip.start_file("two.xhtml", options).unwrap();
+        zip.write_all(
+            r#"<html><body><p>章開始。手動位置。次の本文です。</p></body></html>"#.as_bytes(),
+        )
+        .unwrap();
+        zip.finish().unwrap();
+    }
+
+    #[test]
+    fn parses_strict_srt_with_stable_number_ids_and_multiline_text() {
+        let cues = parse_srt(
+            "10\n00:00:01,250 --> 00:00:02,500\n学校です\n続き\n\n12\n00:00:03.000 --> 00:00:04.000\n次の本文",
+        )
+        .unwrap();
+        assert_eq!(cues.len(), 2);
+        assert_eq!(cues[0].id, "10");
+        assert_eq!(cues[0].text, "学校です 続き");
+        assert!((cues[0].start_time - 1.25).abs() < 0.0001);
+        assert_eq!(cues[1].id, "12");
+    }
+
+    #[test]
+    fn strict_srt_rejects_bad_numbering_times_and_empty_text() {
+        assert!(parse_srt(
+            "2\n00:00:01,000 --> 00:00:02,000\none\n\n1\n00:00:03,000 --> 00:00:04,000\ntwo"
+        )
+        .unwrap_err()
+        .contains("strictly increasing"));
+        assert!(parse_srt("1\n00:00:02,000 --> 00:00:01,000\ntext")
+            .unwrap_err()
+            .contains("end after"));
+        assert!(parse_srt("1\n00:61:00,000 --> 01:02:00,000\ntext")
+            .unwrap_err()
+            .contains("normal"));
+        assert!(parse_srt("1\n00:00:00,000 --> 00:00:01,000\n  ")
+            .unwrap_err()
+            .contains("no text"));
+    }
+
+    #[test]
+    fn matches_filtered_ordered_text_without_crossing_chapters() {
+        let root = temp_book("matcher");
+        let epub_path = root.join("book.epub");
+        write_match_epub(&epub_path);
+        let book = EpubBook::open(&epub_path.to_string_lossy()).unwrap();
+        let cues = vec![
+            SasayakiCue {
+                id: "1".into(),
+                start_time: 0.0,
+                end_time: 1.0,
+                text: "学校です始まり本文".into(),
+            },
+            SasayakiCue {
+                id: "2".into(),
+                start_time: 1.0,
+                end_time: 2.0,
+                text: "同じ文".into(),
+            },
+            SasayakiCue {
+                id: "3".into(),
+                start_time: 2.0,
+                end_time: 3.0,
+                text: "同じ文".into(),
+            },
+            SasayakiCue {
+                id: "4".into(),
+                start_time: 3.0,
+                end_time: 4.0,
+                text: "章末章開".into(),
+            },
+            SasayakiCue {
+                id: "5".into(),
+                start_time: 4.0,
+                end_time: 5.0,
+                text: "※星".into(),
+            },
+            SasayakiCue {
+                id: "6".into(),
+                start_time: 5.0,
+                end_time: 6.0,
+                text: "次の本文です".into(),
+            },
+        ];
+        let result = match_cues(&book, &cues, &[], 50).unwrap();
+        assert_eq!(
+            result
+                .matches
+                .iter()
+                .map(|item| item.id.as_str())
+                .collect::<Vec<_>>(),
+            vec!["1", "2", "3", "6"]
+        );
+        assert_eq!(result.unmatched, 2);
+        assert_eq!(result.matches[0].chapter_index, 1);
+        assert_eq!(result.matches[0].start, 0);
+        assert_eq!(result.matches[1].start, 9);
+        assert_eq!(result.matches[2].start, 12);
+        assert_eq!(result.matches[3].chapter_index, 2);
+        let _ = fs::remove_dir_all(root.parent().unwrap().parent().unwrap());
+    }
+
+    #[test]
+    fn manual_correction_survives_rematch_and_can_be_cleared() {
+        let book_dir = temp_book("correction");
+        let source_root = book_dir.parent().unwrap().parent().unwrap().join("sources");
+        fs::create_dir_all(&source_root).unwrap();
+        let audio = source_root.join("audio.wav");
+        let srt = source_root.join("subtitles.srt");
+        write_wav(&audio);
+        fs::write(&srt, "1\n00:00:00,000 --> 00:00:01,000\n存在しない字幕\n").unwrap();
+        write_match_epub(&book_dir.join("book.epub"));
+        import_into_book_dir(&book_dir, "book-id", &audio, &srt, false).unwrap();
+
+        let unmatched =
+            rematch_book(&book_dir, &book_dir.join("book.epub"), "book-id", 200).unwrap();
+        assert_eq!(unmatched.matched_count, 0);
+        let corrected = correct_cue(
+            &book_dir,
+            &book_dir.join("book.epub"),
+            "book-id",
+            "1",
+            2,
+            0,
+            2,
+        )
+        .unwrap();
+        assert_eq!(corrected.matched_count, 1);
+        assert_eq!(corrected.corrected_count, 1);
+
+        let rematched =
+            rematch_book(&book_dir, &book_dir.join("book.epub"), "book-id", 50).unwrap();
+        assert_eq!(rematched.matched_count, 1);
+        assert_eq!(rematched.corrected_count, 1);
+        let page = cue_page_from_book_dir(&book_dir, "book-id", 0, 10).unwrap();
+        assert!(page.items[0].corrected);
+        assert_eq!(page.items[0].chapter_index, Some(2));
+
+        let cleared =
+            clear_correction(&book_dir, &book_dir.join("book.epub"), "book-id", "1").unwrap();
+        assert_eq!(cleared.matched_count, 0);
+        assert_eq!(cleared.corrected_count, 0);
+        let _ = fs::remove_dir_all(book_dir.parent().unwrap().parent().unwrap());
+    }
+
     #[test]
     fn imports_external_audio_and_utf8_srt_by_book_id() {
         let book_dir = temp_book("external");
@@ -616,8 +1396,10 @@ mod tests {
             sidecar.audio,
             SasayakiAudioSource::External { .. }
         ));
-        assert!(sidecar.cues.is_empty());
+        assert_eq!(sidecar.cues.len(), 1);
+        assert_eq!(sidecar.cues[0].id, "1");
         assert!(sidecar.match_data.matches.is_empty());
+        assert_eq!(sidecar.match_data.unmatched, 1);
         assert_eq!(sidecar.playback, SasayakiPlaybackData::default());
         fs::remove_file(&audio).unwrap();
         assert!(
@@ -764,6 +1546,8 @@ mod tests {
             },
             cues: Vec::new(),
             match_data: SasayakiMatchData::default(),
+            corrections: Vec::new(),
+            search_window: DEFAULT_SEARCH_WINDOW,
             playback: SasayakiPlaybackData::default(),
             updated_at: 1,
         };

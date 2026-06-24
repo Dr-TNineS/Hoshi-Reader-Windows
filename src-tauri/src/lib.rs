@@ -63,6 +63,10 @@ pub fn run() {
             sasayaki::sasayaki_status,
             sasayaki::sasayaki_import,
             sasayaki::sasayaki_remove,
+            sasayaki::sasayaki_rematch,
+            sasayaki::sasayaki_list_cues,
+            sasayaki::sasayaki_correct_cue,
+            sasayaki::sasayaki_clear_correction,
         ])
         .setup(|app| {
             app.state::<DictState>().initialize(app.handle());

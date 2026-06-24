@@ -82,16 +82,31 @@ async function main() {
     const sasayakiText = await sasayakiPanel.textContent();
     assert(sasayakiText?.includes("Linked to the external audiobook"), "Sasayaki status should distinguish linked external audio.");
     assert(sasayakiText?.includes("星の音.wav") && sasayakiText?.includes("星の音.srt"), "Sasayaki status should show audio and subtitle filenames.");
-    assert(sasayakiText?.includes("Cue matching and playback are not implemented yet."), "Sasayaki setup should keep later slices visibly out of scope.");
+    assert(sasayakiText?.includes("2/3 matched") && sasayakiText?.includes("66.7%") && sasayakiText?.includes("1 corrected"), "Sasayaki setup should summarize match coverage and corrections.");
+    assert(sasayakiText?.includes("見つからない字幕") && sasayakiText?.includes("Unmatched"), "Sasayaki setup should expose unmatched cues for inspection.");
+    assert(sasayakiText?.includes("Playback and reader highlighting remain out of scope"), "Sasayaki setup should keep later slices visibly out of scope.");
     assert(await sasayakiEvents(page) === "load:owned-book", "Opening Sasayaki setup should load status by book id.");
+    await sasayakiPanel.getByLabel("Search window").fill("350");
+    await sasayakiPanel.getByRole("button", { name: "Match again", exact: true }).click();
+    await sasayakiPanel.getByRole("button", { name: /#2/ }).click();
+    await sasayakiPanel.getByLabel("Chapter index").fill("4");
+    await sasayakiPanel.getByLabel("Start").fill("12");
+    await sasayakiPanel.getByLabel("Length").fill("6");
+    await sasayakiPanel.getByRole("button", { name: "Save correction", exact: true }).click();
+    await sasayakiPanel.getByRole("button", { name: /#3/ }).click();
+    await sasayakiPanel.getByRole("button", { name: "Use automatic match", exact: true }).click();
+    assert(
+      await sasayakiEvents(page) === "load:owned-book,match:owned-book:350,correct:owned-book:2:4:12:6,clear:owned-book:3",
+      "Sasayaki matching and correction actions should preserve book and cue coordinates.",
+    );
     await sasayakiPanel.getByRole("button", { name: "Link audio + SRT", exact: true }).click();
     await sasayakiPanel.getByRole("button", { name: "Copy audio + SRT", exact: true }).click();
-    assert(await sasayakiEvents(page) === "load:owned-book,link:owned-book,copy:owned-book", "Sasayaki import modes should remain distinct.");
+    assert((await sasayakiEvents(page))?.endsWith("link:owned-book,copy:owned-book"), "Sasayaki import modes should remain distinct.");
     await sasayakiPanel.getByRole("button", { name: "Remove", exact: true }).click();
     let sasayakiDialog = page.getByRole("alertdialog");
     assert((await sasayakiDialog.textContent())?.includes("linked external audiobook is not deleted"), "Sasayaki removal should protect linked external audio.");
     await sasayakiDialog.getByRole("button", { name: "Remove", exact: true }).click();
-    assert(await sasayakiEvents(page) === "load:owned-book,link:owned-book,copy:owned-book,remove:owned-book", "Sasayaki removal should emit once.");
+    assert((await sasayakiEvents(page))?.endsWith("link:owned-book,copy:owned-book,remove:owned-book"), "Sasayaki removal should emit once.");
     await sasayakiPanel.getByRole("button", { name: "Close Sasayaki setup", exact: true }).click();
     await sasayakiPanel.waitFor({ state: "hidden" });
 

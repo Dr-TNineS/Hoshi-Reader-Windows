@@ -226,9 +226,29 @@ export interface SasayakiStatus {
   cueCount: number;
   matchedCount: number;
   unmatchedCount: number;
+  correctedCount: number;
+  matchRate: number;
   lastPosition: number;
   delay: number;
   rate: number;
+}
+
+export interface SasayakiCueItem {
+  id: string;
+  startTime: number;
+  endTime: number;
+  text: string;
+  matched: boolean;
+  corrected: boolean;
+  chapterIndex: number | null;
+  start: number | null;
+  length: number | null;
+}
+
+export interface SasayakiCuePage {
+  total: number;
+  offset: number;
+  items: SasayakiCueItem[];
 }
 
 export interface LocalAudioStoreRequest {
