@@ -67,6 +67,9 @@ pub fn run() {
             sasayaki::sasayaki_list_cues,
             sasayaki::sasayaki_correct_cue,
             sasayaki::sasayaki_clear_correction,
+            sasayaki::sasayaki_prepare_playback,
+            sasayaki::sasayaki_save_playback,
+            sasayaki::sasayaki_relink_audio,
         ])
         .setup(|app| {
             app.state::<DictState>().initialize(app.handle());

@@ -47,8 +47,15 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Anki HSA/Windows alignment is documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`; AnkiConnect readiness/configuration, field preview, minimal duplicate-check/add-note plumbing, and real AnkiConnect runtime add-note validation are complete.
 5. Treat the storage/model migration as complete at the JSON-store level: reading progress, recent books, and session now live in Tauri app data `reading/state.json`, with one-time legacy `localStorage` import and browser fallback.
 6. Follow the complete Anki/audio route in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
-   - Current: Slice 5K, Sasayaki playback lifecycle and controls.
-   - Next: Slice 5L, cue presentation and reader coordination.
+   - Current: Slice 5L, cue presentation and reader coordination.
+   - Next: Slice 5M, Sasayaki sentence audio export.
+   - Completed on 2026-06-24: Slice 5K reader playback panel, exact-file asset
+     authorization, play/pause, progress, +/-10 seconds, cue navigation,
+     persisted position/rate/delay, missing/changed external source relink, and
+     shelf/book/window teardown. Rust state/security tests, frontend
+     check/build, playback/reader visual/TOC probes, and wide/520px layout
+     checks passed. Real Tauri audiobook playback remains `not verified`
+     because no configured local Sasayaki book fixture was available.
    - Completed on 2026-06-24: Slice 5J strict SRT parsing, HSA-style filtered
      ordered EPUB matching, persisted search window and correction records,
      match summary, cue inspection, rematch, and manual correction UI. Rust

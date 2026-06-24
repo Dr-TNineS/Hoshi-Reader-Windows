@@ -251,6 +251,24 @@ export interface SasayakiCuePage {
   items: SasayakiCueItem[];
 }
 
+export interface SasayakiPlaybackCue {
+  id: string;
+  startTime: number;
+  endTime: number;
+}
+
+export interface SasayakiPlaybackSession {
+  configured: boolean;
+  audioPath: string | null;
+  audioAvailable: boolean;
+  audioFileName: string | null;
+  audioStorage: "external" | "copied" | null;
+  lastPosition: number;
+  delay: number;
+  rate: number;
+  cues: SasayakiPlaybackCue[];
+}
+
 export interface LocalAudioStoreRequest {
   expression: string;
   reading: string;

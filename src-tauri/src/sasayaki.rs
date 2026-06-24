@@ -6,7 +6,7 @@ use std::fs;
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::time::{SystemTime, UNIX_EPOCH};
-use tauri::AppHandle;
+use tauri::{AppHandle, Manager};
 
 const SIDECAR_VERSION: u32 = 1;
 const MAX_SRT_BYTES: u64 = 16 * 1024 * 1024;
@@ -17,6 +17,11 @@ const DEFAULT_SEARCH_WINDOW: usize = 200;
 const MIN_SEARCH_WINDOW: usize = 50;
 const MAX_SEARCH_WINDOW: usize = 1000;
 const MAX_CUE_PAGE_SIZE: usize = 200;
+const MIN_PLAYBACK_RATE: f32 = 0.5;
+const MAX_PLAYBACK_RATE: f32 = 2.0;
+const MIN_PLAYBACK_DELAY: f64 = -2.0;
+const MAX_PLAYBACK_DELAY: f64 = 2.0;
+const MAX_PLAYBACK_POSITION: f64 = 7.0 * 24.0 * 60.0 * 60.0;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -181,6 +186,28 @@ pub struct SasayakiCuePage {
     items: Vec<SasayakiCueItem>,
 }
 
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SasayakiPlaybackCue {
+    id: String,
+    start_time: f64,
+    end_time: f64,
+}
+
+#[derive(Debug, Clone, Serialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SasayakiPlaybackSession {
+    configured: bool,
+    audio_path: Option<String>,
+    audio_available: bool,
+    audio_file_name: Option<String>,
+    audio_storage: Option<String>,
+    last_position: f64,
+    delay: f64,
+    rate: f32,
+    cues: Vec<SasayakiPlaybackCue>,
+}
+
 #[tauri::command]
 pub fn sasayaki_status(book_id: String, app: AppHandle) -> Result<SasayakiStatus, String> {
     let book_dir = library_book_dir(&app, &book_id)?;
@@ -264,6 +291,42 @@ pub fn sasayaki_clear_correction(
     let book_dir = library_book_dir(&app, &book_id)?;
     let book_file = library_book_file(&app, &book_id)?;
     clear_correction(&book_dir, &book_file, &book_id, &cue_id)
+}
+
+#[tauri::command]
+pub fn sasayaki_prepare_playback(
+    book_id: String,
+    app: AppHandle,
+) -> Result<SasayakiPlaybackSession, String> {
+    let book_dir = library_book_dir(&app, &book_id)?;
+    prepare_playback(&book_dir, &book_id, Some(&app))
+}
+
+#[tauri::command]
+pub fn sasayaki_save_playback(
+    book_id: String,
+    last_position: f64,
+    delay: f64,
+    rate: f32,
+    app: AppHandle,
+) -> Result<SasayakiPlaybackSession, String> {
+    let book_dir = library_book_dir(&app, &book_id)?;
+    save_playback(&book_dir, &book_id, last_position, delay, rate, Some(&app))
+}
+
+#[tauri::command]
+pub fn sasayaki_relink_audio(
+    book_id: String,
+    audio_source_path: String,
+    app: AppHandle,
+) -> Result<SasayakiPlaybackSession, String> {
+    let book_dir = library_book_dir(&app, &book_id)?;
+    relink_audio(
+        &book_dir,
+        &book_id,
+        Path::new(&audio_source_path),
+        Some(&app),
+    )
 }
 
 fn import_into_book_dir(
@@ -531,6 +594,192 @@ fn clear_correction(
     sidecar.updated_at = now_millis()?;
     write_sidecar_atomic(&root, &sidecar)?;
     status_from_sidecar(&sidecar)
+}
+
+fn prepare_playback(
+    book_dir: &Path,
+    book_id: &str,
+    app: Option<&AppHandle>,
+) -> Result<SasayakiPlaybackSession, String> {
+    validate_book_context(book_dir, book_id)?;
+    let root = book_dir.join(SIDECAR_DIR_NAME);
+    if !root.exists() {
+        return Ok(empty_playback_session());
+    }
+    let sidecar = read_sidecar(&root)?;
+    if sidecar.book_id != book_id {
+        return Err("Sasayaki sidecar belongs to a different book.".into());
+    }
+    validate_playback_sidecar(&root, &sidecar)?;
+    playback_session(&root, &sidecar, app)
+}
+
+fn save_playback(
+    book_dir: &Path,
+    book_id: &str,
+    last_position: f64,
+    delay: f64,
+    rate: f32,
+    app: Option<&AppHandle>,
+) -> Result<SasayakiPlaybackSession, String> {
+    validate_playback_values(last_position, delay, rate)?;
+    validate_book_context(book_dir, book_id)?;
+    let root = book_dir.join(SIDECAR_DIR_NAME);
+    let mut sidecar = read_sidecar(&root)?;
+    if sidecar.book_id != book_id {
+        return Err("Sasayaki sidecar belongs to a different book.".into());
+    }
+    validate_playback_sidecar(&root, &sidecar)?;
+    sidecar.playback = SasayakiPlaybackData {
+        last_position,
+        delay,
+        rate,
+    };
+    sidecar.updated_at = now_millis()?;
+    write_sidecar_atomic(&root, &sidecar)?;
+    playback_session(&root, &sidecar, app)
+}
+
+fn relink_audio(
+    book_dir: &Path,
+    book_id: &str,
+    audio_source: &Path,
+    app: Option<&AppHandle>,
+) -> Result<SasayakiPlaybackSession, String> {
+    validate_book_context(book_dir, book_id)?;
+    let canonical_audio = canonical_source(audio_source, "audio")?;
+    let extension = verified_audio_extension(&canonical_audio)?;
+    validate_audio_file(&canonical_audio)?;
+    let size_bytes = fs::metadata(&canonical_audio)
+        .map_err(|error| format!("Cannot read audio metadata: {error}"))?
+        .len();
+    let original_file_name = source_file_name(&canonical_audio, "audio")?;
+    let root = book_dir.join(SIDECAR_DIR_NAME);
+    let mut sidecar = read_sidecar(&root)?;
+    if sidecar.book_id != book_id {
+        return Err("Sasayaki sidecar belongs to a different book.".into());
+    }
+    validate_playback_sidecar(&root, &sidecar)?;
+    sidecar.audio = SasayakiAudioSource::External {
+        path: canonical_audio.to_string_lossy().to_string(),
+        original_file_name,
+        extension,
+        size_bytes,
+    };
+    sidecar.updated_at = now_millis()?;
+    write_sidecar_atomic(&root, &sidecar)?;
+    playback_session(&root, &sidecar, app)
+}
+
+fn playback_session(
+    root: &Path,
+    sidecar: &SasayakiSidecar,
+    app: Option<&AppHandle>,
+) -> Result<SasayakiPlaybackSession, String> {
+    let (audio_path, audio_file_name, audio_storage) = match &sidecar.audio {
+        SasayakiAudioSource::External {
+            path,
+            original_file_name,
+            extension,
+            size_bytes,
+            ..
+        } => (
+            external_audio_available(Path::new(path), extension, *size_bytes)
+                .then(|| PathBuf::from(path)),
+            Some(original_file_name.clone()),
+            Some("external".to_string()),
+        ),
+        SasayakiAudioSource::Copied {
+            file_name,
+            original_file_name,
+            ..
+        } => (
+            Some(contained_file(
+                &root
+                    .canonicalize()
+                    .map_err(|error| format!("Cannot resolve Sasayaki directory: {error}"))?,
+                file_name,
+                "audio",
+            )?),
+            Some(original_file_name.clone()),
+            Some("copied".to_string()),
+        ),
+    };
+    if let (Some(app), Some(path)) = (app, audio_path.as_ref()) {
+        app.asset_protocol_scope()
+            .allow_file(path)
+            .map_err(|error| format!("Cannot authorize Sasayaki audio playback: {error}"))?;
+    }
+    Ok(SasayakiPlaybackSession {
+        configured: true,
+        audio_available: audio_path.is_some(),
+        audio_path: audio_path.map(|path| path.to_string_lossy().to_string()),
+        audio_file_name,
+        audio_storage,
+        last_position: sidecar.playback.last_position,
+        delay: sidecar.playback.delay,
+        rate: sidecar.playback.rate,
+        cues: sidecar
+            .match_data
+            .matches
+            .iter()
+            .map(|matched| SasayakiPlaybackCue {
+                id: matched.id.clone(),
+                start_time: matched.start_time,
+                end_time: matched.end_time,
+            })
+            .collect(),
+    })
+}
+
+fn validate_playback_sidecar(root: &Path, sidecar: &SasayakiSidecar) -> Result<(), String> {
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|error| format!("Cannot resolve Sasayaki directory: {error}"))?;
+    let subtitle = contained_file(&canonical_root, &sidecar.subtitles.file_name, "subtitle")?;
+    read_valid_srt(&subtitle)?;
+    match &sidecar.audio {
+        SasayakiAudioSource::Copied { .. } => validate_sidecar_files(root, sidecar),
+        SasayakiAudioSource::External { extension, .. } => {
+            validate_recorded_audio_extension(extension)
+        }
+    }
+}
+
+fn external_audio_available(path: &Path, extension: &str, expected_size: u64) -> bool {
+    validate_recorded_audio_extension(extension).is_ok()
+        && path.is_file()
+        && fs::metadata(path)
+            .map(|metadata| metadata.len() == expected_size)
+            .unwrap_or(false)
+        && validate_audio_file(path).is_ok()
+}
+
+fn empty_playback_session() -> SasayakiPlaybackSession {
+    SasayakiPlaybackSession {
+        configured: false,
+        audio_path: None,
+        audio_available: false,
+        audio_file_name: None,
+        audio_storage: None,
+        last_position: 0.0,
+        delay: 0.0,
+        rate: 1.0,
+        cues: Vec::new(),
+    }
+}
+
+fn validate_playback_values(last_position: f64, delay: f64, rate: f32) -> Result<(), String> {
+    if !last_position.is_finite() || !(0.0..=MAX_PLAYBACK_POSITION).contains(&last_position) {
+        return Err("Sasayaki playback position is outside the supported range.".into());
+    }
+    if !delay.is_finite() || !(MIN_PLAYBACK_DELAY..=MAX_PLAYBACK_DELAY).contains(&delay) {
+        return Err("Sasayaki playback delay must be between -2 and 2 seconds.".into());
+    }
+    if !rate.is_finite() || !(MIN_PLAYBACK_RATE..=MAX_PLAYBACK_RATE).contains(&rate) {
+        return Err("Sasayaki playback rate must be between 0.5 and 2.0.".into());
+    }
+    Ok(())
 }
 
 fn status_from_sidecar(sidecar: &SasayakiSidecar) -> Result<SasayakiStatus, String> {
@@ -1368,6 +1617,87 @@ mod tests {
             clear_correction(&book_dir, &book_dir.join("book.epub"), "book-id", "1").unwrap();
         assert_eq!(cleared.matched_count, 0);
         assert_eq!(cleared.corrected_count, 0);
+        let _ = fs::remove_dir_all(book_dir.parent().unwrap().parent().unwrap());
+    }
+
+    #[test]
+    fn playback_session_restores_source_position_rate_delay_and_matched_cues() {
+        let book_dir = temp_book("playback");
+        let source_root = book_dir.parent().unwrap().parent().unwrap().join("sources");
+        fs::create_dir_all(&source_root).unwrap();
+        let audio = source_root.join("audio.wav");
+        let srt = source_root.join("subtitles.srt");
+        write_wav(&audio);
+        fs::write(
+            &srt,
+            "1\n00:00:00,000 --> 00:00:01,000\n学校です始まり本文\n",
+        )
+        .unwrap();
+        write_match_epub(&book_dir.join("book.epub"));
+        import_into_book_dir(&book_dir, "book-id", &audio, &srt, false).unwrap();
+        rematch_book(&book_dir, &book_dir.join("book.epub"), "book-id", 200).unwrap();
+
+        let saved = save_playback(&book_dir, "book-id", 0.75, -0.25, 1.5, None).unwrap();
+        assert_eq!(
+            saved.audio_path,
+            Some(audio.canonicalize().unwrap().to_string_lossy().to_string())
+        );
+        assert_eq!(saved.audio_storage.as_deref(), Some("external"));
+        assert_eq!(saved.last_position, 0.75);
+        assert_eq!(saved.delay, -0.25);
+        assert_eq!(saved.rate, 1.5);
+        assert_eq!(saved.cues.len(), 1);
+
+        let restored = prepare_playback(&book_dir, "book-id", None).unwrap();
+        assert_eq!(restored, saved);
+        fs::OpenOptions::new()
+            .append(true)
+            .open(&audio)
+            .unwrap()
+            .write_all(&[0])
+            .unwrap();
+        let changed = prepare_playback(&book_dir, "book-id", None).unwrap();
+        assert!(!changed.audio_available);
+        assert!(changed.audio_path.is_none());
+        fs::remove_file(&audio).unwrap();
+        let missing = prepare_playback(&book_dir, "book-id", None).unwrap();
+        assert!(!missing.audio_available);
+        assert!(missing.audio_path.is_none());
+        let _ = fs::remove_dir_all(book_dir.parent().unwrap().parent().unwrap());
+    }
+
+    #[test]
+    fn playback_values_and_audio_relink_are_validated_and_persisted() {
+        let book_dir = temp_book("relink");
+        let source_root = book_dir.parent().unwrap().parent().unwrap().join("sources");
+        fs::create_dir_all(&source_root).unwrap();
+        let original = source_root.join("original.wav");
+        let replacement = source_root.join("replacement.wav");
+        let srt = source_root.join("subtitles.srt");
+        write_wav(&original);
+        write_wav(&replacement);
+        fs::write(&srt, "1\n00:00:00,000 --> 00:00:01,000\n字幕\n").unwrap();
+        import_into_book_dir(&book_dir, "book-id", &original, &srt, false).unwrap();
+
+        assert!(save_playback(&book_dir, "book-id", -1.0, 0.0, 1.0, None).is_err());
+        assert!(save_playback(&book_dir, "book-id", 0.0, 2.1, 1.0, None).is_err());
+        assert!(save_playback(&book_dir, "book-id", 0.0, 0.0, 2.1, None).is_err());
+        fs::remove_file(&original).unwrap();
+        let relinked = relink_audio(&book_dir, "book-id", &replacement, None).unwrap();
+        assert!(relinked.audio_available);
+        assert_eq!(relinked.audio_file_name.as_deref(), Some("replacement.wav"));
+        assert_eq!(
+            relinked.audio_path,
+            Some(
+                replacement
+                    .canonicalize()
+                    .unwrap()
+                    .to_string_lossy()
+                    .to_string()
+            )
+        );
+        let restored = prepare_playback(&book_dir, "book-id", None).unwrap();
+        assert_eq!(restored.audio_path, relinked.audio_path);
         let _ = fs::remove_dir_all(book_dir.parent().unwrap().parent().unwrap());
     }
 
