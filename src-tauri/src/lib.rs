@@ -4,6 +4,7 @@ mod dict;
 mod epub;
 mod library;
 mod local_audio;
+mod sasayaki;
 mod storage;
 
 use dict::commands::DictState;
@@ -59,6 +60,9 @@ pub fn run() {
             local_audio::anki_remove_local_audio,
             local_audio::anki_set_local_audio_source_order,
             local_audio::anki_store_local_audio,
+            sasayaki::sasayaki_status,
+            sasayaki::sasayaki_import,
+            sasayaki::sasayaki_remove,
         ])
         .setup(|app| {
             app.state::<DictState>().initialize(app.handle());

@@ -214,6 +214,23 @@ export interface LocalAudioStatus {
   sources: LocalAudioSourceStatus[];
 }
 
+export interface SasayakiStatus {
+  configured: boolean;
+  audioStorage: "external" | "copied" | null;
+  audioFileName: string | null;
+  audioExtension: string | null;
+  audioSizeBytes: number | null;
+  audioAvailable: boolean;
+  subtitleFileName: string | null;
+  subtitleSizeBytes: number | null;
+  cueCount: number;
+  matchedCount: number;
+  unmatchedCount: number;
+  lastPosition: number;
+  delay: number;
+  rate: number;
+}
+
 export interface LocalAudioStoreRequest {
   expression: string;
   reading: string;

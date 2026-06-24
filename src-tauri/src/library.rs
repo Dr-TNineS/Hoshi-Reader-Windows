@@ -197,6 +197,41 @@ pub(crate) fn library_cover_path(
     library_cover_path_from_root(&root, book_id)
 }
 
+pub(crate) fn library_book_dir(app: &AppHandle, book_id: &str) -> Result<PathBuf, String> {
+    let root = library_root(app)?;
+    library_book_dir_from_root(&root, book_id)
+}
+
+fn library_book_dir_from_root(root: &Path, book_id: &str) -> Result<PathBuf, String> {
+    if book_id.trim().is_empty() {
+        return Err("Library book id is empty.".into());
+    }
+    let manifest = read_manifest(root)?;
+    let record = manifest
+        .books
+        .iter()
+        .find(|book| book.book_id == book_id)
+        .ok_or_else(|| format!("Library book not found: {book_id}"))?;
+    let library_file = Path::new(&record.library_path);
+    if !library_file.is_file() {
+        return Err(format!(
+            "Imported EPUB file is missing for '{}'. Re-import the book to restore it.",
+            record.title.as_deref().unwrap_or(&record.book_id)
+        ));
+    }
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve library root: {e}"))?;
+    let expected_dir = canonical_root.join("books").join(book_id);
+    let canonical_file = library_file
+        .canonicalize()
+        .map_err(|e| format!("Cannot resolve imported EPUB path: {e}"))?;
+    if canonical_file.parent() != Some(expected_dir.as_path()) {
+        return Err("Library EPUB path escapes the app-owned book directory.".into());
+    }
+    Ok(expected_dir)
+}
+
 fn library_cover_path_from_root(root: &Path, book_id: &str) -> Result<Option<PathBuf>, String> {
     if book_id.trim().is_empty() {
         return Err("Library book id is empty.".into());
@@ -779,11 +814,49 @@ mod tests {
     }
 
     #[test]
+    fn library_book_dir_is_manifest_scoped_and_contained() {
+        let root = temp_root("book_dir");
+        let book_dir = root.join("books").join("abc");
+        fs::create_dir_all(&book_dir).unwrap();
+        let book_file = book_dir.join("book.epub");
+        fs::write(&book_file, "epub").unwrap();
+        let mut manifest = LibraryManifest {
+            version: MANIFEST_VERSION,
+            books: vec![LibraryBookRecord {
+                book_id: "abc".into(),
+                title: Some("Book".into()),
+                source_path: "source.epub".into(),
+                library_path: book_file.to_string_lossy().into_owned(),
+                cover_path: None,
+                content_hash: "abc".into(),
+                size_bytes: 4,
+                imported_at: 1,
+            }],
+        };
+        write_manifest(&root, &manifest).unwrap();
+        assert_eq!(
+            library_book_dir_from_root(&root, "abc").unwrap(),
+            book_dir.canonicalize().unwrap()
+        );
+
+        let outside = root.join("outside.epub");
+        fs::write(&outside, "epub").unwrap();
+        manifest.books[0].library_path = outside.to_string_lossy().into_owned();
+        write_manifest(&root, &manifest).unwrap();
+        assert!(library_book_dir_from_root(&root, "abc")
+            .unwrap_err()
+            .contains("escapes"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
     fn forget_library_book_removes_manifest_record_and_dir() {
         let root = temp_root("forget_book");
         let book_dir = root.join("books").join("abc");
         fs::create_dir_all(&book_dir).unwrap();
         fs::write(book_dir.join("book.epub"), "old").unwrap();
+        fs::create_dir_all(book_dir.join("Sasayaki")).unwrap();
+        fs::write(book_dir.join("Sasayaki").join("sidecar.json"), "{}").unwrap();
         let manifest = LibraryManifest {
             version: MANIFEST_VERSION,
             books: vec![

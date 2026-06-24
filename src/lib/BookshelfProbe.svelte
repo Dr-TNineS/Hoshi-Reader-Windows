@@ -25,6 +25,7 @@
   ];
 
   let forgetEvents = $state<string[]>([]);
+  let sasayakiEvents = $state<string[]>([]);
 </script>
 
 <main class="probe" data-ui-portal-root>
@@ -38,6 +39,27 @@
     onOpenBook={() => {}}
     onContinueBook={() => {}}
     onForgetBook={(book) => forgetEvents = [...forgetEvents, book.bookId ?? book.path ?? "unknown"]}
+    sasayakiBookId="owned-book"
+    sasayakiStatus={{
+      configured: true,
+      audioStorage: "external",
+      audioFileName: "星の音.wav",
+      audioExtension: "wav",
+      audioSizeBytes: 8192,
+      audioAvailable: true,
+      subtitleFileName: "星の音.srt",
+      subtitleSizeBytes: 1024,
+      cueCount: 0,
+      matchedCount: 0,
+      unmatchedCount: 0,
+      lastPosition: 0,
+      delay: 0,
+      rate: 1,
+    }}
+    sasayakiMessage="Sasayaki audio and subtitles are ready for the matching slice."
+    onLoadSasayaki={(book) => sasayakiEvents = [...sasayakiEvents, `load:${book.bookId}`]}
+    onImportSasayaki={(book, copyAudio) => sasayakiEvents = [...sasayakiEvents, `${copyAudio ? "copy" : "link"}:${book.bookId}`]}
+    onRemoveSasayaki={(book) => sasayakiEvents = [...sasayakiEvents, `remove:${book.bookId}`]}
     onSetReaderTheme={() => {}}
     onSetReopenLastBookOnStartup={() => {}}
     onSetLookupPopupWidth={() => {}}
@@ -59,7 +81,12 @@
     onSetAnkiFieldTemplate={() => {}}
     onSetAnkiAudioConfig={() => {}}
   />
-  <div class="probe-state" data-forget-events={forgetEvents.join(",")} aria-hidden="true"></div>
+  <div
+    class="probe-state"
+    data-forget-events={forgetEvents.join(",")}
+    data-sasayaki-events={sasayakiEvents.join(",")}
+    aria-hidden="true"
+  ></div>
 </main>
 
 <style>

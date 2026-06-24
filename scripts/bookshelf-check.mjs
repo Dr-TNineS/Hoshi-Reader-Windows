@@ -43,6 +43,10 @@ async function forgetEvents(page) {
   return page.locator(".probe-state").getAttribute("data-forget-events");
 }
 
+async function sasayakiEvents(page) {
+  return page.locator(".probe-state").getAttribute("data-sasayaki-events");
+}
+
 async function main() {
   const vite = spawn(
     process.platform === "win32" ? "cmd.exe" : "npm",
@@ -71,6 +75,26 @@ async function main() {
 
     const ownedCard = page.locator(".book-card").filter({ hasText: "Owned Book" });
     await ownedCard.hover();
+    const sasayakiTrigger = ownedCard.getByRole("button", { name: "Configure Sasayaki for Owned Book", exact: true });
+    await sasayakiTrigger.click();
+    const sasayakiPanel = page.getByRole("region", { name: "Sasayaki for Owned Book" });
+    await sasayakiPanel.waitFor();
+    const sasayakiText = await sasayakiPanel.textContent();
+    assert(sasayakiText?.includes("Linked to the external audiobook"), "Sasayaki status should distinguish linked external audio.");
+    assert(sasayakiText?.includes("星の音.wav") && sasayakiText?.includes("星の音.srt"), "Sasayaki status should show audio and subtitle filenames.");
+    assert(sasayakiText?.includes("Cue matching and playback are not implemented yet."), "Sasayaki setup should keep later slices visibly out of scope.");
+    assert(await sasayakiEvents(page) === "load:owned-book", "Opening Sasayaki setup should load status by book id.");
+    await sasayakiPanel.getByRole("button", { name: "Link audio + SRT", exact: true }).click();
+    await sasayakiPanel.getByRole("button", { name: "Copy audio + SRT", exact: true }).click();
+    assert(await sasayakiEvents(page) === "load:owned-book,link:owned-book,copy:owned-book", "Sasayaki import modes should remain distinct.");
+    await sasayakiPanel.getByRole("button", { name: "Remove", exact: true }).click();
+    let sasayakiDialog = page.getByRole("alertdialog");
+    assert((await sasayakiDialog.textContent())?.includes("linked external audiobook is not deleted"), "Sasayaki removal should protect linked external audio.");
+    await sasayakiDialog.getByRole("button", { name: "Remove", exact: true }).click();
+    assert(await sasayakiEvents(page) === "load:owned-book,link:owned-book,copy:owned-book,remove:owned-book", "Sasayaki removal should emit once.");
+    await sasayakiPanel.getByRole("button", { name: "Close Sasayaki setup", exact: true }).click();
+    await sasayakiPanel.waitFor({ state: "hidden" });
+
     const ownedTrigger = ownedCard.getByRole("button", { name: "Forget Owned Book", exact: true });
     await ownedTrigger.click();
     let dialog = page.getByRole("alertdialog");
@@ -93,7 +117,13 @@ async function main() {
     await dialog.getByRole("button", { name: "Forget", exact: true }).click();
     assert(await forgetEvents(page) === "owned-book,C:/Books/Legacy Book.epub", "Legacy confirm should emit one additional event.");
 
-    console.log(JSON.stringify({ forgetEvents: await forgetEvents(page) }, null, 2));
+    const legacyAudioButton = page.locator(".book-card").filter({ hasText: "Legacy Book" }).getByRole("button", { name: /Configure Sasayaki/ });
+    assert(await legacyAudioButton.count() === 0, "Legacy books without bookId should not expose Sasayaki setup.");
+
+    console.log(JSON.stringify({
+      forgetEvents: await forgetEvents(page),
+      sasayakiEvents: await sasayakiEvents(page),
+    }, null, 2));
   } finally {
     if (browser) await browser.close();
     stopServer(vite);

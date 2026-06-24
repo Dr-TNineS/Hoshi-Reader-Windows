@@ -20,6 +20,12 @@ const MAX_SAMPLE_RATE: u32 = 192_000;
 pub(crate) const VERIFIED_AUDIO_CLIP_FORMATS: &[&str] = &["mp3", "wav"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct AudioFileInfo {
+    pub sample_rate: u32,
+    pub channels: usize,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AudioClipRange {
     pub start_ms: u64,
     pub end_ms: u64,
@@ -134,6 +140,73 @@ pub(crate) fn clip_audio_file_to_wav(
     }
 
     encode_pcm_wav(&output, sample_rate, channels as u16)
+}
+
+pub(crate) fn validate_audio_file(source: &Path) -> Result<AudioFileInfo, String> {
+    let extension = source
+        .extension()
+        .and_then(|value| value.to_str())
+        .map(str::to_ascii_lowercase)
+        .ok_or_else(|| "Audio source has no supported file extension.".to_string())?;
+    if !VERIFIED_AUDIO_CLIP_FORMATS.contains(&extension.as_str()) {
+        return Err(format!(
+            "Audio source must use one of the verified formats: {}.",
+            VERIFIED_AUDIO_CLIP_FORMATS.join(", ")
+        ));
+    }
+
+    let file = File::open(source).map_err(|error| format!("Cannot open audio source: {error}"))?;
+    let stream = MediaSourceStream::new(Box::new(file), Default::default());
+    let mut hint = Hint::new();
+    hint.with_extension(&extension);
+    let probed = symphonia::default::get_probe()
+        .format(
+            &hint,
+            stream,
+            &FormatOptions::default(),
+            &MetadataOptions::default(),
+        )
+        .map_err(|error| format!("Unsupported or corrupt audio source: {error}"))?;
+    let mut format = probed.format;
+    let track = format
+        .default_track()
+        .ok_or_else(|| "Audio source has no decodable default track.".to_string())?;
+    let track_id = track.id;
+    let mut decoder = symphonia::default::get_codecs()
+        .make(&track.codec_params, &DecoderOptions::default())
+        .map_err(|error| format!("Unsupported audio codec: {error}"))?;
+
+    loop {
+        let packet = match format.next_packet() {
+            Ok(packet) => packet,
+            Err(SymphoniaError::IoError(error))
+                if error.kind() == std::io::ErrorKind::UnexpectedEof =>
+            {
+                return Err("Audio source contains no decoded samples.".into());
+            }
+            Err(SymphoniaError::ResetRequired) => {
+                decoder.reset();
+                continue;
+            }
+            Err(error) => return Err(format!("Cannot read audio source: {error}")),
+        };
+        if packet.track_id() != track_id {
+            continue;
+        }
+        let decoded = decoder
+            .decode(&packet)
+            .map_err(|error| format!("Cannot decode audio source: {error}"))?;
+        let spec = *decoded.spec();
+        let channels = spec.channels.count();
+        validate_output_spec(spec.rate, channels)?;
+        if decoded.frames() == 0 {
+            continue;
+        }
+        return Ok(AudioFileInfo {
+            sample_rate: spec.rate,
+            channels,
+        });
+    }
 }
 
 fn validate_range(range: AudioClipRange) -> Result<(), String> {
@@ -321,6 +394,27 @@ mod tests {
         assert_eq!(spec.sample_rate, 8_000);
         assert_eq!(samples.len(), 1_600);
         assert!(samples.iter().any(|sample| *sample != 0));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
+    fn validates_only_verified_decodable_audio_formats() {
+        let root = temp_root("validate");
+        let wav = root.join("source.wav");
+        write_wav(&wav, 1, 8_000);
+        assert_eq!(
+            validate_audio_file(&wav).unwrap(),
+            AudioFileInfo {
+                sample_rate: 8_000,
+                channels: 1,
+            }
+        );
+
+        let unsupported = root.join("source.m4a");
+        fs::write(&unsupported, b"not m4a").unwrap();
+        assert!(validate_audio_file(&unsupported)
+            .unwrap_err()
+            .contains("verified formats"));
         fs::remove_dir_all(root).unwrap();
     }
 

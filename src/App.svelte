@@ -51,6 +51,7 @@
     LocalAudioStatus,
     ReaderProgress,
     ReaderSelection,
+    SasayakiStatus,
   } from "./lib/types";
   import type { BookLocator, BookRecord, LibraryBookRecord } from "./lib/storage";
 
@@ -86,6 +87,13 @@
   let ankiError = $state("");
   let ankiBusy = $state(false);
   let localAudioStatus = $state<LocalAudioStatus>({ imported: false, sizeBytes: null, sources: [] });
+  let sasayakiBookId = $state<string | null>(null);
+  let sasayakiStatus = $state<SasayakiStatus | null>(null);
+  let sasayakiMessage = $state("");
+  let sasayakiError = $state("");
+  let sasayakiBusy = $state(false);
+  let sasayakiBusyBookId = $state<string | null>(null);
+  let sasayakiRequestId = 0;
   let bookImportBusy = $state(false);
   let debug = $state("");
   let triedStartup = false;
@@ -307,11 +315,126 @@
       }
       const readingBooks = await forgetReadingBook(book, isTauriRuntime());
       books = await mergeCurrentLibraryBooks(readingBooks);
+      if (book.bookId && sasayakiBookId === book.bookId) {
+        sasayakiRequestId += 1;
+        sasayakiBookId = null;
+        sasayakiStatus = null;
+        sasayakiMessage = "";
+        sasayakiError = "";
+      }
       error = "";
       debug = "Forgot book";
     } catch (e) {
       error = String(e);
       debug = "Err";
+    }
+  }
+
+  async function loadSasayaki(book: BookRecord) {
+    if (!book.bookId) return;
+    const requestId = ++sasayakiRequestId;
+    sasayakiBookId = book.bookId;
+    sasayakiStatus = null;
+    sasayakiMessage = "Loading Sasayaki status...";
+    sasayakiError = "";
+    if (!isTauriRuntime()) {
+      sasayakiMessage = "";
+      sasayakiError = "Sasayaki setup requires Tauri runtime.";
+      return;
+    }
+    try {
+      const next = await invoke<SasayakiStatus>("sasayaki_status", { bookId: book.bookId });
+      if (requestId !== sasayakiRequestId || sasayakiBookId !== book.bookId) return;
+      sasayakiStatus = next;
+      sasayakiMessage = sasayakiStatus.configured
+        ? "Sasayaki audio and subtitles are ready for the matching slice."
+        : "Choose linked or copied audio, then select its UTF-8 SRT subtitles.";
+    } catch (e) {
+      if (requestId !== sasayakiRequestId || sasayakiBookId !== book.bookId) return;
+      sasayakiMessage = "";
+      sasayakiError = String(e);
+    }
+  }
+
+  async function importSasayaki(book: BookRecord, copyAudio: boolean) {
+    if (!book.bookId || sasayakiBusy) return;
+    if (!isTauriRuntime()) {
+      sasayakiError = "Sasayaki import requires Tauri runtime.";
+      return;
+    }
+    let requestId: number | null = null;
+    try {
+      const audio = await open({
+        multiple: false,
+        filters: [{ name: "Sasayaki audio", extensions: ["mp3", "wav"] }],
+      });
+      if (!audio || Array.isArray(audio)) return;
+      const srt = await open({
+        multiple: false,
+        filters: [{ name: "Sasayaki subtitles", extensions: ["srt"] }],
+      });
+      if (!srt || Array.isArray(srt)) return;
+
+      requestId = ++sasayakiRequestId;
+      sasayakiBookId = book.bookId;
+      sasayakiBusy = true;
+      sasayakiBusyBookId = book.bookId;
+      sasayakiError = "";
+      sasayakiMessage = copyAudio
+        ? "Copying and validating Sasayaki audio and subtitles..."
+        : "Linking and validating Sasayaki audio and subtitles...";
+      const next = await invoke<SasayakiStatus>("sasayaki_import", {
+        bookId: book.bookId,
+        audioSourcePath: audio,
+        srtSourcePath: srt,
+        copyAudio,
+      });
+      if (requestId !== sasayakiRequestId || sasayakiBookId !== book.bookId) return;
+      sasayakiStatus = next;
+      sasayakiMessage = copyAudio
+        ? "Copied Sasayaki audio and subtitles into app storage."
+        : "Linked the external audiobook and copied its subtitles into app storage.";
+    } catch (e) {
+      if (
+        sasayakiBookId !== book.bookId
+        || (requestId !== null && requestId !== sasayakiRequestId)
+      ) return;
+      sasayakiMessage = "";
+      sasayakiError = String(e);
+    } finally {
+      if (sasayakiBusyBookId === book.bookId) {
+        sasayakiBusy = false;
+        sasayakiBusyBookId = null;
+      }
+    }
+  }
+
+  async function removeSasayaki(book: BookRecord) {
+    if (!book.bookId || sasayakiBusy) return;
+    if (!isTauriRuntime()) {
+      sasayakiError = "Sasayaki removal requires Tauri runtime.";
+      return;
+    }
+    const requestId = ++sasayakiRequestId;
+    sasayakiBookId = book.bookId;
+    sasayakiBusy = true;
+    sasayakiBusyBookId = book.bookId;
+    sasayakiError = "";
+    sasayakiMessage = "Removing app-owned Sasayaki data...";
+    try {
+      const next = await invoke<SasayakiStatus>("sasayaki_remove", { bookId: book.bookId });
+      if (requestId !== sasayakiRequestId || sasayakiBookId !== book.bookId) return;
+      sasayakiStatus = next;
+      sasayakiMessage = "Removed Sasayaki data. Linked external audio was not deleted.";
+    } catch (e) {
+      if (requestId !== sasayakiRequestId || sasayakiBookId !== book.bookId) return;
+      sasayakiMessage = "";
+      sasayakiError = String(e);
+    } finally {
+      if (sasayakiBusyBookId === book.bookId) {
+        sasayakiBusy = false;
+        sasayakiBusyBookId = null;
+      }
     }
   }
 
@@ -1285,6 +1408,11 @@
       {ankiBusy}
       {ankiTemplateOptions}
       {localAudioStatus}
+      {sasayakiBookId}
+      {sasayakiStatus}
+      {sasayakiMessage}
+      {sasayakiError}
+      sasayakiBusy={sasayakiBusy && sasayakiBusyBookId === sasayakiBookId}
       onOpenBook={openBook}
       onContinueBook={continueBook}
       onForgetBook={forgetBook}
@@ -1316,6 +1444,9 @@
       onImportLocalAudio={importLocalAudio}
       onRemoveLocalAudio={removeLocalAudio}
       onMoveLocalAudioSource={moveLocalAudioSource}
+      onLoadSasayaki={loadSasayaki}
+      onImportSasayaki={importSasayaki}
+      onRemoveSasayaki={removeSasayaki}
     />
   {:else}
     <Reader
