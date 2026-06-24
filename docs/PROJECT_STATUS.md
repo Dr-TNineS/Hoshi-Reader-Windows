@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Project Status
 
-Last updated: 2026-06-23
+Last updated: 2026-06-24
 
 This file records current implementation facts for `hoshi-reader-windows`. It is not an agent rule file, product roadmap, or substitute for checking the current code.
 
@@ -156,15 +156,16 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - The media pipeline stores dictionary images, then book cover, then word audio before rendering and addNote. Duplicate notes may leave shared content-hash media; HSW does not automatically delete it.
   - Remote word-audio sources have stable ids and support add/remove/edit/enable/reorder. Export tries local audio first, then every enabled remote source in saved order; ordinary warnings fall through and security errors stop immediately.
   - Anki export and popup playback now share the Rust local-first/ordered-remote word-audio resolver. Popup audio supports play, stop, logical request cancellation, lookup cleanup, and optional autoplay through a content-hash cache bounded to 20 files and 50 MiB.
+  - A pure-Rust audio clipping capability decodes MP3 and WAV and emits deterministic 16-bit PCM cue WAV bytes. It enforces a 60-second clip limit, a 64 MiB output limit, bounded channel/sample-rate shapes, and clear corrupt/out-of-range errors; development/release tests cover exact timing, long sources, and Unicode paths.
 
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata and reading state are still JSON.
-- Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; real remote-audio-plus-AnkiConnect, real HSA local-audio database, real popup word-audio playback, and real post-add sync runtime validation are also not verified.
+- Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; real remote-audio-plus-AnkiConnect, real HSA local-audio database, real popup word-audio playback, real clipped-audio Anki playback, and real post-add sync runtime validation are also not verified. AAC/M4A and OGG/Opus clipping are not verified.
 - No full settings surface; Appearance, Advanced startup behavior, dictionary popup sizing/scale, and core HSA dictionary settings are implemented. HSA profile-scoped settings, recommended dictionary downloads, automatic updates, dictionary default tab, and custom CSS are not implemented.
 - No verified app-owned cover thumbnail cache.
 - Runtime validation with a normal media-bearing Yomitan dictionary is not verified; on 2026-06-16, `HSW_MEDIA_YOMITAN_ZIP` was unset, `OALDPE10.zip` had `mediaCount=0`, and `MK3Fix0213.zip` remained unsuitable because compatibility import intentionally skipped media. Packed-media command tests now cover `media.idx`/`media.bin` reads, but full popup runtime validation with a media-preserving import is still not verified.
-- No verified release packaging flow.
+- Portable package build and five-second executable launch smoke validation passed on 2026-06-24; installer and broader release validation are not verified.
 
 ## Known Issues
 

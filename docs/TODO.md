@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Agent TODO
 
-Last updated: 2026-06-23
+Last updated: 2026-06-24
 
 This file is the short operational handoff for future agents. Keep detailed state in `docs/PROJECT_STATUS.md` and lookup-specific slice details in `docs/LOOKUP_ROADMAP.md`.
 
@@ -47,8 +47,11 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Anki HSA/Windows alignment is documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`; AnkiConnect readiness/configuration, field preview, minimal duplicate-check/add-note plumbing, and real AnkiConnect runtime add-note validation are complete.
 5. Treat the storage/model migration as complete at the JSON-store level: reading progress, recent books, and session now live in Tauri app data `reading/state.json`, with one-time legacy `localStorage` import and browser fallback.
 6. Follow the complete Anki/audio route in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
-   - Current: Slice 5I-0, Windows audio decode/clipping capability spike.
-   - Next: Slice 5I, per-book Sasayaki sidecar and import.
+   - Current: Slice 5I, per-book Sasayaki sidecar and import.
+   - Next: Slice 5J, cue parsing, matching, inspection, rematch, and correction.
+   - Completed on 2026-06-24: Slice 5I-0 pure-Rust MP3/WAV decode and
+     deterministic cue-WAV clipping capability spike; AAC/M4A, OGG/Opus, and
+     real Anki playback remain `not verified`.
    - Completed on 2026-06-23: HSA Anki field rendering parity bugfix for `{furigana-plain}`, `{sentence}`, and `{pitch-accent-positions}`.
    - Current: Slice 2D in `docs/DICTIONARY_POPUP_HSA_ALIGNMENT.md`, MK3 gaiji image wrapper/CSS parity and Anki inline glossary media.
    - Completed on 2026-06-23: Slice 2B in `docs/DICTIONARY_POPUP_HSA_ALIGNMENT.md`, packed hoshidicts media support for lookup popup gaiji SVGs.

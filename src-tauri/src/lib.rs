@@ -1,4 +1,5 @@
 mod anki;
+mod audio_clip;
 mod dict;
 mod epub;
 mod library;
