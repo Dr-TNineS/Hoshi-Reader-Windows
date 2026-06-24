@@ -84,7 +84,8 @@ async function main() {
     assert(sasayakiText?.includes("星の音.wav") && sasayakiText?.includes("星の音.srt"), "Sasayaki status should show audio and subtitle filenames.");
     assert(sasayakiText?.includes("2/3 matched") && sasayakiText?.includes("66.7%") && sasayakiText?.includes("1 corrected"), "Sasayaki setup should summarize match coverage and corrections.");
     assert(sasayakiText?.includes("見つからない字幕") && sasayakiText?.includes("Unmatched"), "Sasayaki setup should expose unmatched cues for inspection.");
-    assert(sasayakiText?.includes("Playback and reader highlighting remain out of scope"), "Sasayaki setup should keep later slices visibly out of scope.");
+    assert(sasayakiText?.includes("M4B, MP3, and WAV"), "Sasayaki setup should expose every verified audiobook format.");
+    assert(sasayakiText?.includes("reader highlighting remain separate"), "Sasayaki setup should keep reader presentation work visibly separate.");
     assert(await sasayakiEvents(page) === "load:owned-book", "Opening Sasayaki setup should load status by book id.");
     await sasayakiPanel.getByLabel("Search window").fill("350");
     await sasayakiPanel.getByRole("button", { name: "Match again", exact: true }).click();

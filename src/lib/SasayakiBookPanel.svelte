@@ -197,7 +197,7 @@
     {/if}
   </div>
 
-  <p class="scope-note">MP3 and WAV cue matching is available. Playback and reader highlighting remain out of scope for this slice.</p>
+  <p class="scope-note">M4B, MP3, and WAV cue matching is available. Playback and reader highlighting remain separate reader features.</p>
 </section>
 
 <style>

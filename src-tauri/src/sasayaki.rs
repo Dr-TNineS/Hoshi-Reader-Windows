@@ -1702,6 +1702,51 @@ mod tests {
     }
 
     #[test]
+    #[ignore = "requires HSW_REAL_SASAYAKI_DIR with matching EPUB, M4B, and SRT files"]
+    fn validates_real_m4b_srt_epub_pipeline() {
+        let source_root = PathBuf::from(
+            std::env::var("HSW_REAL_SASAYAKI_DIR")
+                .expect("HSW_REAL_SASAYAKI_DIR must point to the fixture directory"),
+        );
+        let find_extension = |extension: &str| {
+            fs::read_dir(&source_root)
+                .unwrap()
+                .filter_map(Result::ok)
+                .map(|entry| entry.path())
+                .find(|path| {
+                    path.extension()
+                        .and_then(|value| value.to_str())
+                        .is_some_and(|value| value.eq_ignore_ascii_case(extension))
+                })
+                .unwrap_or_else(|| panic!("Missing .{extension} fixture"))
+        };
+        let epub = find_extension("epub");
+        let audio = find_extension("m4b");
+        let srt = find_extension("srt");
+        let book_dir = temp_book("real_m4b");
+        fs::copy(&epub, book_dir.join("book.epub")).unwrap();
+
+        let imported = import_into_book_dir(&book_dir, "book-id", &audio, &srt, false).unwrap();
+        assert_eq!(imported.audio_extension.as_deref(), Some("m4b"));
+        assert!(imported.audio_available);
+        assert!(imported.cue_count > 0);
+        let matched = rematch_book(&book_dir, &book_dir.join("book.epub"), "book-id", 200).unwrap();
+        assert!(matched.matched_count > 0);
+        let playback = prepare_playback(&book_dir, "book-id", None).unwrap();
+        assert!(playback.audio_available);
+        assert_eq!(
+            playback.audio_path,
+            Some(audio.canonicalize().unwrap().to_string_lossy().to_string())
+        );
+        assert!(!playback.cues.is_empty());
+        println!(
+            "real M4B pipeline: cues={}, matched={}, unmatched={}",
+            imported.cue_count, matched.matched_count, matched.unmatched_count
+        );
+        let _ = fs::remove_dir_all(book_dir.parent().unwrap().parent().unwrap());
+    }
+
+    #[test]
     fn imports_external_audio_and_utf8_srt_by_book_id() {
         let book_dir = temp_book("external");
         let source_root = book_dir.parent().unwrap().parent().unwrap().join("sources");

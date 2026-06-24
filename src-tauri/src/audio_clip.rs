@@ -17,7 +17,7 @@ const MAX_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
 const MAX_CHANNELS: usize = 8;
 const MAX_SAMPLE_RATE: u32 = 192_000;
 
-pub(crate) const VERIFIED_AUDIO_CLIP_FORMATS: &[&str] = &["mp3", "wav"];
+pub(crate) const VERIFIED_AUDIO_CLIP_FORMATS: &[&str] = &["m4b", "mp3", "wav"];
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) struct AudioFileInfo {
@@ -302,6 +302,8 @@ mod tests {
 
     const MP3_FIXTURE_BASE64: &str = "/+MoxAAdMKqIX08AAAubclAAfv379+/f3vSA8ePHjylLv379+/34bJBL+F+A7gLYEMMM463o8ePAQrB8/lDnygf6PfrBw5iAH31g4GMgD76wIc0A/yju/B8HAQBAEAQB8HwfB8CAgCAIBgHwfB+UBAMb//B8HwICAIAg4Dg+D76gQU0i7wBAyE3/1///gAAm/+MoxA4dwdpsAZyQAAYIhUCGCwl+/x//8xGOjAgbPUKo0OXtJ0Hq0kEEzxCAzulLAxDAI0DyQNpDZgsiCwr/8UiHyhq0coUEKCIaLl//8XKTQ5w5xRIqRUyIsRb///MS6XTIvF5Eul1IGv/xKEgaEp0O///9ixwAgYCGr7etL1bhb8BgBYBwBgKoCMBgGYAY/+MoxBof+3oZk9cQAAYBCAxAYGSC5AYOuDMAYPmIzAYc7DRAYvEITAYX+CyAYIOCHAYESAZgYAyAlgYDIAagYBIAVgHADhCv+t/9oj0/b1+T7/f/wP/7/+f5fV//T6ff7ev/39X9fk+/q3g3//3bt++rKCHQhnPmXqR9R+gAYCQMHioDGBTAy6ZANQqYDcT5/+MoxB0grGIIyq/ogAPB8ww34XDN0FqTzQThIcwu8FwMEwAhyIDmCB6Bq4AGmUgZNALga3nT//m/z/z3s/p/+s/5z5U+l639X0H9/W/29P6Pz/nW9vv6386/s/m/rS9Z7zB/X/7t53Xv6jf1n9U4/r9ZjZgAgNCAM43nfv6z9ELLADQqAAIgTCIEiYBnckgc/+MoxB0ejGIVlK/ogAmsYUOGFmq8LZ5mCYTmYRoBvGB+gQZgRgDYBwJgGpZgYwwAKRIr/W/r+aev9vOfQ+3rf/z/29f/z/zT1t9vb7+t/O/V9vt63859D571t5z6v/U339H1pet/ON6vmyoIBHb0PWh61T4aUBYSgYvAwGRBWBko/gY1eQGJvmYBmM0GDxXi/+MoxCUc3GIRSK/ogIYHyKLCgN2YA8BrGAggN4HDOgNmAYzBzEb73+//p/b7e7en/639fzX/1//R+v571/V9vW3nfr+/29b+m3p+pH1nvTb1/+31fV896/2/89VcAEjAwDW3pepP7YeyA8DAABkDCocAxyMgMvEcDWqIMbodc+1d7zhQFpMXUF4wlACTA5AF/+MoxDQYmX4hlK+mgACcgPoAYcB4i5/v/6H/29f2+/nX+W+S27M9u9f0ZP/769WnRt/pdVavEeSsJfPqIESGv6/q+1g9AAkBgYEBQNjYAAOAx+WQNQOAwasMfM6EXUzIJQn0wXgDaMCpAdTAYAFQ8MjjbMwYAhy33+vTozO/1/X9H27qnejVkNOz799WvTks/+MoxFQW0KYcyq/ygM//1ZbRt+eqwcckP///DDmv//3nnn+88+3IbEIBIcA+XwBIBZgHBFGGcGAYeRDRk0eTGYeNEYngUBhGBFGCcAQCAJDAqASMAIAJXJ5ewMcv+7/2/Z//L7P91Xf/6dn/q//+7/0VCBAAYVBEkHi7F2Oow9pKpUEq0v/frvgdcigiQwJA/+MoxHsXGKIw014QABG0AAf6/KKtiPXjzTAow4fMDDhASmbHO9/sMMXNVtismAkgBUAbE9FxFtz9/+t/vXicfQhwao3SEj0n8aWf///qP9xKaj32hzCrU7CVyugvXv////7JSjPHu8eUfv7wnz6r17a1s1r/////+8eUfx7vIlH97vKYtb117f/////////x/+MoxKEtAzZ5sZt4AB+/jvHkR+/jvHlH7+7x5sr2LhVMQU1FMy4xMDBVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV/+MoxHAAAANIAcAAAFVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVVV";
 
+    const M4B_TAIL_MOOV_FIXTURE_BASE64: &str = "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";
+
     fn temp_root(name: &str) -> std::path::PathBuf {
         let suffix = SystemTime::now()
             .duration_since(UNIX_EPOCH)
@@ -342,8 +344,8 @@ mod tests {
     }
 
     #[test]
-    fn verified_formats_are_limited_to_mp3_and_wav() {
-        assert_eq!(VERIFIED_AUDIO_CLIP_FORMATS, ["mp3", "wav"]);
+    fn verified_formats_include_m4b_mp3_and_wav() {
+        assert_eq!(VERIFIED_AUDIO_CLIP_FORMATS, ["m4b", "mp3", "wav"]);
     }
 
     #[test]
@@ -398,6 +400,31 @@ mod tests {
     }
 
     #[test]
+    fn clips_m4b_aac_fixture_to_deterministic_pcm_wav() {
+        let root = temp_root("m4b");
+        let source = root.join("source.m4b");
+        let fixture = base64::engine::general_purpose::STANDARD
+            .decode(M4B_TAIL_MOOV_FIXTURE_BASE64)
+            .unwrap();
+        fs::write(&source, fixture).unwrap();
+        let range = AudioClipRange {
+            start_ms: 50,
+            end_ms: 250,
+        };
+
+        let first = clip_audio_file_to_wav(&source, range).unwrap();
+        let second = clip_audio_file_to_wav(&source, range).unwrap();
+        assert_eq!(first, second);
+
+        let (spec, samples) = inspect_wav(&first);
+        assert_eq!(spec.channels, 1);
+        assert_eq!(spec.sample_rate, 8_000);
+        assert_eq!(samples.len(), 1_600);
+        assert!(samples.iter().any(|sample| *sample != 0));
+        fs::remove_dir_all(root).unwrap();
+    }
+
+    #[test]
     fn validates_only_verified_decodable_audio_formats() {
         let root = temp_root("validate");
         let wav = root.join("source.wav");
@@ -410,11 +437,11 @@ mod tests {
             }
         );
 
-        let unsupported = root.join("source.m4a");
-        fs::write(&unsupported, b"not m4a").unwrap();
-        assert!(validate_audio_file(&unsupported)
+        let corrupt_m4b = root.join("source.m4b");
+        fs::write(&corrupt_m4b, b"not m4b").unwrap();
+        assert!(validate_audio_file(&corrupt_m4b)
             .unwrap_err()
-            .contains("verified formats"));
+            .contains("Unsupported or corrupt"));
         fs::remove_dir_all(root).unwrap();
     }
 

@@ -87,6 +87,7 @@ async function main() {
     assert(transportColumns.split(" ").length === 2, "Narrow transport controls should use two columns.");
     await panel.getByRole("button", { name: "Close Sasayaki playback", exact: true }).click();
     assert(await audioButton.getAttribute("aria-expanded") === "false", "Closing playback should restore the collapsed state.");
+    await page.waitForFunction(() => document.activeElement?.id === "reader-sasayaki-trigger");
     assert(await audioButton.evaluate((element) => element === document.activeElement), "Closing playback should restore focus to the Audio trigger.");
 
     console.log(JSON.stringify({ events: await events(page), wideOverflow, narrowOverflow }, null, 2));

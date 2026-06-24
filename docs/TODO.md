@@ -49,25 +49,31 @@ This file is the short operational handoff for future agents. Keep detailed stat
 6. Follow the complete Anki/audio route in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
    - Current: Slice 5L, cue presentation and reader coordination.
    - Next: Slice 5M, Sasayaki sentence audio export.
+   - Completed on 2026-06-24: M4B/AAC-LC was added to Sasayaki import, relink,
+     playback preparation, and cue clipping. The real `汝、星のごとく`
+     EPUB/M4B/SRT set passed backend import, matching, playback-source
+     preparation, deterministic development/release clipping, portable package
+     build, and launch smoke; real Tauri audio output remains `not verified`.
    - Completed on 2026-06-24: Slice 5K reader playback panel, exact-file asset
      authorization, play/pause, progress, +/-10 seconds, cue navigation,
      persisted position/rate/delay, missing/changed external source relink, and
      shelf/book/window teardown. Rust state/security tests, frontend
      check/build, playback/reader visual/TOC probes, and wide/520px layout
-     checks passed. Real Tauri audiobook playback remains `not verified`
-     because no configured local Sasayaki book fixture was available.
+     checks passed. A real backend M4B fixture is now available, but actual
+     Tauri/WebView audio output remains `not verified`.
    - Completed on 2026-06-24: Slice 5J strict SRT parsing, HSA-style filtered
      ordered EPUB matching, persisted search window and correction records,
      match summary, cue inspection, rematch, and manual correction UI. Rust
      parity fixtures, frontend checks/build, bookshelf probe, and wide/520px
-     visual checks passed. Real EPUB/audiobook/SRT characterization remains
-     `not verified`.
-   - Completed on 2026-06-24: Slice 5I per-book app-owned sidecar, MP3/WAV
+     visual checks passed. The later real M4B/EPUB/SRT validation covered
+     11,798 cues with 11,792 matches.
+   - Completed on 2026-06-24: Slice 5I per-book app-owned sidecar, M4B/MP3/WAV
      external/copy import, normalized UTF-8 SRT, status UI, atomic replacement,
-     rollback, and safe removal. Real audiobook/SRT runtime import remains
-     `not verified`.
+     rollback, and safe removal. The later real M4B backend pipeline passed;
+     real Tauri audio output remains `not verified`.
    - Completed on 2026-06-24: Slice 5I-0 pure-Rust MP3/WAV decode and
-     deterministic cue-WAV clipping capability spike; AAC/M4A, OGG/Opus, and
+     deterministic cue-WAV clipping capability spike; M4B/AAC-LC was verified
+     by the later format extension, while generic M4A/raw AAC, OGG/Opus, and
      real Anki playback remain `not verified`.
    - Completed on 2026-06-23: HSA Anki field rendering parity bugfix for `{furigana-plain}`, `{sentence}`, and `{pitch-accent-positions}`.
    - Current: Slice 2D in `docs/DICTIONARY_POPUP_HSA_ALIGNMENT.md`, MK3 gaiji image wrapper/CSS parity and Anki inline glossary media.

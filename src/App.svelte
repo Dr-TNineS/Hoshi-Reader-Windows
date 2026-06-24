@@ -419,7 +419,7 @@
     try {
       const audio = await open({
         multiple: false,
-        filters: [{ name: "Sasayaki audio", extensions: ["mp3", "wav"] }],
+        filters: [{ name: "Sasayaki audio", extensions: ["m4b", "mp3", "wav"] }],
       });
       if (!audio || Array.isArray(audio)) return;
       const srt = await open({
@@ -795,7 +795,7 @@
     if (!bookId || !isTauriRuntime()) return;
     const selected = await open({
       multiple: false,
-      filters: [{ name: "Sasayaki audio", extensions: ["mp3", "wav"] }],
+      filters: [{ name: "Sasayaki audio", extensions: ["m4b", "mp3", "wav"] }],
     });
     if (!selected || Array.isArray(selected)) return;
     try {
