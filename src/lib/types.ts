@@ -96,6 +96,8 @@ export interface LookupAnkiPayload {
   pitches: PitchEntry[];
   media: LookupAnkiMediaReference[];
   audioFilename: string | null;
+  sasayakiCueId: string | null;
+  sasayakiAudioFilename: string | null;
   coverFilename: string | null;
   sourceBook: LookupAnkiSourceBook;
   sourceChapter: LookupAnkiSourceChapter;
@@ -212,6 +214,11 @@ export interface LocalAudioStatus {
   imported: boolean;
   sizeBytes: number | null;
   sources: LocalAudioSourceStatus[];
+}
+
+export interface AnkiStoreSasayakiAudioResult {
+  filename: string | null;
+  warnings: string[];
 }
 
 export interface SasayakiStatus {

@@ -12,6 +12,7 @@
     AnkiStoreMediaResult,
     AnkiStoreBookCoverResult,
     AnkiStoreRemoteAudioResult,
+    AnkiStoreSasayakiAudioResult,
     DictResult,
     LookupAnkiPayload,
     WordAudioPlaybackResult,
@@ -57,6 +58,7 @@
     onStoreAnkiMedia,
     onStoreAnkiBookCover,
     onStoreAnkiWordAudio,
+    onStoreAnkiSasayakiAudio,
     onPrepareWordAudio,
     onAddAnkiNote,
   }: {
@@ -76,6 +78,7 @@
     onStoreAnkiMedia: (media: AnkiDictionaryMediaRef[]) => Promise<AnkiStoreMediaResult>;
     onStoreAnkiBookCover: (bookId: string) => Promise<AnkiStoreBookCoverResult>;
     onStoreAnkiWordAudio: (request: WordAudioResolveRequest) => Promise<AnkiStoreRemoteAudioResult>;
+    onStoreAnkiSasayakiAudio: (bookId: string, cueId: string) => Promise<AnkiStoreSasayakiAudioResult>;
     onPrepareWordAudio: (request: WordAudioResolveRequest) => Promise<WordAudioPlaybackResult>;
     onAddAnkiNote: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
   } = $props();
@@ -146,6 +149,7 @@
       onStoreAnkiMedia={onStoreAnkiMedia}
       onStoreAnkiBookCover={onStoreAnkiBookCover}
       onStoreAnkiWordAudio={onStoreAnkiWordAudio}
+      onStoreAnkiSasayakiAudio={onStoreAnkiSasayakiAudio}
       onPrepareWordAudio={onPrepareWordAudio}
       onAddAnkiNote={onAddAnkiNote}
     />

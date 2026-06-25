@@ -48,6 +48,7 @@
     AnkiStoreMediaResult,
     AnkiStoreBookCoverResult,
     AnkiStoreRemoteAudioResult,
+    AnkiStoreSasayakiAudioResult,
     WordAudioPlaybackResult,
     WordAudioResolveRequest,
     DictImportBatchSummary,
@@ -1373,6 +1374,10 @@
       pitches: result.pitches,
       media: extractDictionaryMediaReferences(result.glossary),
       audioFilename: null,
+      sasayakiCueId: sasayakiActiveCue?.chapterIndex === selection.chapterIndex
+        ? sasayakiActiveCue.id
+        : null,
+      sasayakiAudioFilename: null,
       coverFilename: null,
       sourceBook: {
         title: meta?.title ?? null,
@@ -1569,6 +1574,19 @@
     closeReaderSelection();
     void stopSasayakiPlayback(true);
     view = "bookshelf";
+  }
+
+  async function storeAnkiSasayakiAudio(
+    bookId: string,
+    cueId: string,
+  ): Promise<AnkiStoreSasayakiAudioResult> {
+    if (!isTauriRuntime()) throw new Error("Sasayaki audio storage requires Tauri runtime.");
+    const endpoint = ankiSettings?.endpoint?.trim() || ankiEndpointDraft;
+    return invoke<AnkiStoreSasayakiAudioResult>("anki_store_sasayaki_audio", {
+      endpoint,
+      bookId,
+      cueId,
+    });
   }
 
   function restoreTocTriggerFocus() {
@@ -2022,6 +2040,7 @@
       onStoreAnkiMedia={storeAnkiMedia}
       onStoreAnkiBookCover={storeAnkiBookCover}
       onStoreAnkiWordAudio={storeAnkiWordAudio}
+      onStoreAnkiSasayakiAudio={storeAnkiSasayakiAudio}
       onPrepareWordAudio={prepareWordAudio}
       onAddAnkiNote={addAnkiNote}
     />

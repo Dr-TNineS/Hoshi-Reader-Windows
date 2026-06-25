@@ -1,4 +1,6 @@
-use crate::audio_clip::{validate_audio_file, VERIFIED_AUDIO_CLIP_FORMATS};
+use crate::audio_clip::{
+    clip_audio_file_to_wav, validate_audio_file, AudioClipRange, VERIFIED_AUDIO_CLIP_FORMATS,
+};
 use crate::epub::book::{filtered_reader_text, EpubBook};
 use crate::library::{library_book_dir, library_book_file};
 use serde::{Deserialize, Serialize};
@@ -22,6 +24,7 @@ const MAX_PLAYBACK_RATE: f32 = 2.0;
 const MIN_PLAYBACK_DELAY: f64 = -2.0;
 const MAX_PLAYBACK_DELAY: f64 = 2.0;
 const MAX_PLAYBACK_POSITION: f64 = 7.0 * 24.0 * 60.0 * 60.0;
+const MAX_ANKI_CUE_DURATION_MS: u64 = 60_000;
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
@@ -236,6 +239,12 @@ pub struct SasayakiPlaybackSession {
     auto_pause: bool,
     skip_action: SasayakiSkipAction,
     cues: Vec<SasayakiPlaybackCue>,
+}
+
+#[derive(Debug, PartialEq, Eq)]
+pub(crate) enum SasayakiCueClip {
+    Ready(Vec<u8>),
+    Warning(String),
 }
 
 #[tauri::command]
@@ -838,6 +847,153 @@ fn validate_playback_values(last_position: f64, delay: f64, rate: f32) -> Result
         return Err("Sasayaki playback rate must be between 0.5 and 2.0.".into());
     }
     Ok(())
+}
+
+pub(crate) fn resolve_anki_cue_clip(
+    app: &AppHandle,
+    book_id: &str,
+    cue_id: &str,
+) -> Result<SasayakiCueClip, String> {
+    let book_dir = library_book_dir(app, book_id)?;
+    resolve_anki_cue_clip_from_book_dir(&book_dir, book_id, cue_id)
+}
+
+fn resolve_anki_cue_clip_from_book_dir(
+    book_dir: &Path,
+    book_id: &str,
+    cue_id: &str,
+) -> Result<SasayakiCueClip, String> {
+    validate_book_context(book_dir, book_id)?;
+    let root = book_dir.join(SIDECAR_DIR_NAME);
+    if !root.is_dir() {
+        return Ok(SasayakiCueClip::Warning(
+            "Sasayaki is not configured for this book.".into(),
+        ));
+    }
+    let sidecar = read_sidecar(&root)?;
+    if sidecar.book_id != book_id {
+        return Err("Sasayaki sidecar belongs to a different book.".into());
+    }
+    let cue_id = cue_id.trim();
+    if cue_id.is_empty() {
+        return Ok(SasayakiCueClip::Warning(
+            "No matched Sasayaki cue is selected.".into(),
+        ));
+    }
+    let Some(cue) = sidecar
+        .match_data
+        .matches
+        .iter()
+        .find(|matched| matched.id == cue_id)
+    else {
+        return Ok(SasayakiCueClip::Warning(
+            "The selected Sasayaki cue is no longer matched.".into(),
+        ));
+    };
+    let range = cue_clip_range(cue)?;
+    let Some(audio) = resolve_export_audio_path(&root, &sidecar)? else {
+        return Ok(SasayakiCueClip::Warning(
+            "The linked Sasayaki audiobook is unavailable. Relink it to export sentence audio."
+                .into(),
+        ));
+    };
+    match clip_audio_file_to_wav(&audio, range) {
+        Ok(bytes) => Ok(SasayakiCueClip::Ready(bytes)),
+        Err(error) if is_nonfatal_clip_error(&error) => Ok(SasayakiCueClip::Warning(format!(
+            "Sasayaki sentence audio could not be decoded: {error}"
+        ))),
+        Err(error) => Err(error),
+    }
+}
+
+fn cue_clip_range(cue: &SasayakiMatch) -> Result<AudioClipRange, String> {
+    if !cue.start_time.is_finite()
+        || !cue.end_time.is_finite()
+        || cue.start_time < 0.0
+        || cue.end_time <= cue.start_time
+    {
+        return Err("Sasayaki cue contains an invalid audio range.".into());
+    }
+    let start_ms = (cue.start_time * 1000.0).floor() as u64;
+    let end_ms = (cue.end_time * 1000.0).ceil() as u64;
+    if end_ms.saturating_sub(start_ms) > MAX_ANKI_CUE_DURATION_MS {
+        return Err("Sasayaki cue exceeds the 60 second export limit.".into());
+    }
+    Ok(AudioClipRange { start_ms, end_ms })
+}
+
+fn resolve_export_audio_path(
+    root: &Path,
+    sidecar: &SasayakiSidecar,
+) -> Result<Option<PathBuf>, String> {
+    let canonical_root = root
+        .canonicalize()
+        .map_err(|error| format!("Cannot resolve Sasayaki directory: {error}"))?;
+    let subtitle = contained_file(&canonical_root, &sidecar.subtitles.file_name, "subtitle")?;
+    let subtitle_size = fs::metadata(&subtitle)
+        .map_err(|error| format!("Cannot read Sasayaki subtitle metadata: {error}"))?
+        .len();
+    if subtitle_size != sidecar.subtitles.size_bytes {
+        return Err("Sasayaki subtitle file size does not match its sidecar.".into());
+    }
+    match &sidecar.audio {
+        SasayakiAudioSource::Copied {
+            file_name,
+            extension,
+            size_bytes,
+            ..
+        } => {
+            validate_recorded_audio_extension(extension)?;
+            let audio = contained_file(&canonical_root, file_name, "audio")?;
+            let actual_size = fs::metadata(&audio)
+                .map_err(|error| format!("Cannot read Sasayaki audio metadata: {error}"))?
+                .len();
+            if actual_size != *size_bytes {
+                return Err("Sasayaki audio file size does not match its sidecar.".into());
+            }
+            Ok(Some(audio))
+        }
+        SasayakiAudioSource::External {
+            path,
+            extension,
+            size_bytes,
+            ..
+        } => {
+            validate_recorded_audio_extension(extension)?;
+            let audio = Path::new(path);
+            if !audio.is_file() {
+                return Ok(None);
+            }
+            let actual_extension = audio
+                .extension()
+                .and_then(|value| value.to_str())
+                .map(str::to_ascii_lowercase)
+                .ok_or_else(|| "Linked Sasayaki audio has no valid extension.".to_string())?;
+            if actual_extension != *extension {
+                return Err("Linked Sasayaki audio extension does not match its sidecar.".into());
+            }
+            let actual_size = fs::metadata(audio)
+                .map_err(|error| format!("Cannot read linked Sasayaki audio metadata: {error}"))?
+                .len();
+            if actual_size != *size_bytes {
+                return Err(
+                    "Linked Sasayaki audio changed after import. Select it again to relink.".into(),
+                );
+            }
+            Ok(Some(audio.canonicalize().map_err(|error| {
+                format!("Cannot resolve linked Sasayaki audio: {error}")
+            })?))
+        }
+    }
+}
+
+fn is_nonfatal_clip_error(error: &str) -> bool {
+    error.starts_with("Cannot open audio source:")
+        || error.starts_with("Unsupported or corrupt audio source:")
+        || error.starts_with("Audio source has no decodable default track.")
+        || error.starts_with("Unsupported audio codec:")
+        || error.starts_with("Cannot read audio source:")
+        || error.starts_with("Cannot decode audio source:")
 }
 
 fn status_from_sidecar(sidecar: &SasayakiSidecar) -> Result<SasayakiStatus, String> {
@@ -1822,6 +1978,123 @@ mod tests {
     }
 
     #[test]
+    fn anki_cue_clip_resolves_by_book_and_cue_and_warns_for_ordinary_misses() {
+        let book_dir = temp_book("anki-cue-clip");
+        let source_root = book_dir.parent().unwrap().parent().unwrap().join("sources");
+        fs::create_dir_all(&source_root).unwrap();
+        let audio = source_root.join("audio.wav");
+        let srt = source_root.join("subtitles.srt");
+        write_wav(&audio);
+        fs::write(
+            &srt,
+            "1\n00:00:00,000 --> 00:00:01,000\n瀛︽牎銇с仚濮嬨伨銈婃湰鏂嘰n",
+        )
+        .unwrap();
+        write_match_epub(&book_dir.join("book.epub"));
+        import_into_book_dir(&book_dir, "book-id", &audio, &srt, false).unwrap();
+        let root = book_dir.join(SIDECAR_DIR_NAME);
+        let mut sidecar = read_sidecar(&root).unwrap();
+        let cue = sidecar.cues[0].clone();
+        let cue_id = cue.id.clone();
+        sidecar.match_data.matches = vec![SasayakiMatch {
+            id: cue.id,
+            start_time: cue.start_time,
+            end_time: cue.end_time,
+            text: cue.text,
+            chapter_index: 0,
+            start: 0,
+            length: 1,
+        }];
+        write_sidecar(&root, &sidecar).unwrap();
+
+        let first = resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id).unwrap();
+        let second = resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id).unwrap();
+        let SasayakiCueClip::Ready(first) = first else {
+            panic!("expected a ready cue clip, got {first:?}");
+        };
+        let SasayakiCueClip::Ready(second) = second else {
+            panic!("expected a deterministic cue clip");
+        };
+        assert_eq!(first, second);
+        assert!(first.starts_with(b"RIFF"));
+
+        assert!(matches!(
+            resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", "missing").unwrap(),
+            SasayakiCueClip::Warning(message) if message.contains("no longer matched")
+        ));
+
+        fs::remove_file(&audio).unwrap();
+        assert!(matches!(
+            resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id).unwrap(),
+            SasayakiCueClip::Warning(message) if message.contains("unavailable")
+        ));
+        let _ = fs::remove_dir_all(book_dir.parent().unwrap().parent().unwrap());
+    }
+
+    #[test]
+    fn anki_cue_clip_rejects_tampered_paths_and_ranges_but_warns_on_decode_failure() {
+        let book_dir = temp_book("anki-cue-security");
+        let source_root = book_dir.parent().unwrap().parent().unwrap().join("sources");
+        fs::create_dir_all(&source_root).unwrap();
+        let audio = source_root.join("audio.wav");
+        let srt = source_root.join("subtitles.srt");
+        write_wav(&audio);
+        fs::write(
+            &srt,
+            "1\n00:00:00,000 --> 00:00:01,000\n瀛︽牎銇с仚濮嬨伨銈婃湰鏂嘰n",
+        )
+        .unwrap();
+        write_match_epub(&book_dir.join("book.epub"));
+        import_into_book_dir(&book_dir, "book-id", &audio, &srt, true).unwrap();
+        let root = book_dir.join(SIDECAR_DIR_NAME);
+        let mut sidecar = read_sidecar(&root).unwrap();
+        let cue = sidecar.cues[0].clone();
+        let cue_id = cue.id.clone();
+        sidecar.match_data.matches = vec![SasayakiMatch {
+            id: cue.id,
+            start_time: cue.start_time,
+            end_time: cue.end_time,
+            text: cue.text,
+            chapter_index: 0,
+            start: 0,
+            length: 1,
+        }];
+
+        sidecar.match_data.matches[0].end_time = sidecar.match_data.matches[0].start_time + 61.0;
+        write_sidecar(&root, &sidecar).unwrap();
+        assert!(
+            resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id)
+                .unwrap_err()
+                .contains("60 second")
+        );
+
+        sidecar.match_data.matches[0].end_time = sidecar.match_data.matches[0].start_time + 1.0;
+        if let SasayakiAudioSource::Copied { file_name, .. } = &mut sidecar.audio {
+            *file_name = "../outside.wav".into();
+        }
+        write_sidecar(&root, &sidecar).unwrap();
+        assert!(resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id).is_err());
+
+        if let SasayakiAudioSource::Copied {
+            file_name,
+            size_bytes,
+            ..
+        } = &mut sidecar.audio
+        {
+            *file_name = "audio.wav".into();
+            let copied = root.join(&*file_name);
+            let corrupt = vec![0_u8; *size_bytes as usize];
+            fs::write(&copied, corrupt).unwrap();
+        }
+        write_sidecar(&root, &sidecar).unwrap();
+        assert!(matches!(
+            resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id).unwrap(),
+            SasayakiCueClip::Warning(message) if message.contains("could not be decoded")
+        ));
+        let _ = fs::remove_dir_all(book_dir.parent().unwrap().parent().unwrap());
+    }
+
+    #[test]
     #[ignore = "requires HSW_REAL_SASAYAKI_DIR with matching EPUB, M4B, and SRT files"]
     fn validates_real_m4b_srt_epub_pipeline() {
         let source_root = PathBuf::from(
@@ -1859,9 +2132,15 @@ mod tests {
             Some(audio.canonicalize().unwrap().to_string_lossy().to_string())
         );
         assert!(!playback.cues.is_empty());
+        let clip = resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &playback.cues[0].id)
+            .unwrap();
+        assert!(matches!(
+            clip,
+            SasayakiCueClip::Ready(bytes) if bytes.starts_with(b"RIFF")
+        ));
         println!(
-            "real M4B pipeline: cues={}, matched={}, unmatched={}",
-            imported.cue_count, matched.matched_count, matched.unmatched_count
+            "real M4B pipeline: cues={}, matched={}, unmatched={}, sentence_clip=ready",
+            imported.cue_count, matched.matched_count, matched.unmatched_count,
         );
         let _ = fs::remove_dir_all(book_dir.parent().unwrap().parent().unwrap());
     }

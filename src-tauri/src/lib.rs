@@ -54,6 +54,7 @@ pub fn run() {
             anki::anki_store_remote_audio,
             anki::anki_store_book_cover,
             anki::anki_store_word_audio,
+            anki::anki_store_sasayaki_audio,
             anki::word_audio_prepare_playback,
             local_audio::anki_local_audio_status,
             local_audio::anki_import_local_audio,

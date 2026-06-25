@@ -1,6 +1,6 @@
 <script lang="ts">
   import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
-  import { ankiDictionaryMediaRefs, buildAnkiNoteRequest, isAnkiPreviewConfigured, payloadWithStoredBookCover, payloadWithStoredDictionaryMedia, payloadWithStoredRemoteAudio, renderAnkiFieldPreview } from "./anki-field-renderer";
+  import { ankiDictionaryMediaRefs, buildAnkiNoteRequest, isAnkiPreviewConfigured, payloadWithStoredBookCover, payloadWithStoredDictionaryMedia, payloadWithStoredRemoteAudio, payloadWithStoredSasayakiAudio, renderAnkiFieldPreview } from "./anki-field-renderer";
   import { defaultDictionarySettings, type DictionarySettings } from "./dictionary-settings";
   import { loadCachedDictionaryStyles, type DictionaryStyleResource } from "./dictionary-style-cache";
   import { scopeDictionaryCss, type LookupPitchGroup, type LookupState } from "./lookup-popup";
@@ -8,7 +8,7 @@
   import { clearLookupHighlight, POPUP_LOOKUP_HIGHLIGHT, setLookupHighlightRange } from "./lookup-highlight";
   import { markLookupPerformance } from "./lookup-performance";
   import { popupSelectionPrefixRange, popupTextHitAtPoint, selectPopupTextFromHit, selectPopupTextFromPoint, type PopupTextHit, type PopupTextSelection } from "./popup-selection";
-  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, AnkiStoreBookCoverResult, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LookupAnkiPayload, ReaderSelection, WordAudioPlaybackResult, WordAudioResolveRequest } from "./types";
+  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, AnkiStoreBookCoverResult, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, AnkiStoreSasayakiAudioResult, DictResult, LookupAnkiPayload, ReaderSelection, WordAudioPlaybackResult, WordAudioResolveRequest } from "./types";
 
   let {
     popupId,
@@ -39,6 +39,7 @@
     onStoreAnkiMedia,
     onStoreAnkiBookCover,
     onStoreAnkiWordAudio,
+    onStoreAnkiSasayakiAudio,
     onPrepareWordAudio,
     onAddAnkiNote,
   }: {
@@ -70,6 +71,7 @@
     onStoreAnkiMedia?: (media: AnkiDictionaryMediaRef[]) => Promise<AnkiStoreMediaResult>;
     onStoreAnkiBookCover?: (bookId: string) => Promise<AnkiStoreBookCoverResult>;
     onStoreAnkiWordAudio?: (request: WordAudioResolveRequest) => Promise<AnkiStoreRemoteAudioResult>;
+    onStoreAnkiSasayakiAudio?: (bookId: string, cueId: string) => Promise<AnkiStoreSasayakiAudioResult>;
     onPrepareWordAudio?: (request: WordAudioResolveRequest) => Promise<WordAudioPlaybackResult>;
     onAddAnkiNote?: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
   } = $props();
@@ -440,6 +442,13 @@
         ankiMediaWarnings = [...ankiMediaWarnings, ...audioResult.warnings];
         notePreviewFields = renderAnkiFieldPreview(notePayload, ankiSettings);
       }
+      const sasayakiResult = await storeAnkiSasayakiAudioForPayload(notePayload, notePreviewFields);
+      if (ankiActionKey !== key) return;
+      if (sasayakiResult) {
+        notePayload = payloadWithStoredSasayakiAudio(notePayload, sasayakiResult.filename);
+        ankiMediaWarnings = [...ankiMediaWarnings, ...sasayakiResult.warnings];
+        notePreviewFields = renderAnkiFieldPreview(notePayload, ankiSettings);
+      }
       ankiAudioHint = audioResult?.warnings.length
         ? "Word audio was not stored; this note will be added without audio."
         : audioBoundaryHint(notePayload, notePreviewFields);
@@ -484,6 +493,23 @@
     if (!fields.some((field) => field.template.toLowerCase().includes("{audio}"))) return null;
     if (!onStoreAnkiWordAudio) return null;
     return onStoreAnkiWordAudio(wordAudioResolveRequest(payload.expression, payload.reading));
+  }
+
+  async function storeAnkiSasayakiAudioForPayload(
+    payload: LookupAnkiPayload,
+    fields: AnkiFieldPreview[],
+  ): Promise<AnkiStoreSasayakiAudioResult | null> {
+    if (!fields.some((field) => field.template.toLowerCase().includes("{sasayaki-audio}"))) return null;
+    const bookId = payload.sourceBook.bookId?.trim();
+    const cueId = payload.sasayakiCueId?.trim();
+    if (!bookId) {
+      return { filename: null, warnings: ["Sasayaki sentence audio requires an app-owned book."] };
+    }
+    if (!cueId) {
+      return { filename: null, warnings: ["No matched Sasayaki cue is active for this lookup."] };
+    }
+    if (!onStoreAnkiSasayakiAudio) return null;
+    return onStoreAnkiSasayakiAudio(bookId, cueId);
   }
 
   function wordAudioResolveRequest(expression: string, reading: string): WordAudioResolveRequest {

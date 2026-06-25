@@ -199,9 +199,10 @@ automated-validation level.
 
 Deferred items:
 
-- Sasayaki sentence-audio export. Per-book sidecar/import, cue matching,
-  M4B/MP3/WAV playback/clipping, active cue highlighting, aligned page/chapter
-  following, and lookup auto-pause are implemented through Slice 5L.
+- Word/Sasayaki playback-mode coordination and final runtime closure.
+  Per-book sidecar/import, cue matching, M4B/MP3/WAV playback/clipping, active
+  cue highlighting/following, lookup auto-pause, and `{sasayaki-audio}` export
+  are implemented through Slice 5M.
 
 Acceptance:
 

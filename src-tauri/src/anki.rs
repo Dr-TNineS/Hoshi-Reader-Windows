@@ -237,6 +237,13 @@ pub struct AnkiStoreBookCoverResult {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "camelCase")]
+pub struct AnkiStoreSasayakiAudioResult {
+    pub filename: Option<String>,
+    pub warnings: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "camelCase")]
 pub struct WordAudioResolveRequest {
     pub expression: String,
     pub reading: String,
@@ -453,6 +460,29 @@ pub fn anki_store_word_audio(
         filename: Some(filename),
         warnings,
     })
+}
+
+#[tauri::command]
+pub fn anki_store_sasayaki_audio(
+    endpoint: String,
+    book_id: String,
+    cue_id: String,
+    app: AppHandle,
+) -> Result<AnkiStoreSasayakiAudioResult, String> {
+    let endpoint = normalize_endpoint(&endpoint)?;
+    match crate::sasayaki::resolve_anki_cue_clip(&app, &book_id, &cue_id)? {
+        crate::sasayaki::SasayakiCueClip::Ready(bytes) => {
+            let filename = store_sasayaki_audio_bytes(&endpoint, &bytes)?;
+            Ok(AnkiStoreSasayakiAudioResult {
+                filename: Some(filename),
+                warnings: Vec::new(),
+            })
+        }
+        crate::sasayaki::SasayakiCueClip::Warning(warning) => Ok(AnkiStoreSasayakiAudioResult {
+            filename: None,
+            warnings: vec![warning],
+        }),
+    }
 }
 
 #[tauri::command]
@@ -712,6 +742,40 @@ pub(crate) fn store_audio_bytes(
     ensure_remote_audio_size(bytes.len())?;
     let filename = remote_audio_filename(bytes, extension);
     let stored_filename = anki_request(
+        &endpoint,
+        "storeMediaFile",
+        Some(json!({
+            "filename": filename,
+            "data": base64::Engine::encode(&base64::engine::general_purpose::STANDARD, bytes),
+        })),
+    )?
+    .as_str()
+    .ok_or_else(|| "AnkiConnect storeMediaFile returned an unexpected response.".to_string())?
+    .to_string();
+    validate_anki_media_filename(&stored_filename)
+}
+
+fn store_sasayaki_audio_bytes(endpoint: &str, bytes: &[u8]) -> Result<String, String> {
+    store_sasayaki_audio_bytes_with(endpoint, bytes, anki_request)
+}
+
+fn store_sasayaki_audio_bytes_with<F>(
+    endpoint: &str,
+    bytes: &[u8],
+    mut request: F,
+) -> Result<String, String>
+where
+    F: FnMut(&str, &str, Option<Value>) -> Result<Value, String>,
+{
+    let endpoint = normalize_endpoint(endpoint)?;
+    ensure_remote_audio_size(bytes.len())?;
+    let digest = Sha256::digest(bytes);
+    let hash = digest[..12]
+        .iter()
+        .map(|byte| format!("{byte:02x}"))
+        .collect::<String>();
+    let filename = format!("hsw_sasayaki_{hash}.wav");
+    let stored_filename = request(
         &endpoint,
         "storeMediaFile",
         Some(json!({
@@ -2153,6 +2217,34 @@ mod tests {
         assert!(first.starts_with("hsw_audio_"));
         assert!(first.ends_with(".mp3"));
         assert!(!first.contains('/') && !first.contains('\\'));
+    }
+
+    #[test]
+    fn sasayaki_audio_uses_deterministic_wav_filename_and_store_media_request() {
+        let bytes = b"RIFF deterministic cue wav";
+        let first = store_sasayaki_audio_bytes_with(
+            "http://127.0.0.1:8765",
+            bytes,
+            |_endpoint, action, params| {
+                assert_eq!(action, "storeMediaFile");
+                let filename = params.unwrap()["filename"].as_str().unwrap().to_string();
+                assert!(filename.starts_with("hsw_sasayaki_"));
+                assert!(filename.ends_with(".wav"));
+                Ok(Value::String(filename))
+            },
+        )
+        .unwrap();
+        let second = store_sasayaki_audio_bytes_with(
+            "http://127.0.0.1:8765",
+            bytes,
+            |_endpoint, _action, params| {
+                Ok(Value::String(
+                    params.unwrap()["filename"].as_str().unwrap().to_string(),
+                ))
+            },
+        )
+        .unwrap();
+        assert_eq!(first, second);
     }
 
     #[test]
