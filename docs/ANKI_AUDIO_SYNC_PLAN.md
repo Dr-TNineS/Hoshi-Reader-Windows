@@ -1,12 +1,12 @@
 # Anki Audio And Sync Plan
 
-Last updated: 2026-06-24
+Last updated: 2026-06-25
 
 This document defines the next Anki scope after text note creation and
 dictionary image media export.
 
-Implementation status as of 2026-06-24: Slices 5A-5K are implemented at the
-documented validation level. Slice 5L is current. Slices 5M-5O are pending.
+Implementation status as of 2026-06-25: Slices 5A-5L are implemented at the
+documented validation level. Slice 5M is current. Slices 5N-5O are pending.
 Real runtime coverage remains explicitly separate from automated validation.
 
 ## Current Baseline
@@ -43,7 +43,12 @@ Real runtime coverage remains explicitly separate from automated validation.
   added to Tauri's runtime asset scope. Position, 0.5-2.0 rate, and -2 to 2
   second cue delay persist; pause, progress seek, +/-10 seconds, cue navigation,
   relink, shelf/book change, session restore, and window-close teardown are
-  wired without reader highlighting or automatic following.
+  wired through the reader lifecycle.
+- HSW presents the active matched cue through a CSS Highlight range resolved
+  from the Rust-owned chapter/start/length coordinates. Auto-Scroll follows
+  aligned vertical pages and chapters after playback or an explicit seek,
+  Auto-Pause pauses and resumes around reader lookup, and cue/fixed-seconds
+  skip behavior plus the HSA light/dark cue colors persist per book.
 - Real store-media runtime validation passed with a throwaway SVG media file.
 - Real combined add-note-plus-dictionary-media validation with a normal
   media-bearing Yomitan dictionary is not verified because no suitable local
@@ -90,8 +95,9 @@ Real runtime coverage remains explicitly separate from automated validation.
 | 5I | Completed | See repository history |
 | 5J | Completed | See repository history |
 | 5K | Completed | See repository history |
-| 5L | Current | Not started |
-| 5M-5O | Pending | Not started |
+| 5L | Completed | See repository history |
+| 5M | Current | Not started |
+| 5N-5O | Pending | Not started |
 
 Post-slice format extension on 2026-06-24: M4B/AAC-LC import, playback source
 preparation, and deterministic cue clipping were enabled through Symphonia
@@ -383,6 +389,13 @@ Key changes:
 Goal: connect the active cue to vertical pagination without changing layout
 measurements.
 
+Status: implemented on 2026-06-25. Playback sessions expose only persisted
+matched cue coordinates, and Reader maps them back to DOM ranges with the same
+matchable-character filter used by EPUB matching. CSS Highlight presentation
+does not wrap or mutate EPUB DOM. Auto-Scroll and Auto-Pause on Lookup default
+on, skip action supports one sentence or 5/10/15/30 seconds, and all settings
+persist in the versioned per-book sidecar with legacy defaults.
+
 Key changes:
 
 - Highlight the active cue without introducing reflow.
@@ -390,6 +403,19 @@ Key changes:
 - Add skip behavior and light/dark cue colors.
 - Revalidate normal pages, final pages, image pages, chapter boundaries, and
   narrow windows.
+
+Validation:
+
+- Passed: 127 Rust tests plus 3 ignored, Rust check, frontend check/build,
+  Sasayaki playback probe, reader visual probe, and reader TOC probe.
+- The real `汝、星のごとく` EPUB/M4B/SRT backend pipeline still passes with
+  11,798 cues, 11,792 matches, and 6 unmatched.
+- Automated Chromium checks cover no-reflow highlighting, aligned-page reveal,
+  cross-chapter navigation requests, Auto-Pause resume, cue/fixed-seconds
+  skipping, light/dark colors, and 520px overflow.
+- Manual Tauri vertical-pagination/audio-output validation remains
+  `not verified` because desktop window control was unavailable in this
+  session.
 
 ### Slice 5M: Sasayaki Sentence Audio Export
 
@@ -461,8 +487,8 @@ until its acceptance and validation entries are satisfied and recorded.
 | 5I | Completed (2026-06-24) | Per-book sidecar/import/status/removal only; no matching or playback | 5I-0 verifies MP3 and WAV minimum | Staged atomic audio/SRT import by `bookId`; external/copy modes persist; failure preserves old data; external originals are never deleted | Passed: 119 Rust tests plus 2 ignored, Rust check, frontend check/build, bookshelf status/import/removal probe, wide/520px visual and focus checks, portable package build and launch smoke; real audiobook/SRT import `not verified` |
 | 5J | Completed (2026-06-24) | Cue parsing, matching, inspection, rematch and correction; no playback | 5I sidecar and SRT storage | Stable cue ids and chapter/offset/length matches persist; unmatched state and corrections survive; ruby/punctuation/repetition/boundaries pass fixtures | Passed: strict parser and matcher/correction Rust fixtures, 123 Rust tests plus 2 ignored, Rust check, frontend check/build, bookshelf matching/correction probe, wide/520px visual and overflow checks; real EPUB/audiobook/SRT characterization `not verified` |
 | 5K | Completed (2026-06-24) | Sasayaki player lifecycle and controls; highlighting/following deferred | 5J stable cues | Playback/navigation/rate/delay work and restore; missing external audio relinks; lifecycle does not leak players | Passed: playback restore/value/relink Rust fixtures, 125 Rust tests plus 2 ignored, Rust check, frontend check/build, dedicated playback probe, reader visual and TOC probes, wide/520px overflow checks; a real backend M4B fixture is now available, but actual Tauri/WebView audio output remains `not verified` |
-| 5L | Current | Cue presentation and reader coordination without replacing pagination | 5K playback events and 5J ranges | No layout shift; auto page/chapter/scroll/pause obey settings; reader baselines remain intact | Matcher-to-DOM tests, reader visual probe, playback-driven probes, manual vertical pagination checks |
-| 5M | Pending | `{sasayaki-audio}` accepts `bookId + cueId`; Rust owns path/range; no arbitrary frontend time/path | 5I-0 clipping plus stable 5J-L cues | Deterministic WAV sound tag; ordinary no-cue/decode failures warn and create text cards; tampering/escape/range/oversize blocks; ordering is covered | Rust clip/store/security tests; popup ordering and warning/error probes; optional real Anki playback |
+| 5L | Completed (2026-06-25) | Cue presentation and reader coordination without replacing pagination | 5K playback events and 5J ranges | CSS Highlight causes no reflow; active cues follow aligned pages/chapters; lookup auto-pause resumes only lookup-paused playback; skip/settings persist | Passed: 127 Rust tests plus 3 ignored, Rust check, frontend check/build, playback/reader visual/TOC probes, real EPUB/M4B/SRT backend pipeline; manual Tauri audio/visual check `not verified` |
+| 5M | Current | `{sasayaki-audio}` accepts `bookId + cueId`; Rust owns path/range; no arbitrary frontend time/path | 5I-0 clipping plus stable 5J-L cues | Deterministic WAV sound tag; ordinary no-cue/decode failures warn and create text cards; tampering/escape/range/oversize blocks; ordering is covered | Rust clip/store/security tests; popup ordering and warning/error probes; optional real Anki playback |
 | 5N | Pending | Coordinate HSW-owned word and Sasayaki audio only; no Windows-wide focus | 5H word playback and 5K-L Sasayaki playback | Interrupt/Duck/Mix restore exact prior state; autoplay shares coordinator; rapid actions/failures/manual pause/navigation/shutdown are correct | Coordinator state-machine tests, rapid-action probes, manual Tauri playback for all modes |
 | 5O | Pending | Runtime evidence and parity closure only; missing fixtures remain visible | 5F-5N committed at automated level | Full real pipeline order passes where fixtures exist; HSA defaults/states/failures have explicit parity results; gaps say `not verified` | All common checks, real Anki add/media/sync, real HSA DB/remote audio, packaged playback, Sasayaki end-to-end, `npm run package` |
 
@@ -472,6 +498,6 @@ probes, VS developer-shell `cargo test --lib`, and VS developer-shell
 
 ## Recommended Next Step
 
-Implement Slice 5L as the next committed slice. Connect active playback cues to
-reader presentation and optional following without replacing the existing
-pagination model; keep Anki cue export deferred.
+Implement Slice 5M as the next committed slice. Resolve `{sasayaki-audio}` only
+from `bookId + cueId`, clip through the verified Rust stack, and preserve the
+existing non-fatal optional-media semantics for ordinary missing/decode cases.

@@ -43,6 +43,16 @@ async function events(page) {
   return page.locator(".probe-state").getAttribute("data-events");
 }
 
+async function presentation(page) {
+  const state = page.locator(".probe-state");
+  return {
+    activeCue: await state.getAttribute("data-active-cue"),
+    reveal: await state.getAttribute("data-cue-reveal"),
+    chapterToLoad: await state.getAttribute("data-chapter-to-load"),
+    playing: await state.getAttribute("data-playing"),
+  };
+}
+
 async function main() {
   const vite = spawn(
     process.platform === "win32" ? "cmd.exe" : "npm",
@@ -66,16 +76,33 @@ async function main() {
     assert((await panel.textContent())?.includes("星の音.wav"), "Playback should show the restored audio source.");
     assert((await panel.textContent())?.includes("0:12") && (await panel.textContent())?.includes("2:00"), "Playback should show restored progress and duration.");
     await panel.getByRole("button", { name: "Play Sasayaki", exact: true }).click();
+    await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-playing") === "true");
+    await page.getByRole("button", { name: "Probe open lookup", exact: true }).dispatchEvent("click");
+    await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-playing") === "false");
+    assert((await presentation(page)).playing === "false", "Auto-Pause should pause active Sasayaki playback when lookup opens.");
+    await page.getByRole("button", { name: "Probe close lookup", exact: true }).dispatchEvent("click");
+    await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-playing") === "true");
+    assert((await presentation(page)).playing === "true", "Closing the lookup should resume only playback paused by lookup.");
     await panel.getByRole("button", { name: "Pause Sasayaki", exact: true }).click();
-    await panel.getByRole("button", { name: "Previous subtitle cue", exact: true }).click();
-    await panel.getByRole("button", { name: "Next subtitle cue", exact: true }).click();
+    await panel.getByRole("button", { name: "Skip backward sentence", exact: true }).click();
+    await panel.getByRole("button", { name: "Skip forward sentence", exact: true }).click();
+    const crossChapterCue = await presentation(page);
+    assert(
+      crossChapterCue.activeCue === "2" && crossChapterCue.reveal === "true" && crossChapterCue.chapterToLoad === "1",
+      "A played cross-chapter cue should request chapter navigation while Auto-Scroll is enabled.",
+      crossChapterCue,
+    );
     await panel.getByRole("button", { name: "Skip backward 10 seconds", exact: true }).click();
     await panel.getByRole("button", { name: "Skip forward 10 seconds", exact: true }).click();
     await panel.getByLabel("Sasayaki playback speed").fill("1.5");
     await panel.getByLabel("Sasayaki cue delay").fill("-0.5");
+    await panel.getByLabel("Sasayaki Auto-Scroll").uncheck();
+    await panel.getByLabel("Sasayaki Auto-Pause on Lookup").uncheck();
+    await panel.getByLabel("Sasayaki skip action").selectOption("seconds15");
+    await panel.getByRole("button", { name: "Skip forward 15 seconds", exact: true }).click();
     assert(
-      await events(page) === "play,pause,previous:5.25,next:15.25,skip:-10,skip:10,rate:1.5,delay:-0.5",
-      "Playback controls should emit stable lifecycle, cue, skip, rate, and delay actions.",
+      await events(page) === "play,lookup-pause,lookup-resume,pause,previous:5.25,next:15.25,skip:-10,skip:10,rate:1.5,delay:-0.5,autoScroll:false,autoPause:false,skipAction:seconds15,next:30.25",
+      "Playback controls should emit stable lifecycle, cue/seconds skip, rate, delay, and coordination settings.",
     );
     const wideOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     assert(!wideOverflow, "Wide playback panel should not overflow horizontally.");

@@ -232,6 +232,22 @@ async function probeRenderedHighlightText(page) {
   return await page.locator(".probe-state").getAttribute("data-rendered-highlight-text") ?? "";
 }
 
+async function sasayakiHighlightState(page) {
+  return page.evaluate(() => {
+    const highlight = CSS.highlights?.get("hsw-reader-sasayaki-cue");
+    const ranges = highlight ? Array.from(highlight) : [];
+    const reader = document.querySelector(".rc");
+    const viewport = document.querySelector(".rv");
+    return {
+      text: ranges.map((range) => range.toString()).join("").replace(/\s+/g, " ").trim(),
+      scrollTop: viewport instanceof HTMLElement ? viewport.scrollTop : -1,
+      pageSize: viewport instanceof HTMLElement ? viewport.clientHeight : 0,
+      textColor: reader ? getComputedStyle(reader).getPropertyValue("--sasayaki-highlight-text").trim() : "",
+      backgroundColor: reader ? getComputedStyle(reader).getPropertyValue("--sasayaki-highlight-background").trim() : "",
+    };
+  });
+}
+
 async function probeSentenceText(page) {
   return await page.locator(".probe-state").getAttribute("data-sentence") ?? "";
 }
@@ -668,6 +684,11 @@ async function main() {
       await page.keyboard.press("ArrowLeft");
       await waitForPageIndex(page, pageNumber - 1);
     }
+    await page.waitForFunction(() => {
+      const state = document.querySelector(".probe-state");
+      return state?.getAttribute("data-chapter-index") === "0" &&
+        state?.getAttribute("data-book-read-chars") === state?.getAttribute("data-chapter-read-chars");
+    }, { timeout: 10000 });
     const beforeChapterBoundary = await probeProgressState(page);
     await page.keyboard.press("ArrowLeft");
     await waitForProbeChapter(page, 1);
@@ -707,7 +728,44 @@ async function main() {
     assert(!narrow.horizontalOverflow, "Reader fixture should not create horizontal overflow in a narrow window.", narrow);
     assert(narrow.totalPages >= desktop.totalPages, "Narrow reader should keep a paginated layout.", { desktop, narrow });
 
-    console.log(JSON.stringify({ desktop, narrow }, null, 2));
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto(`${url}&sasayakiMode=highlight&theme=light`);
+    await page.locator(".rv.ready").waitFor({ timeout: 10000 });
+    await page.waitForFunction(() => (CSS.highlights?.get("hsw-reader-sasayaki-cue")?.size ?? 0) > 0);
+    const lightCue = await sasayakiHighlightState(page);
+    assert(lightCue.text.length > 0 && lightCue.scrollTop === 0, "A current-chapter cue should highlight without moving the page when reveal is disabled.", lightCue);
+    const highlightedMetrics = await readerMetrics(page);
+    assert(
+      highlightedMetrics.totalPages === desktop.totalPages,
+      "Sasayaki highlighting must not change pagination measurements.",
+      { desktop, highlightedMetrics },
+    );
+    assert(
+      lightCue.textColor === "#000000" && lightCue.backgroundColor === "rgba(135, 206, 235, 0.4)",
+      "Light mode should expose the HSA-aligned Sasayaki cue colors.",
+      lightCue,
+    );
+
+    await page.goto(`${url}&sasayakiMode=reveal&theme=dark`);
+    await page.locator(".rv.ready").waitFor({ timeout: 10000 });
+    await page.waitForFunction(() => {
+      const viewport = document.querySelector(".rv");
+      return viewport instanceof HTMLElement && viewport.scrollTop > 0 &&
+        (CSS.highlights?.get("hsw-reader-sasayaki-cue")?.size ?? 0) > 0;
+    });
+    const darkCue = await sasayakiHighlightState(page);
+    assert(
+      darkCue.scrollTop > 0 && Math.abs(darkCue.scrollTop - Math.round(darkCue.scrollTop / darkCue.pageSize) * darkCue.pageSize) <= 1,
+      "Revealing an active cue should move only to an aligned reader page.",
+      darkCue,
+    );
+    assert(
+      darkCue.textColor === "#ffffff" && darkCue.backgroundColor === "rgba(135, 206, 235, 0.4)",
+      "Dark mode should expose the HSA-aligned Sasayaki cue colors.",
+      darkCue,
+    );
+
+    console.log(JSON.stringify({ desktop, narrow, lightCue, darkCue }, null, 2));
   } finally {
     if (browser) await browser.close();
     stopServer(vite);

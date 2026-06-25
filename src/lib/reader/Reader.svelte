@@ -1,8 +1,13 @@
 ﻿<script lang="ts">
-  import { countChars, createWalker, getTotalChars, rawOffsetForReaderChars, textEndOffsets } from "../reader";
+  import { countChars, createWalker, getTotalChars, rawOffsetForReaderChars, readerRangeForOffsets, textEndOffsets } from "../reader";
   import type { ReaderAppearancePalette } from "../appearance";
-  import { clearLookupHighlight, READER_LOOKUP_HIGHLIGHT, setLookupHighlightRange } from "../lookup-highlight";
-  import type { ReaderProgress, ReaderSelection, ReaderSelectionRect } from "../types";
+  import {
+    clearLookupHighlight,
+    READER_LOOKUP_HIGHLIGHT,
+    READER_SASAYAKI_HIGHLIGHT,
+    setLookupHighlightRange,
+  } from "../lookup-highlight";
+  import type { ReaderProgress, ReaderSelection, ReaderSelectionRect, SasayakiPlaybackCue } from "../types";
 
   let {
     content = "",
@@ -19,6 +24,9 @@
     appearancePalette = undefined as ReaderAppearancePalette | undefined,
     lookupHighlightCount = 0,
     lookupHighlightSignal = 0,
+    sasayakiCue = null as SasayakiPlaybackCue | null,
+    sasayakiReveal = false,
+    sasayakiCueSignal = 0,
     scanLength = 16,
     scanNonJapaneseText = true,
     onProgressChange = (_progress: ReaderProgress) => {},
@@ -58,7 +66,7 @@
 
   let styleVars = $derived(`--page-width:${pageWidth}px;--page-height:${pageHeight}px`);
   let themeVars = $derived(appearancePalette
-    ? `--reader-bg:${appearancePalette.readerBackground};--reader-text:${appearancePalette.readerText};--reader-info:${appearancePalette.readerInfo};--lookup-highlight-color:${appearancePalette.lookupHighlight};--app-border:${appearancePalette.appBorder}`
+    ? `--reader-bg:${appearancePalette.readerBackground};--reader-text:${appearancePalette.readerText};--reader-info:${appearancePalette.readerInfo};--lookup-highlight-color:${appearancePalette.lookupHighlight};--sasayaki-highlight-text:${appearancePalette.sasayakiHighlightText};--sasayaki-highlight-background:${appearancePalette.sasayakiHighlightBackground};--app-border:${appearancePalette.appBorder}`
     : "");
 
   function readerDebugEnabled(): boolean {
@@ -779,6 +787,25 @@
     scheduleProgressEmit();
   }
 
+  function applySasayakiCue() {
+    clearLookupHighlight(READER_SASAYAKI_HIGHLIGHT);
+    if (!layoutReady || !contentEl || !sasayakiCue || sasayakiCue.chapterIndex !== chapterIndex) return;
+
+    const range = readerRangeForOffsets(contentEl, sasayakiCue.start, sasayakiCue.length);
+    if (!range) return;
+    setLookupHighlightRange(READER_SASAYAKI_HIGHLIGHT, range);
+
+    if (sasayakiReveal && containerEl) {
+      const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 && rect.height > 0);
+      if (rects.length > 0) {
+        const viewportTop = containerEl.getBoundingClientRect().top;
+        const logicalTop = Math.min(...rects.map((rect) => rect.top)) - viewportTop + logicalScrollPos();
+        goPage(Math.floor(Math.max(0, logicalTop + PAGE_EPSILON) / pageSize()));
+      }
+    }
+    range.detach();
+  }
+
   async function realignAfterResize() {
     if (!containerEl || !contentEl) return;
 
@@ -957,6 +984,7 @@
       initializing = true;
       scrollTailTop = 0;
       clearSelection();
+      clearLookupHighlight(READER_SASAYAKI_HIGHLIGHT);
       lastPointer = null;
       resetShiftHoverState();
       layoutRun += 1;
@@ -967,6 +995,16 @@
     lookupHighlightSignal;
     applyLookupHighlightCount(lookupHighlightCount);
   });
+
+  $effect(() => {
+    sasayakiCueSignal;
+    sasayakiCue;
+    sasayakiReveal;
+    layoutReady;
+    applySasayakiCue();
+  });
+
+  $effect(() => () => clearLookupHighlight(READER_SASAYAKI_HIGHLIGHT));
 
   $effect(() => {
     const el = containerEl;

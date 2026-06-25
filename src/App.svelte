@@ -18,7 +18,12 @@
   import Reader from "./lib/reader/Reader.svelte";
   import ReaderControls from "./lib/ReaderControls.svelte";
   import SasayakiPlayerPanel from "./lib/SasayakiPlayerPanel.svelte";
-  import { clampPlaybackTime, nextCueTime, previousCueTime } from "./lib/sasayaki-playback";
+  import {
+    clampPlaybackTime,
+    cuePresentationAtTime,
+    sasayakiSkipTarget,
+    shouldAutoPauseSasayaki,
+  } from "./lib/sasayaki-playback";
   import { createSettingsState } from "./lib/state/settings.svelte";
   import {
     buildReadingProgressUpdate,
@@ -56,7 +61,9 @@
     ReaderSelection,
     SasayakiCueItem,
     SasayakiCuePage,
+    SasayakiPlaybackCue,
     SasayakiPlaybackSession,
+    SasayakiSkipAction,
     SasayakiStatus,
   } from "./lib/types";
   import type { BookLocator, BookRecord, LibraryBookRecord } from "./lib/storage";
@@ -113,6 +120,13 @@
   let sasayakiSaveTimer: ReturnType<typeof setTimeout> | null = null;
   let sasayakiSuppressPauseSave = false;
   let sasayakiSaveChain: Promise<void> = Promise.resolve();
+  let sasayakiActiveCue = $state<SasayakiPlaybackCue | null>(null);
+  let sasayakiCueReveal = $state(false);
+  let sasayakiCueSignal = $state(0);
+  let sasayakiHasPlayedOnce = false;
+  let sasayakiPausedByLookup = false;
+  let sasayakiLookupResumeTimer: ReturnType<typeof setTimeout> | null = null;
+  let sasayakiCueNavigationRun = 0;
   let bookImportBusy = $state(false);
   let debug = $state("");
   let triedStartup = false;
@@ -609,12 +623,23 @@
     sasayakiCurrentTime = 0;
     sasayakiDuration = 0;
     sasayakiPlaybackError = "";
+    sasayakiActiveCue = null;
+    sasayakiCueReveal = false;
+    sasayakiCueSignal += 1;
+    sasayakiHasPlayedOnce = false;
+    sasayakiPausedByLookup = false;
+    if (sasayakiLookupResumeTimer) {
+      clearTimeout(sasayakiLookupResumeTimer);
+      sasayakiLookupResumeTimer = null;
+    }
+    sasayakiCueNavigationRun += 1;
     if (!bookId || !isTauriRuntime()) return;
     try {
       const session = await invoke<SasayakiPlaybackSession>("sasayaki_prepare_playback", { bookId });
       if (sasayakiPlaybackBookId !== bookId) return;
       sasayakiPlayback = session;
       sasayakiCurrentTime = session.lastPosition;
+      syncSasayakiCuePresentation(false);
     } catch (e) {
       if (sasayakiPlaybackBookId === bookId) sasayakiPlaybackError = String(e);
     }
@@ -623,6 +648,9 @@
   function teardownSasayakiAudio() {
     if (!sasayakiAudio) {
       sasayakiPlaying = false;
+      sasayakiActiveCue = null;
+      sasayakiCueReveal = false;
+      sasayakiCueSignal += 1;
       return;
     }
     sasayakiAudio.onloadedmetadata = null;
@@ -638,6 +666,44 @@
     sasayakiAudio = null;
     sasayakiPlaying = false;
     sasayakiSuppressPauseSave = false;
+    sasayakiActiveCue = null;
+    sasayakiCueReveal = false;
+    sasayakiCueSignal += 1;
+  }
+
+  function syncSasayakiCuePresentation(forceReveal: boolean) {
+    const session = sasayakiPlayback;
+    const presentation = session
+      ? cuePresentationAtTime(
+          session.cues,
+          sasayakiCurrentTime,
+          session.delay,
+          chapterIndex,
+          session.autoScroll,
+          sasayakiHasPlayedOnce,
+          forceReveal,
+        )
+      : { cue: null, reveal: false, chapterToLoad: null };
+    const { cue, reveal, chapterToLoad } = presentation;
+    const cueChanged = cue?.id !== sasayakiActiveCue?.id;
+    if (!cueChanged && !forceReveal && reveal === sasayakiCueReveal) return;
+
+    sasayakiActiveCue = cue;
+    sasayakiCueReveal = reveal;
+    sasayakiCueSignal += 1;
+
+    if (!cue || chapterToLoad === null) return;
+    const run = ++sasayakiCueNavigationRun;
+    startAtEnd = false;
+    closeReaderSelection();
+    void loadChapter(
+      chapterToLoad,
+      0,
+      () => run === sasayakiCueNavigationRun && sasayakiActiveCue?.id === cue.id,
+    ).then(() => {
+      if (run !== sasayakiCueNavigationRun || sasayakiActiveCue?.id !== cue.id) return;
+      sasayakiCueSignal += 1;
+    });
   }
 
   function ensureSasayakiAudio(): HTMLAudioElement | null {
@@ -652,14 +718,20 @@
       const restored = clampPlaybackTime(sasayakiPlayback?.lastPosition ?? 0, sasayakiDuration);
       audio.currentTime = restored;
       sasayakiCurrentTime = restored;
+      syncSasayakiCuePresentation(false);
     };
     audio.ontimeupdate = () => {
       if (sasayakiAudio !== audio) return;
       sasayakiCurrentTime = audio.currentTime;
+      syncSasayakiCuePresentation(false);
       if (Date.now() - sasayakiLastSavedAt >= 5000) scheduleSasayakiPlaybackSave();
     };
     audio.onplay = () => {
-      if (sasayakiAudio === audio) sasayakiPlaying = true;
+      if (sasayakiAudio === audio) {
+        sasayakiPlaying = true;
+        sasayakiHasPlayedOnce = true;
+        syncSasayakiCuePresentation(true);
+      }
     };
     audio.onpause = () => {
       if (sasayakiAudio !== audio) return;
@@ -671,6 +743,7 @@
       if (sasayakiAudio !== audio) return;
       sasayakiPlaying = false;
       sasayakiCurrentTime = audio.duration;
+      syncSasayakiCuePresentation(false);
       scheduleSasayakiPlaybackSave(true);
     };
     audio.onerror = () => {
@@ -712,6 +785,9 @@
         lastPosition,
         delay: session.delay,
         rate: session.rate,
+        autoScroll: session.autoScroll,
+        autoPause: session.autoPause,
+        skipAction: session.skipAction,
       });
       if (sasayakiPlaybackBookId !== bookId) return;
       sasayakiPlayback = saved;
@@ -722,6 +798,11 @@
   }
 
   async function stopSasayakiPlayback(save: boolean) {
+    if (sasayakiLookupResumeTimer) {
+      clearTimeout(sasayakiLookupResumeTimer);
+      sasayakiLookupResumeTimer = null;
+    }
+    sasayakiPausedByLookup = false;
     if (sasayakiSaveTimer) {
       clearTimeout(sasayakiSaveTimer);
       sasayakiSaveTimer = null;
@@ -740,6 +821,11 @@
 
   async function toggleSasayakiPlayback() {
     if (sasayakiPlaying) {
+      sasayakiPausedByLookup = false;
+      if (sasayakiLookupResumeTimer) {
+        clearTimeout(sasayakiLookupResumeTimer);
+        sasayakiLookupResumeTimer = null;
+      }
       sasayakiAudio?.pause();
       return;
     }
@@ -753,11 +839,12 @@
     }
   }
 
-  function seekSasayaki(seconds: number) {
+  function seekSasayaki(seconds: number, revealCue = true) {
     const target = clampPlaybackTime(seconds, sasayakiDuration);
     const audio = ensureSasayakiAudio();
     if (audio) audio.currentTime = target;
     sasayakiCurrentTime = target;
+    syncSasayakiCuePresentation(revealCue);
     scheduleSasayakiPlaybackSave(true);
   }
 
@@ -765,15 +852,16 @@
     seekSasayaki(sasayakiCurrentTime + seconds);
   }
 
-  function previousSasayakiCue() {
+  function applySasayakiSkip(direction: -1 | 1) {
     if (!sasayakiPlayback) return;
-    seekSasayaki(previousCueTime(sasayakiPlayback.cues, sasayakiCurrentTime, sasayakiPlayback.delay));
-  }
-
-  function nextSasayakiCue() {
-    if (!sasayakiPlayback) return;
-    const next = nextCueTime(sasayakiPlayback.cues, sasayakiCurrentTime, sasayakiPlayback.delay);
-    if (next !== null) seekSasayaki(next);
+    const target = sasayakiSkipTarget(
+      sasayakiPlayback.cues,
+      sasayakiCurrentTime,
+      sasayakiPlayback.delay,
+      sasayakiPlayback.skipAction,
+      direction,
+    );
+    if (target !== null) seekSasayaki(target, true);
   }
 
   function setSasayakiRate(rate: number) {
@@ -787,7 +875,53 @@
   function setSasayakiDelay(delay: number) {
     if (!sasayakiPlayback) return;
     sasayakiPlayback = { ...sasayakiPlayback, delay: Math.max(-2, Math.min(2, delay)) };
+    syncSasayakiCuePresentation(false);
     scheduleSasayakiPlaybackSave();
+  }
+
+  function setSasayakiAutoScroll(autoScroll: boolean) {
+    if (!sasayakiPlayback) return;
+    sasayakiPlayback = { ...sasayakiPlayback, autoScroll };
+    syncSasayakiCuePresentation(autoScroll);
+    scheduleSasayakiPlaybackSave();
+  }
+
+  function setSasayakiAutoPause(autoPause: boolean) {
+    if (!sasayakiPlayback) return;
+    sasayakiPlayback = { ...sasayakiPlayback, autoPause };
+    if (!autoPause) sasayakiPausedByLookup = false;
+    scheduleSasayakiPlaybackSave();
+  }
+
+  function setSasayakiSkipAction(skipAction: SasayakiSkipAction) {
+    if (!sasayakiPlayback) return;
+    sasayakiPlayback = { ...sasayakiPlayback, skipAction };
+    scheduleSasayakiPlaybackSave();
+  }
+
+  function pauseSasayakiForLookup() {
+    if (!sasayakiPlayback || !shouldAutoPauseSasayaki(sasayakiPlayback.autoPause, sasayakiPlaying) || !sasayakiAudio) return;
+    if (sasayakiLookupResumeTimer) {
+      clearTimeout(sasayakiLookupResumeTimer);
+      sasayakiLookupResumeTimer = null;
+    }
+    sasayakiPausedByLookup = true;
+    sasayakiAudio.pause();
+  }
+
+  function resumeSasayakiAfterLookup() {
+    if (!sasayakiPausedByLookup) return;
+    if (sasayakiLookupResumeTimer) clearTimeout(sasayakiLookupResumeTimer);
+    sasayakiLookupResumeTimer = setTimeout(() => {
+      sasayakiLookupResumeTimer = null;
+      if (!sasayakiPausedByLookup) return;
+      sasayakiPausedByLookup = false;
+      const audio = ensureSasayakiAudio();
+      if (!audio) return;
+      void audio.play().catch((e) => {
+        sasayakiPlaybackError = String(e);
+      });
+    }, 0);
   }
 
   async function relinkSasayakiAudio() {
@@ -807,13 +941,18 @@
       teardownSasayakiAudio();
       sasayakiPlayback = session;
       sasayakiCurrentTime = session.lastPosition;
+      syncSasayakiCuePresentation(false);
       sasayakiPlaybackError = "";
     } catch (e) {
       sasayakiPlaybackError = String(e);
     }
   }
 
-  async function loadChapter(idx: number, chapterProgress = 0) {
+  async function loadChapter(
+    idx: number,
+    chapterProgress = 0,
+    shouldCommit: () => boolean = () => true,
+  ) {
     if (!meta || !isTauriRuntime()) return;
 
     try {
@@ -825,6 +964,7 @@
         invoke<string>("epub_read_chapter", { spineIndex: safeIndex }),
         invoke<string | null>("epub_get_chapter_path", { spineIndex: safeIndex }),
       ]);
+      if (!shouldCommit()) return;
       chapterHtml = resolveChapterAssets(rawHtml, chapterPath);
       chapterIndex = safeIndex;
       if (currentBookLocator) saveProgress(currentBookLocator, meta, safeIndex, null, readerInitialProgress);
@@ -1161,6 +1301,7 @@
   }
 
   function closeReaderSelection() {
+    const shouldResumeSasayaki = sasayakiPausedByLookup;
     window.getSelection()?.removeAllRanges();
     clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
     readerSelection = null;
@@ -1168,6 +1309,7 @@
     readerLookupHighlightSignal += 1;
     lookupPopups = [];
     lookupRequestId += 1;
+    if (shouldResumeSasayaki) resumeSasayakiAfterLookup();
   }
 
   function lookupStatusMessage(status: DictionaryStatus): string {
@@ -1595,6 +1737,7 @@
       return;
     }
 
+    pauseSasayakiForLookup();
     openRootLookup(selection);
   }
 
@@ -1853,6 +1996,9 @@
       appearancePalette={settings.appearancePalette}
       lookupHighlightCount={readerLookupHighlightCount}
       lookupHighlightSignal={readerLookupHighlightSignal}
+      sasayakiCue={sasayakiActiveCue}
+      sasayakiReveal={sasayakiCueReveal}
+      {sasayakiCueSignal}
       scanLength={settings.dictionarySettings.scanLength}
       scanNonJapaneseText={settings.dictionarySettings.scanNonJapaneseText}
       onProgressChange={handleReaderProgress}
@@ -1909,10 +2055,12 @@
           onToggle={toggleSasayakiPlayback}
           onSeek={seekSasayaki}
           onSkip={skipSasayaki}
-          onPreviousCue={previousSasayakiCue}
-          onNextCue={nextSasayakiCue}
           onRateChange={setSasayakiRate}
           onDelayChange={setSasayakiDelay}
+          onAutoScrollChange={setSasayakiAutoScroll}
+          onAutoPauseChange={setSasayakiAutoPause}
+          onSkipActionChange={setSasayakiSkipAction}
+          onSkipAction={applySasayakiSkip}
           onRelink={relinkSasayakiAudio}
         />
       </div>

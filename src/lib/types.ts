@@ -255,7 +255,12 @@ export interface SasayakiPlaybackCue {
   id: string;
   startTime: number;
   endTime: number;
+  chapterIndex: number;
+  start: number;
+  length: number;
 }
+
+export type SasayakiSkipAction = "cue" | "seconds5" | "seconds10" | "seconds15" | "seconds30";
 
 export interface SasayakiPlaybackSession {
   configured: boolean;
@@ -266,6 +271,9 @@ export interface SasayakiPlaybackSession {
   lastPosition: number;
   delay: number;
   rate: number;
+  autoScroll: boolean;
+  autoPause: boolean;
+  skipAction: SasayakiSkipAction;
   cues: SasayakiPlaybackCue[];
 }
 

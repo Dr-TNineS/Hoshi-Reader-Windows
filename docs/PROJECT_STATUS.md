@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Project Status
 
-Last updated: 2026-06-24
+Last updated: 2026-06-25
 
 This file records current implementation facts for `hoshi-reader-windows`. It is not an agent rule file, product roadmap, or substitute for checking the current code.
 
@@ -161,9 +161,11 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Sasayaki import validates the manifest-owned book directory, audio codec, SRT extension/UTF-8/timing marker/size, stages the complete replacement, and restores old data if installation fails. Removal and bookshelf Forget delete only app-owned Sasayaki data; linked external audio is never deleted.
   - Sasayaki SRT import now strictly validates positive increasing cue numbers, timing ranges/order, and non-empty text. Matching uses the reader-visible HSA-compatible character filter, skips navigation/non-linear/guide-TOC spine items, searches cues forward within a bounded persisted window, rejects chapter-crossing matches, and stores stable `chapterIndex + start + length` results.
   - Manual cue corrections are book-owned sidecar records, validated against matchable chapter bounds, reapplied during rematch, and removable without discarding automatic results. Sidecar rewrites stage and roll back the previous JSON on installation failure.
-  - The bookshelf Sasayaki panel shows match coverage, unmatched/matched/corrected cues, the first 100 cue records, bounded rematch controls, and manual correction coordinates. Playback and reader highlighting remain deferred. The bookshelf probe covers action wiring, correction coordinates, and external-file protection; wide and 520px checks passed without horizontal overflow.
+  - The bookshelf Sasayaki panel shows match coverage, unmatched/matched/corrected cues, the first 100 cue records, bounded rematch controls, and manual correction coordinates. Playback and cue presentation remain reader-owned features. The bookshelf probe covers action wiring, correction coordinates, and external-file protection; wide and 520px checks passed without horizontal overflow.
   - Reader Sasayaki playback restores the sidecar source, position, rate, delay, and matched cue timeline. Rust authorizes only the current validated audio file in Tauri's runtime asset scope; copied audio remains contained and missing/changed external audio exposes an audio-only relink path.
-  - The reader Audio panel provides play/pause, progress seek, +/-10 seconds, previous/next matched cue, 0.5-2.0 speed, and -2 to 2 second cue delay. Position/settings persist on periodic ticks, pause, seek, shelf/book change, session restore, and window close. Playback pauses when leaving the reader; cue highlighting/following remains deferred to Slice 5L.
+  - The reader Audio panel provides play/pause, progress seek, +/-10 seconds, configurable sentence or 5/10/15/30-second skip actions, 0.5-2.0 speed, and -2 to 2 second cue delay. Position/settings persist on periodic ticks, pause, seek, shelf/book change, session restore, and window close.
+  - Active matched Sasayaki cues are mapped from Rust-owned chapter/start/length coordinates to reader DOM ranges with the shared matchable-character filter and rendered through CSS Highlight without EPUB DOM wrapping or pagination reflow. Auto-Scroll follows aligned vertical pages and chapters after playback/seek; Auto-Pause on Lookup resumes only playback paused by lookup. Both default on and persist per book with legacy-compatible defaults.
+  - Sasayaki cue colors follow HSA-visible defaults: black text over translucent sky blue in light mode and white text over translucent sky blue in dark mode.
   - Real M4B backend validation passed on 2026-06-24 with `汝、星のごとく`: a 368,936,202-byte, 12:22:43 AAC-LC M4B with chapters, cover, and an auxiliary data track decoded and clipped; its matching EPUB/SRT pipeline imported 11,798 cues and matched 11,792 with 6 unmatched. Development/release clipping, the portable package build, and a five-second packaged launch smoke also passed.
 
 ## Not Implemented Or Not Verified

@@ -1,5 +1,5 @@
 <script lang="ts">
-  import type { SasayakiPlaybackSession } from "./types";
+  import type { SasayakiPlaybackSession, SasayakiSkipAction } from "./types";
 
   let {
     session,
@@ -11,10 +11,12 @@
     onToggle,
     onSeek,
     onSkip,
-    onPreviousCue,
-    onNextCue,
     onRateChange,
     onDelayChange,
+    onAutoScrollChange,
+    onAutoPauseChange,
+    onSkipActionChange,
+    onSkipAction,
     onRelink,
   }: {
     session: SasayakiPlaybackSession;
@@ -26,10 +28,12 @@
     onToggle: () => void;
     onSeek: (seconds: number) => void;
     onSkip: (seconds: number) => void;
-    onPreviousCue: () => void;
-    onNextCue: () => void;
     onRateChange: (rate: number) => void;
     onDelayChange: (delay: number) => void;
+    onAutoScrollChange: (enabled: boolean) => void;
+    onAutoPauseChange: (enabled: boolean) => void;
+    onSkipActionChange: (action: SasayakiSkipAction) => void;
+    onSkipAction: (direction: -1 | 1) => void;
     onRelink: () => void;
   } = $props();
 
@@ -37,6 +41,11 @@
     if (!Number.isFinite(seconds) || seconds < 0) return "0:00";
     const minutes = Math.floor(seconds / 60);
     return `${minutes}:${Math.floor(seconds % 60).toString().padStart(2, "0")}`;
+  }
+
+  function skipLabel(action: SasayakiSkipAction): string {
+    if (action === "cue") return "sentence";
+    return `${action.replace("seconds", "")} seconds`;
   }
 </script>
 
@@ -56,13 +65,13 @@
     <button class="primary" onclick={onRelink}>Relink audiobook</button>
   {:else}
     <div class="transport">
-      <button aria-label="Previous subtitle cue" onclick={onPreviousCue}>Prev cue</button>
+      <button aria-label={`Skip backward ${skipLabel(session.skipAction)}`} onclick={() => onSkipAction(-1)}>Previous</button>
       <button aria-label="Skip backward 10 seconds" onclick={() => onSkip(-10)}>-10s</button>
       <button class="primary" aria-label={playing ? "Pause Sasayaki" : "Play Sasayaki"} onclick={onToggle}>
         {playing ? "Pause" : "Play"}
       </button>
       <button aria-label="Skip forward 10 seconds" onclick={() => onSkip(10)}>+10s</button>
-      <button aria-label="Next subtitle cue" onclick={onNextCue}>Next cue</button>
+      <button aria-label={`Skip forward ${skipLabel(session.skipAction)}`} onclick={() => onSkipAction(1)}>Next</button>
     </div>
     <div class="timeline">
       <span>{timeLabel(currentTime)}</span>
@@ -104,6 +113,38 @@
         />
         <span>{session.delay >= 0 ? "+" : ""}{session.delay.toFixed(2)}s</span>
       </label>
+      <label class="switch-setting">
+        <input
+          aria-label="Sasayaki Auto-Scroll"
+          type="checkbox"
+          checked={session.autoScroll}
+          onchange={(event) => onAutoScrollChange(event.currentTarget.checked)}
+        />
+        <span>Auto-Scroll</span>
+      </label>
+      <label class="switch-setting">
+        <input
+          aria-label="Sasayaki Auto-Pause on Lookup"
+          type="checkbox"
+          checked={session.autoPause}
+          onchange={(event) => onAutoPauseChange(event.currentTarget.checked)}
+        />
+        <span>Auto-Pause on Lookup</span>
+      </label>
+      <label class="select-setting">
+        Skip action
+        <select
+          aria-label="Sasayaki skip action"
+          value={session.skipAction}
+          onchange={(event) => onSkipActionChange(event.currentTarget.value as SasayakiSkipAction)}
+        >
+          <option value="cue">1 sentence</option>
+          <option value="seconds5">5 seconds</option>
+          <option value="seconds10">10 seconds</option>
+          <option value="seconds15">15 seconds</option>
+          <option value="seconds30">30 seconds</option>
+        </select>
+      </label>
     </div>
   {/if}
   {#if error}<p class="error">{error}</p>{/if}
@@ -123,8 +164,13 @@
   .settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
   .settings label { min-width: 0; display: grid; grid-template-columns: auto minmax(80px, 1fr) 48px; align-items: center; gap: 8px; color: var(--app-muted); font-size: 12px; }
   .settings span { text-align: right; color: var(--app-text); }
+  .settings .switch-setting { grid-template-columns: auto 1fr; }
+  .settings .switch-setting input { width: 16px; height: 16px; accent-color: var(--app-primary); }
+  .settings .switch-setting span { text-align: left; }
+  .settings .select-setting { grid-template-columns: auto minmax(120px, 1fr); }
+  select { min-height: 34px; padding: 0 8px; color: var(--app-text); background: var(--app-control); border: 1px solid var(--app-border); border-radius: 6px; }
   .error { color: var(--app-error); }
-  button:focus-visible, input:focus-visible { outline: var(--ui-focus-ring-width) solid var(--ui-focus-ring-color); outline-offset: var(--ui-focus-ring-offset); }
+  button:focus-visible, input:focus-visible, select:focus-visible { outline: var(--ui-focus-ring-width) solid var(--ui-focus-ring-color); outline-offset: var(--ui-focus-ring-offset); }
   @media (max-width: 560px) {
     .player-panel { width: calc(100vw - 12px); padding: 12px; }
     .transport { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }

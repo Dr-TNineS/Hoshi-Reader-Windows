@@ -108,6 +108,12 @@ struct SasayakiPlaybackData {
     last_position: f64,
     delay: f64,
     rate: f32,
+    #[serde(default = "default_true")]
+    auto_scroll: bool,
+    #[serde(default = "default_true")]
+    auto_pause: bool,
+    #[serde(default)]
+    skip_action: SasayakiSkipAction,
 }
 
 impl Default for SasayakiPlaybackData {
@@ -116,8 +122,26 @@ impl Default for SasayakiPlaybackData {
             last_position: 0.0,
             delay: 0.0,
             rate: 1.0,
+            auto_scroll: true,
+            auto_pause: true,
+            skip_action: SasayakiSkipAction::default(),
         }
     }
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub enum SasayakiSkipAction {
+    #[default]
+    Cue,
+    Seconds5,
+    Seconds10,
+    Seconds15,
+    Seconds30,
+}
+
+fn default_true() -> bool {
+    true
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -192,6 +216,9 @@ pub struct SasayakiPlaybackCue {
     id: String,
     start_time: f64,
     end_time: f64,
+    chapter_index: usize,
+    start: usize,
+    length: usize,
 }
 
 #[derive(Debug, Clone, Serialize, PartialEq)]
@@ -205,6 +232,9 @@ pub struct SasayakiPlaybackSession {
     last_position: f64,
     delay: f64,
     rate: f32,
+    auto_scroll: bool,
+    auto_pause: bool,
+    skip_action: SasayakiSkipAction,
     cues: Vec<SasayakiPlaybackCue>,
 }
 
@@ -308,10 +338,23 @@ pub fn sasayaki_save_playback(
     last_position: f64,
     delay: f64,
     rate: f32,
+    auto_scroll: bool,
+    auto_pause: bool,
+    skip_action: SasayakiSkipAction,
     app: AppHandle,
 ) -> Result<SasayakiPlaybackSession, String> {
     let book_dir = library_book_dir(&app, &book_id)?;
-    save_playback(&book_dir, &book_id, last_position, delay, rate, Some(&app))
+    save_playback(
+        &book_dir,
+        &book_id,
+        last_position,
+        delay,
+        rate,
+        auto_scroll,
+        auto_pause,
+        skip_action,
+        Some(&app),
+    )
 }
 
 #[tauri::command]
@@ -620,6 +663,9 @@ fn save_playback(
     last_position: f64,
     delay: f64,
     rate: f32,
+    auto_scroll: bool,
+    auto_pause: bool,
+    skip_action: SasayakiSkipAction,
     app: Option<&AppHandle>,
 ) -> Result<SasayakiPlaybackSession, String> {
     validate_playback_values(last_position, delay, rate)?;
@@ -634,6 +680,9 @@ fn save_playback(
         last_position,
         delay,
         rate,
+        auto_scroll,
+        auto_pause,
+        skip_action,
     };
     sidecar.updated_at = now_millis()?;
     write_sidecar_atomic(&root, &sidecar)?;
@@ -719,6 +768,9 @@ fn playback_session(
         last_position: sidecar.playback.last_position,
         delay: sidecar.playback.delay,
         rate: sidecar.playback.rate,
+        auto_scroll: sidecar.playback.auto_scroll,
+        auto_pause: sidecar.playback.auto_pause,
+        skip_action: sidecar.playback.skip_action.clone(),
         cues: sidecar
             .match_data
             .matches
@@ -727,6 +779,9 @@ fn playback_session(
                 id: matched.id.clone(),
                 start_time: matched.start_time,
                 end_time: matched.end_time,
+                chapter_index: matched.chapter_index,
+                start: matched.start,
+                length: matched.length,
             })
             .collect(),
     })
@@ -765,6 +820,9 @@ fn empty_playback_session() -> SasayakiPlaybackSession {
         last_position: 0.0,
         delay: 0.0,
         rate: 1.0,
+        auto_scroll: true,
+        auto_pause: true,
+        skip_action: SasayakiSkipAction::default(),
         cues: Vec::new(),
     }
 }
@@ -1637,7 +1695,18 @@ mod tests {
         import_into_book_dir(&book_dir, "book-id", &audio, &srt, false).unwrap();
         rematch_book(&book_dir, &book_dir.join("book.epub"), "book-id", 200).unwrap();
 
-        let saved = save_playback(&book_dir, "book-id", 0.75, -0.25, 1.5, None).unwrap();
+        let saved = save_playback(
+            &book_dir,
+            "book-id",
+            0.75,
+            -0.25,
+            1.5,
+            false,
+            true,
+            SasayakiSkipAction::Seconds15,
+            None,
+        )
+        .unwrap();
         assert_eq!(
             saved.audio_path,
             Some(audio.canonicalize().unwrap().to_string_lossy().to_string())
@@ -1646,7 +1715,12 @@ mod tests {
         assert_eq!(saved.last_position, 0.75);
         assert_eq!(saved.delay, -0.25);
         assert_eq!(saved.rate, 1.5);
+        assert!(!saved.auto_scroll);
+        assert!(saved.auto_pause);
+        assert_eq!(saved.skip_action, SasayakiSkipAction::Seconds15);
         assert_eq!(saved.cues.len(), 1);
+        assert_eq!(saved.cues[0].chapter_index, 1);
+        assert!(saved.cues[0].length > 0);
 
         let restored = prepare_playback(&book_dir, "book-id", None).unwrap();
         assert_eq!(restored, saved);
@@ -1679,9 +1753,42 @@ mod tests {
         fs::write(&srt, "1\n00:00:00,000 --> 00:00:01,000\n字幕\n").unwrap();
         import_into_book_dir(&book_dir, "book-id", &original, &srt, false).unwrap();
 
-        assert!(save_playback(&book_dir, "book-id", -1.0, 0.0, 1.0, None).is_err());
-        assert!(save_playback(&book_dir, "book-id", 0.0, 2.1, 1.0, None).is_err());
-        assert!(save_playback(&book_dir, "book-id", 0.0, 0.0, 2.1, None).is_err());
+        assert!(save_playback(
+            &book_dir,
+            "book-id",
+            -1.0,
+            0.0,
+            1.0,
+            true,
+            true,
+            SasayakiSkipAction::Cue,
+            None,
+        )
+        .is_err());
+        assert!(save_playback(
+            &book_dir,
+            "book-id",
+            0.0,
+            2.1,
+            1.0,
+            true,
+            true,
+            SasayakiSkipAction::Cue,
+            None,
+        )
+        .is_err());
+        assert!(save_playback(
+            &book_dir,
+            "book-id",
+            0.0,
+            0.0,
+            2.1,
+            true,
+            true,
+            SasayakiSkipAction::Cue,
+            None,
+        )
+        .is_err());
         fs::remove_file(&original).unwrap();
         let relinked = relink_audio(&book_dir, "book-id", &replacement, None).unwrap();
         assert!(relinked.audio_available);
@@ -1699,6 +1806,19 @@ mod tests {
         let restored = prepare_playback(&book_dir, "book-id", None).unwrap();
         assert_eq!(restored.audio_path, relinked.audio_path);
         let _ = fs::remove_dir_all(book_dir.parent().unwrap().parent().unwrap());
+    }
+
+    #[test]
+    fn legacy_playback_data_defaults_reader_coordination_settings() {
+        let playback: SasayakiPlaybackData =
+            serde_json::from_str(r#"{"lastPosition":12.5,"delay":0.25,"rate":1.2}"#).unwrap();
+
+        assert_eq!(playback.last_position, 12.5);
+        assert_eq!(playback.delay, 0.25);
+        assert_eq!(playback.rate, 1.2);
+        assert!(playback.auto_scroll);
+        assert!(playback.auto_pause);
+        assert_eq!(playback.skip_action, SasayakiSkipAction::Cue);
     }
 
     #[test]

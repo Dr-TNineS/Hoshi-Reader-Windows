@@ -199,9 +199,9 @@ automated-validation level.
 
 Deferred items:
 
-- Sasayaki cue matching, reader playback/highlighting, and sentence-audio
-  export. The Windows per-book sidecar/import boundary and M4B/MP3/WAV clipping
-  capability are implemented in Slices 5I-0 and 5I.
+- Sasayaki sentence-audio export. Per-book sidecar/import, cue matching,
+  M4B/MP3/WAV playback/clipping, active cue highlighting, aligned page/chapter
+  following, and lookup auto-pause are implemented through Slice 5L.
 
 Acceptance:
 

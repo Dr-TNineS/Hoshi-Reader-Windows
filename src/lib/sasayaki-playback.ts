@@ -1,4 +1,4 @@
-import type { SasayakiPlaybackCue } from "./types";
+import type { SasayakiPlaybackCue, SasayakiSkipAction } from "./types";
 
 export function clampPlaybackTime(value: number, duration: number): number {
   const safe = Number.isFinite(value) ? Math.max(0, value) : 0;
@@ -19,4 +19,65 @@ export function previousCueTime(cues: SasayakiPlaybackCue[], currentTime: number
   const anchor = current?.startTime ?? playbackTime;
   const previous = [...cues].reverse().find((cue) => cue.startTime < anchor);
   return Math.max(0, (previous?.startTime ?? 0) + delay);
+}
+
+export function activeCueAtTime(
+  cues: SasayakiPlaybackCue[],
+  currentTime: number,
+  delay: number,
+): SasayakiPlaybackCue | null {
+  const playbackTime = Math.max(0, currentTime - delay);
+  return cues.find((cue) => playbackTime >= cue.startTime && playbackTime < cue.endTime) ?? null;
+}
+
+export function cuePresentationAtTime(
+  cues: SasayakiPlaybackCue[],
+  currentTime: number,
+  delay: number,
+  currentChapterIndex: number,
+  autoScroll: boolean,
+  hasPlayedOnce: boolean,
+  forceReveal = false,
+): {
+  cue: SasayakiPlaybackCue | null;
+  reveal: boolean;
+  chapterToLoad: number | null;
+} {
+  const cue = activeCueAtTime(cues, currentTime, delay);
+  const reveal = Boolean(cue && autoScroll && (hasPlayedOnce || forceReveal));
+  return {
+    cue,
+    reveal,
+    chapterToLoad: cue && reveal && cue.chapterIndex !== currentChapterIndex
+      ? cue.chapterIndex
+      : null,
+  };
+}
+
+export function shouldAutoPauseSasayaki(autoPause: boolean, playing: boolean): boolean {
+  return autoPause && playing;
+}
+
+export function skipActionSeconds(action: SasayakiSkipAction): number | null {
+  switch (action) {
+    case "seconds5": return 5;
+    case "seconds10": return 10;
+    case "seconds15": return 15;
+    case "seconds30": return 30;
+    default: return null;
+  }
+}
+
+export function sasayakiSkipTarget(
+  cues: SasayakiPlaybackCue[],
+  currentTime: number,
+  delay: number,
+  action: SasayakiSkipAction,
+  direction: -1 | 1,
+): number | null {
+  const seconds = skipActionSeconds(action);
+  if (seconds !== null) return Math.max(0, currentTime + seconds * direction);
+  return direction < 0
+    ? previousCueTime(cues, currentTime, delay)
+    : nextCueTime(cues, currentTime, delay);
 }

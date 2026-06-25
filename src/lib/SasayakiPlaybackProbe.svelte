@@ -1,13 +1,20 @@
 <script lang="ts">
   import ReaderControls from "./ReaderControls.svelte";
   import SasayakiPlayerPanel from "./SasayakiPlayerPanel.svelte";
-  import { nextCueTime, previousCueTime } from "./sasayaki-playback";
+  import {
+    cuePresentationAtTime,
+    sasayakiSkipTarget,
+    shouldAutoPauseSasayaki,
+  } from "./sasayaki-playback";
   import type { SasayakiPlaybackSession } from "./types";
 
   let open = $state(false);
   let playing = $state(false);
   let currentTime = $state(12);
   let events = $state<string[]>([]);
+  let hasPlayedOnce = $state(false);
+  let pausedByLookup = $state(false);
+  let chapterIndex = $state(0);
   let session = $state<SasayakiPlaybackSession>({
     configured: true,
     audioPath: "C:/Books/audio.wav",
@@ -17,11 +24,22 @@
     lastPosition: 12,
     delay: 0.25,
     rate: 1.25,
+    autoScroll: true,
+    autoPause: true,
+    skipAction: "cue",
     cues: [
-      { id: "1", startTime: 5, endTime: 8 },
-      { id: "2", startTime: 15, endTime: 19 },
+      { id: "1", startTime: 5, endTime: 8, chapterIndex: 0, start: 8, length: 4 },
+      { id: "2", startTime: 15, endTime: 19, chapterIndex: 1, start: 3, length: 5 },
     ],
   });
+  let presentation = $derived(cuePresentationAtTime(
+    session.cues,
+    currentTime,
+    session.delay,
+    chapterIndex,
+    session.autoScroll,
+    hasPlayedOnce,
+  ));
 </script>
 
 <main class="probe" data-ui-portal-root>
@@ -37,6 +55,28 @@
   />
   {#if open}
     <div id="sasayaki-player">
+      <button
+        class="probe-action"
+        aria-label="Probe open lookup"
+        onclick={() => {
+          if (shouldAutoPauseSasayaki(session.autoPause, playing)) {
+            playing = false;
+            pausedByLookup = true;
+            events = [...events, "lookup-pause"];
+          }
+        }}
+      >Lookup</button>
+      <button
+        class="probe-action"
+        aria-label="Probe close lookup"
+        onclick={() => {
+          if (pausedByLookup) {
+            pausedByLookup = false;
+            playing = true;
+            events = [...events, "lookup-resume"];
+          }
+        }}
+      >Close lookup</button>
       <SasayakiPlayerPanel
         {session}
         {playing}
@@ -48,6 +88,8 @@
         }}
         onToggle={() => {
           playing = !playing;
+          if (playing) hasPlayedOnce = true;
+          else pausedByLookup = false;
           events = [...events, playing ? "play" : "pause"];
         }}
         onSeek={(seconds) => {
@@ -55,14 +97,16 @@
           events = [...events, `seek:${seconds}`];
         }}
         onSkip={(seconds) => events = [...events, `skip:${seconds}`]}
-        onPreviousCue={() => {
-          currentTime = previousCueTime(session.cues, currentTime, session.delay);
-          events = [...events, `previous:${currentTime}`];
-        }}
-        onNextCue={() => {
-          const next = nextCueTime(session.cues, currentTime, session.delay);
+        onSkipAction={(direction) => {
+          const next = sasayakiSkipTarget(
+            session.cues,
+            currentTime,
+            session.delay,
+            session.skipAction,
+            direction,
+          );
           if (next !== null) currentTime = next;
-          events = [...events, `next:${currentTime}`];
+          events = [...events, `${direction < 0 ? "previous" : "next"}:${currentTime}`];
         }}
         onRateChange={(rate) => {
           session = { ...session, rate };
@@ -72,11 +116,32 @@
           session = { ...session, delay };
           events = [...events, `delay:${delay}`];
         }}
+        onAutoScrollChange={(autoScroll) => {
+          session = { ...session, autoScroll };
+          events = [...events, `autoScroll:${autoScroll}`];
+        }}
+        onAutoPauseChange={(autoPause) => {
+          session = { ...session, autoPause };
+          events = [...events, `autoPause:${autoPause}`];
+        }}
+        onSkipActionChange={(skipAction) => {
+          session = { ...session, skipAction };
+          events = [...events, `skipAction:${skipAction}`];
+        }}
         onRelink={() => events = [...events, "relink"]}
       />
     </div>
   {/if}
-  <div class="probe-state" data-events={events.join(",")} data-open={open} data-playing={playing}></div>
+  <div
+    class="probe-state"
+    data-events={events.join(",")}
+    data-open={open}
+    data-playing={playing}
+    data-active-cue={presentation.cue?.id ?? ""}
+    data-cue-reveal={presentation.reveal}
+    data-chapter-to-load={presentation.chapterToLoad ?? ""}
+    data-chapter-index={chapterIndex}
+  ></div>
 </main>
 
 <style>
@@ -103,5 +168,6 @@
     background: var(--app-bg);
   }
   .reader-copy { writing-mode: vertical-rl; margin: auto; color: #ddd; font-size: 24px; }
+  .probe-action { position: fixed; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
   .probe-state { position: fixed; width: 1px; height: 1px; overflow: hidden; opacity: 0; }
 </style>
