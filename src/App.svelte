@@ -2,7 +2,6 @@
   import { tick } from "svelte";
   import { convertFileSrc, invoke, isTauri as isTauriRuntime } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-dialog";
-  import { getCurrentWindow } from "@tauri-apps/api/window";
   import { ankiHandlebarOptions, applyKnownNoteTypeDefaultsIfUnmapped, extractDictionaryMediaReferences, upsertFieldTemplate } from "./lib/anki-field-renderer";
   import BookshelfView from "./lib/BookshelfView.svelte";
   import {
@@ -208,28 +207,14 @@
 
   $effect(() => {
     if (!isTauriRuntime()) return;
-    let disposed = false;
-    let closeRequested = false;
-    let unlisten: (() => void) | null = null;
-    void getCurrentWindow().onCloseRequested(async () => {
-      if (closeRequested) return;
-      closeRequested = true;
-      const cleanup = stopSasayakiPlayback(true).catch((e) => {
-        console.warn("Failed to stop Sasayaki playback before close", e);
-      });
-      await Promise.race([
-        cleanup,
-        new Promise<void>((resolve) => {
-          globalThis.setTimeout(resolve, 750);
-        }),
-      ]);
-    }).then((next) => {
-      if (disposed) next();
-      else unlisten = next;
-    });
+    const handleUnload = () => {
+      void stopSasayakiPlayback(false);
+    };
+    globalThis.addEventListener("pagehide", handleUnload);
+    globalThis.addEventListener("beforeunload", handleUnload);
     return () => {
-      disposed = true;
-      unlisten?.();
+      globalThis.removeEventListener("pagehide", handleUnload);
+      globalThis.removeEventListener("beforeunload", handleUnload);
       teardownSasayakiAudio();
     };
   });
