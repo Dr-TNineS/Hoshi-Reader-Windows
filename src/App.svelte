@@ -209,11 +209,20 @@
   $effect(() => {
     if (!isTauriRuntime()) return;
     let disposed = false;
+    let closeRequested = false;
     let unlisten: (() => void) | null = null;
-    void getCurrentWindow().onCloseRequested(async (event) => {
-      event.preventDefault();
-      await stopSasayakiPlayback(true);
-      await getCurrentWindow().destroy();
+    void getCurrentWindow().onCloseRequested(async () => {
+      if (closeRequested) return;
+      closeRequested = true;
+      const cleanup = stopSasayakiPlayback(true).catch((e) => {
+        console.warn("Failed to stop Sasayaki playback before close", e);
+      });
+      await Promise.race([
+        cleanup,
+        new Promise<void>((resolve) => {
+          globalThis.setTimeout(resolve, 750);
+        }),
+      ]);
     }).then((next) => {
       if (disposed) next();
       else unlisten = next;
