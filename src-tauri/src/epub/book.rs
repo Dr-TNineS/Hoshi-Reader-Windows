@@ -206,6 +206,13 @@ fn count_reader_chars(html: &str) -> usize {
         .count()
 }
 
+pub(crate) fn filtered_reader_text(html: &str) -> String {
+    visible_reader_text(html)
+        .chars()
+        .filter(|ch| is_reader_char(*ch))
+        .collect()
+}
+
 fn visible_reader_text(html: &str) -> String {
     let body = BODY_REGEX
         .find(html)

@@ -17,6 +17,8 @@ const CORE_HANDLEBAR_OPTIONS = [
   "{pitch-accent-positions}",
   "{dictionary-media}",
   "{audio}",
+  "{sasayaki-audio}",
+  "{book-cover}",
 ];
 const KNOWN_NOTE_TYPE_TEMPLATES: Record<string, Record<string, string>> = {
   Lapis: {
@@ -192,6 +194,8 @@ function tokenValue(token: string, payload: LookupAnkiPayload, compactGlossaries
       return renderDictionaryMedia(payload.media);
     case "audio":
       return payload.audioFilename ? `[sound:${payload.audioFilename}]` : "";
+    case "sasayaki-audio":
+      return payload.sasayakiAudioFilename ? `[sound:${payload.sasayakiAudioFilename}]` : "";
     case "book-cover":
       return payload.coverFilename ? `<img src="${escapeHtml(payload.coverFilename)}">` : "";
     default:
@@ -287,6 +291,8 @@ function defaultTemplateForField(field: string): string {
   if (["source", "book", "document", "documenttitle"].includes(normalized)) return "{document-title}";
   if (["frequency", "frequencies", "freq"].includes(normalized)) return "{frequencies}";
   if (["pitch", "pitchaccent", "pitchaccentpositions"].includes(normalized)) return "{pitch-accent-positions}";
+  if (["sentenceaudio", "contextaudio", "sasayakiaudio"].includes(normalized)) return "{sasayaki-audio}";
+  if (["bookcover", "cover"].includes(normalized)) return "{book-cover}";
   if (["media", "image", "images", "picture", "pictures", "dictionarymedia"].includes(normalized)) return "{dictionary-media}";
   if (["audio", "sound", "wordaudio", "expressionaudio"].includes(normalized)) return "{audio}";
   return "";
@@ -305,6 +311,13 @@ export function payloadWithStoredRemoteAudio(
   filename: string | null,
 ): LookupAnkiPayload {
   return { ...payload, audioFilename: filename };
+}
+
+export function payloadWithStoredSasayakiAudio(
+  payload: LookupAnkiPayload,
+  filename: string | null,
+): LookupAnkiPayload {
+  return { ...payload, sasayakiAudioFilename: filename };
 }
 
 export function payloadWithStoredBookCover(

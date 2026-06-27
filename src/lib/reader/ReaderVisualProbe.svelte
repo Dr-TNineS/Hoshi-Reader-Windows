@@ -2,11 +2,15 @@
   import Reader from "./Reader.svelte";
   import { countChars } from "../reader";
   import { readerAppearancePalette } from "../appearance";
-  import { lookupHighlightText as renderedLookupHighlightTextFor, READER_LOOKUP_HIGHLIGHT } from "../lookup-highlight";
-  import type { ReaderProgress, ReaderSelection } from "../types";
+  import {
+    lookupHighlightText as renderedLookupHighlightTextFor,
+    READER_LOOKUP_HIGHLIGHT,
+  } from "../lookup-highlight";
+  import type { ReaderProgress, ReaderSelection, SasayakiPlaybackCue } from "../types";
 
   const params = new URLSearchParams(window.location.search);
   const lookupHighlightMode = params.get("lookupHighlightMode") ?? "";
+  const sasayakiMode = params.get("sasayakiMode") ?? "";
   const appearancePalette = readerAppearancePalette({ theme: params.get("theme") === "light" ? "light" : "dark" });
 
   const imageSvg = encodeURIComponent(`
@@ -85,8 +89,19 @@
   let lookupHighlightSignal = $state(0);
   let visibleSelectionText = $state("");
   let renderedLookupHighlightText = $state("");
+  let renderedSasayakiHighlightText = $state("");
   let selectionCount = $state(0);
   let lookupGeneration = 0;
+  const sasayakiCue: SasayakiPlaybackCue | null = sasayakiMode
+    ? {
+        id: "probe-cue",
+        startTime: 10,
+        endTime: 15,
+        chapterIndex: 0,
+        start: sasayakiMode === "reveal" ? Math.floor(chapters[0].charCount * 0.72) : 8,
+        length: 8,
+      }
+    : null;
 
   function recordProgress(progress: ReaderProgress) {
     lastProgress = progress;
@@ -132,6 +147,8 @@
     const syncSelection = () => {
       visibleSelectionText = window.getSelection()?.toString().replace(/\s+/g, " ").trim() ?? "";
       renderedLookupHighlightText = renderedLookupHighlightTextFor(READER_LOOKUP_HIGHLIGHT);
+      const sasayakiLayer = document.querySelector<HTMLElement>(".sasayaki-highlight-layer");
+      renderedSasayakiHighlightText = sasayakiLayer?.dataset.highlightText ?? "";
     };
     const firstFrame = requestAnimationFrame(() => {
       if (waitForHighlight) {
@@ -161,6 +178,9 @@
   onSelectionChange={recordSelection}
   lookupHighlightCount={Array.from(lookupHighlightText).length}
   {lookupHighlightSignal}
+  {sasayakiCue}
+  sasayakiReveal={sasayakiMode === "reveal"}
+  sasayakiCueSignal={sasayakiMode ? 1 : 0}
 />
 
 <div
@@ -177,6 +197,7 @@
   data-dom-selection={visibleSelectionText}
   data-highlight-text={lookupHighlightText}
   data-rendered-highlight-text={renderedLookupHighlightText}
+  data-sasayaki-highlight={renderedSasayakiHighlightText}
   data-sentence={lastSelection?.sentence ?? ""}
   data-selection-count={selectionCount}
   data-anchor-x={lastSelection?.anchorRect?.x ?? lastSelection?.rect.x ?? -1}

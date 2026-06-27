@@ -96,6 +96,8 @@ export interface LookupAnkiPayload {
   pitches: PitchEntry[];
   media: LookupAnkiMediaReference[];
   audioFilename: string | null;
+  sasayakiCueId: string | null;
+  sasayakiAudioFilename: string | null;
   coverFilename: string | null;
   sourceBook: LookupAnkiSourceBook;
   sourceChapter: LookupAnkiSourceChapter;
@@ -212,6 +214,74 @@ export interface LocalAudioStatus {
   imported: boolean;
   sizeBytes: number | null;
   sources: LocalAudioSourceStatus[];
+}
+
+export interface AnkiStoreSasayakiAudioResult {
+  filename: string | null;
+  warnings: string[];
+}
+
+export interface SasayakiStatus {
+  configured: boolean;
+  audioStorage: "external" | "copied" | null;
+  audioFileName: string | null;
+  audioExtension: string | null;
+  audioSizeBytes: number | null;
+  audioAvailable: boolean;
+  subtitleFileName: string | null;
+  subtitleSizeBytes: number | null;
+  cueCount: number;
+  matchedCount: number;
+  unmatchedCount: number;
+  correctedCount: number;
+  matchRate: number;
+  lastPosition: number;
+  delay: number;
+  rate: number;
+}
+
+export interface SasayakiCueItem {
+  id: string;
+  startTime: number;
+  endTime: number;
+  text: string;
+  matched: boolean;
+  corrected: boolean;
+  chapterIndex: number | null;
+  start: number | null;
+  length: number | null;
+}
+
+export interface SasayakiCuePage {
+  total: number;
+  offset: number;
+  items: SasayakiCueItem[];
+}
+
+export interface SasayakiPlaybackCue {
+  id: string;
+  startTime: number;
+  endTime: number;
+  chapterIndex: number;
+  start: number;
+  length: number;
+}
+
+export type SasayakiSkipAction = "cue" | "seconds5" | "seconds10" | "seconds15" | "seconds30";
+
+export interface SasayakiPlaybackSession {
+  configured: boolean;
+  audioPath: string | null;
+  audioAvailable: boolean;
+  audioFileName: string | null;
+  audioStorage: "external" | "copied" | null;
+  lastPosition: number;
+  delay: number;
+  rate: number;
+  autoScroll: boolean;
+  autoPause: boolean;
+  skipAction: SasayakiSkipAction;
+  cues: SasayakiPlaybackCue[];
 }
 
 export interface LocalAudioStoreRequest {

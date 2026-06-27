@@ -72,6 +72,20 @@ export function rawOffsetForReaderChars(text: string, targetChars: number): numb
   return text.length;
 }
 
+export function rawStartOffsetForReaderChars(text: string, skippedChars: number): number {
+  let rawOffset = 0;
+  let chars = 0;
+  for (const ch of text) {
+    const codePoint = ch.codePointAt(0);
+    if (codePoint !== undefined && isReaderMatchableCodePoint(codePoint)) {
+      if (chars >= skippedChars) return rawOffset;
+      chars += 1;
+    }
+    rawOffset += ch.length;
+  }
+  return text.length;
+}
+
 export function normalizeText(text: string): string {
   let normalized = "";
   for (const ch of text) {
@@ -106,4 +120,48 @@ export function getCharOffset(node: Node, container: HTMLElement): number {
     offset += countChars(n.textContent || "");
   }
   return offset;
+}
+
+export function readerRangeForOffsets(
+  container: HTMLElement,
+  start: number,
+  length: number,
+): Range | null {
+  if (!Number.isInteger(start) || !Number.isInteger(length) || start < 0 || length <= 0) return null;
+
+  const targetEnd = start + length;
+  const walker = createWalker(container);
+  let seen = 0;
+  let startPoint: { node: Text; offset: number } | null = null;
+  let endPoint: { node: Text; offset: number } | null = null;
+  let node: Node | null;
+
+  while ((node = walker.nextNode())) {
+    const textNode = node as Text;
+    const text = textNode.textContent ?? "";
+    const nodeChars = countChars(text);
+    const nextSeen = seen + nodeChars;
+
+    if (!startPoint && start < nextSeen) {
+      startPoint = {
+        node: textNode,
+        offset: rawStartOffsetForReaderChars(text, start - seen),
+      };
+    }
+    if (startPoint && targetEnd <= nextSeen) {
+      endPoint = {
+        node: textNode,
+        offset: rawOffsetForReaderChars(text, targetEnd - seen),
+      };
+      break;
+    }
+
+    seen = nextSeen;
+  }
+
+  if (!startPoint || !endPoint) return null;
+  const range = document.createRange();
+  range.setStart(startPoint.node, startPoint.offset);
+  range.setEnd(endPoint.node, endPoint.offset);
+  return range;
 }

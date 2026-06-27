@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Agent TODO
 
-Last updated: 2026-06-23
+Last updated: 2026-06-27
 
 This file is the short operational handoff for future agents. Keep detailed state in `docs/PROJECT_STATUS.md` and lookup-specific slice details in `docs/LOOKUP_ROADMAP.md`.
 
@@ -47,8 +47,62 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Anki HSA/Windows alignment is documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`; AnkiConnect readiness/configuration, field preview, minimal duplicate-check/add-note plumbing, and real AnkiConnect runtime add-note validation are complete.
 5. Treat the storage/model migration as complete at the JSON-store level: reading progress, recent books, and session now live in Tauri app data `reading/state.json`, with one-time legacy `localStorage` import and browser fallback.
 6. Follow the complete Anki/audio route in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
-   - Current: Slice 5I-0, Windows audio decode/clipping capability spike.
-   - Next: Slice 5I, per-book Sasayaki sidecar and import.
+   - Current: none; Slices 5A-5O are complete at their documented validation
+     level.
+   - Next: none unless a new plan authorizes additional Anki, audio, sync, or
+     settings behavior.
+   - Completed on 2026-06-27: Slice 5O runtime validation and alignment
+     closure. Real AnkiConnect v6 add/duplicate and store-media tests passed,
+     common automated checks and focused probes passed, portable package build
+     passed, and a five-second release launch smoke passed. Real HSA local
+     audio database, remote word-audio plus AnkiConnect, media-bearing
+     dictionary combined add-note flow, Tauri popup/Sasayaki audio playback,
+     post-add sync, and linked hoshidicts checks in this shell remain
+     `not verified`.
+   - Completed on 2026-06-27: Slice 5N word/Sasayaki playback coordination.
+     Interrupt pauses and conditionally resumes Sasayaki, Duck temporarily
+     lowers and restores Sasayaki volume, Mix leaves Sasayaki untouched, and
+     rapid word-audio replacement transfers coordinator state to the latest
+     request. Automated checks passed; manual Tauri playback for all modes
+     remains `not verified`.
+   - Completed on 2026-06-25: Slice 5M `{sasayaki-audio}` export from
+     `bookId + cueId`, Rust-owned sidecar/path/range resolution, deterministic
+     `hsw_sasayaki_<hash>.wav` storage, optional-media warnings, security hard
+     failures, and dictionary/cover/word/Sasayaki/add ordering. Automated
+     checks and the real M4B first-cue clip passed; real Anki playback remains
+     `not verified`.
+   - Completed on 2026-06-25: Slice 5L active cue CSS Highlight presentation,
+     aligned page/chapter following, Auto-Scroll, Auto-Pause on Lookup,
+     cue/5/10/15/30-second skip actions, persisted legacy-compatible settings,
+     and light/dark cue colors. Rust/frontend builds and tests, playback,
+     reader visual, and TOC probes, plus the real EPUB/M4B/SRT backend pipeline
+     passed; manual Tauri audio/visual validation remains `not verified`.
+   - Completed on 2026-06-24: M4B/AAC-LC was added to Sasayaki import, relink,
+     playback preparation, and cue clipping. The real `汝、星のごとく`
+     EPUB/M4B/SRT set passed backend import, matching, playback-source
+     preparation, deterministic development/release clipping, portable package
+     build, and launch smoke; real Tauri audio output remains `not verified`.
+   - Completed on 2026-06-24: Slice 5K reader playback panel, exact-file asset
+     authorization, play/pause, progress, +/-10 seconds, cue navigation,
+     persisted position/rate/delay, missing/changed external source relink, and
+     shelf/book/window teardown. Rust state/security tests, frontend
+     check/build, playback/reader visual/TOC probes, and wide/520px layout
+     checks passed. A real backend M4B fixture is now available, but actual
+     Tauri/WebView audio output remains `not verified`.
+   - Completed on 2026-06-24: Slice 5J strict SRT parsing, HSA-style filtered
+     ordered EPUB matching, persisted search window and correction records,
+     match summary, cue inspection, rematch, and manual correction UI. Rust
+     parity fixtures, frontend checks/build, bookshelf probe, and wide/520px
+     visual checks passed. The later real M4B/EPUB/SRT validation covered
+     11,798 cues with 11,792 matches.
+   - Completed on 2026-06-24: Slice 5I per-book app-owned sidecar, M4B/MP3/WAV
+     external/copy import, normalized UTF-8 SRT, status UI, atomic replacement,
+     rollback, and safe removal. The later real M4B backend pipeline passed;
+     real Tauri audio output remains `not verified`.
+   - Completed on 2026-06-24: Slice 5I-0 pure-Rust MP3/WAV decode and
+     deterministic cue-WAV clipping capability spike; M4B/AAC-LC was verified
+     by the later format extension, while generic M4A/raw AAC, OGG/Opus, and
+     real Anki playback remain `not verified`.
    - Completed on 2026-06-23: HSA Anki field rendering parity bugfix for `{furigana-plain}`, `{sentence}`, and `{pitch-accent-positions}`.
    - Current: Slice 2D in `docs/DICTIONARY_POPUP_HSA_ALIGNMENT.md`, MK3 gaiji image wrapper/CSS parity and Anki inline glossary media.
    - Completed on 2026-06-23: Slice 2B in `docs/DICTIONARY_POPUP_HSA_ALIGNMENT.md`, packed hoshidicts media support for lookup popup gaiji SVGs.

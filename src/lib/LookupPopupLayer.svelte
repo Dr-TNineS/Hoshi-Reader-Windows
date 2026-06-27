@@ -12,6 +12,7 @@
     AnkiStoreMediaResult,
     AnkiStoreBookCoverResult,
     AnkiStoreRemoteAudioResult,
+    AnkiStoreSasayakiAudioResult,
     DictResult,
     LookupAnkiPayload,
     WordAudioPlaybackResult,
@@ -57,7 +58,10 @@
     onStoreAnkiMedia,
     onStoreAnkiBookCover,
     onStoreAnkiWordAudio,
+    onStoreAnkiSasayakiAudio,
     onPrepareWordAudio,
+    onWordAudioPlaybackStart,
+    onWordAudioPlaybackEnd,
     onAddAnkiNote,
   }: {
     popups?: LookupPopupItem[];
@@ -76,7 +80,10 @@
     onStoreAnkiMedia: (media: AnkiDictionaryMediaRef[]) => Promise<AnkiStoreMediaResult>;
     onStoreAnkiBookCover: (bookId: string) => Promise<AnkiStoreBookCoverResult>;
     onStoreAnkiWordAudio: (request: WordAudioResolveRequest) => Promise<AnkiStoreRemoteAudioResult>;
+    onStoreAnkiSasayakiAudio: (bookId: string, cueId: string) => Promise<AnkiStoreSasayakiAudioResult>;
     onPrepareWordAudio: (request: WordAudioResolveRequest) => Promise<WordAudioPlaybackResult>;
+    onWordAudioPlaybackStart?: () => number | void;
+    onWordAudioPlaybackEnd?: (coordinationId: number | void) => void;
     onAddAnkiNote: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
   } = $props();
 
@@ -146,7 +153,10 @@
       onStoreAnkiMedia={onStoreAnkiMedia}
       onStoreAnkiBookCover={onStoreAnkiBookCover}
       onStoreAnkiWordAudio={onStoreAnkiWordAudio}
+      onStoreAnkiSasayakiAudio={onStoreAnkiSasayakiAudio}
       onPrepareWordAudio={onPrepareWordAudio}
+      onWordAudioPlaybackStart={onWordAudioPlaybackStart}
+      onWordAudioPlaybackEnd={onWordAudioPlaybackEnd}
       onAddAnkiNote={onAddAnkiNote}
     />
   </aside>

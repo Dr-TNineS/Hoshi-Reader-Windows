@@ -28,10 +28,12 @@ dist-ssr
 *.sln
 *.sw?
 
-# Local reference projects. Keep the README tracked, but keep copied
-# reference repositories out of HSW commits.
+# Reference projects. HSA and HSM are tracked as git submodules; keep any
+# other ad hoc reference checkout or local scratch directory ignored.
 reference/*
 !reference/README.md
+!reference/Hoshi-Reader-Android/
+!reference/hoshi-reader-mac/
 
 # Local third-party build outputs and temporary inputs.
 # hoshidicts itself is tracked as a git submodule at third_party/hoshidicts.

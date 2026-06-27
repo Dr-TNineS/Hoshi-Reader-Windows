@@ -1,6 +1,6 @@
 # Anki HSA / Windows Alignment
 
-Last updated: 2026-06-21
+Last updated: 2026-06-24
 
 This document evaluates how Hoshi Reader Windows (HSW) should move from the
 current disabled lookup-to-Anki payload boundary toward a Windows-native Anki
@@ -199,7 +199,10 @@ automated-validation level.
 
 Deferred items:
 
-- Sasayaki reader, cue matching, clipping, and sentence-audio export.
+- Word/Sasayaki playback-mode coordination and final runtime closure.
+  Per-book sidecar/import, cue matching, M4B/MP3/WAV playback/clipping, active
+  cue highlighting/following, lookup auto-pause, and `{sasayaki-audio}` export
+  are implemented through Slice 5M.
 
 Acceptance:
 

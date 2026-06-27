@@ -1,7 +1,8 @@
 <script lang="ts">
   import { convertFileSrc } from "@tauri-apps/api/core";
   import AnkiConnectPanel from "./AnkiConnectPanel.svelte";
-  import type { AnkiAudioSource, AnkiSettings, DictionaryManifestEntry, DictionaryStatus, LocalAudioStatus } from "./types";
+  import SasayakiBookPanel from "./SasayakiBookPanel.svelte";
+  import type { AnkiAudioSource, AnkiSettings, DictionaryManifestEntry, DictionaryStatus, LocalAudioStatus, SasayakiCueItem, SasayakiStatus } from "./types";
   import AppearancePanel from "./AppearancePanel.svelte";
   import type { ReaderAppearance, ReaderTheme } from "./appearance";
   import type { DictionarySettings } from "./dictionary-settings";
@@ -65,6 +66,18 @@
     onImportLocalAudio = () => {},
     onRemoveLocalAudio = () => {},
     onMoveLocalAudioSource = (_source: string, _direction: -1 | 1) => {},
+    sasayakiBookId = null,
+    sasayakiStatus = null,
+    sasayakiCues = [],
+    sasayakiMessage = "",
+    sasayakiError = "",
+    sasayakiBusy = false,
+    onLoadSasayaki = (_book: BookRecord) => {},
+    onImportSasayaki = (_book: BookRecord, _copyAudio: boolean) => {},
+    onRemoveSasayaki = (_book: BookRecord) => {},
+    onRematchSasayaki = (_book: BookRecord, _searchWindow: number) => {},
+    onCorrectSasayakiCue = (_book: BookRecord, _cueId: string, _chapterIndex: number, _start: number, _length: number) => {},
+    onClearSasayakiCorrection = (_book: BookRecord, _cueId: string) => {},
   }: {
     books: BookRecord[];
     error?: string;
@@ -117,12 +130,25 @@
     onImportLocalAudio?: () => void;
     onRemoveLocalAudio?: () => void;
     onMoveLocalAudioSource?: (source: string, direction: -1 | 1) => void;
+    sasayakiBookId?: string | null;
+    sasayakiStatus?: SasayakiStatus | null;
+    sasayakiCues?: SasayakiCueItem[];
+    sasayakiMessage?: string;
+    sasayakiError?: string;
+    sasayakiBusy?: boolean;
+    onLoadSasayaki?: (book: BookRecord) => void;
+    onImportSasayaki?: (book: BookRecord, copyAudio: boolean) => void;
+    onRemoveSasayaki?: (book: BookRecord) => void;
+    onRematchSasayaki?: (book: BookRecord, searchWindow: number) => void;
+    onCorrectSasayakiCue?: (book: BookRecord, cueId: string, chapterIndex: number, start: number, length: number) => void;
+    onClearSasayakiCorrection?: (book: BookRecord, cueId: string) => void;
   } = $props();
 
   type ShelfPanel = "library" | "dictionaries" | "anki" | "appearance" | "advanced" | "shortcuts";
 
   let activePanel = $state<ShelfPanel>("library");
   let failedCoverKeys = $state<Set<string>>(new Set());
+  let selectedSasayakiBook = $state<BookRecord | null>(null);
 
   const navItems: { id: ShelfPanel; label: string; detail: string; marker: string }[] = [
     { id: "library", label: "Library", detail: "Recent EPUBs", marker: "LI" },
@@ -167,6 +193,11 @@
 
   function ensurePanel(panel: ShelfPanel) {
     activePanel = panel;
+  }
+
+  function showSasayaki(book: BookRecord) {
+    selectedSasayakiBook = book;
+    onLoadSasayaki(book);
   }
 
 </script>
@@ -259,9 +290,34 @@
                   >
                     {#snippet trigger()}Forget{/snippet}
                   </ConfirmDialog>
+                  {#if book.bookId}
+                    <button
+                      class="sasayaki-trigger"
+                      aria-label={`Configure Sasayaki for ${book.title || "book"}`}
+                      onclick={() => showSasayaki(book)}
+                    >
+                      Audio
+                    </button>
+                  {/if}
                 </article>
               {/each}
             </div>
+          {/if}
+          {#if selectedSasayakiBook?.bookId}
+            <SasayakiBookPanel
+              book={selectedSasayakiBook}
+              status={sasayakiBookId === selectedSasayakiBook.bookId ? sasayakiStatus : null}
+              cues={sasayakiBookId === selectedSasayakiBook.bookId ? sasayakiCues : []}
+              message={sasayakiBookId === selectedSasayakiBook.bookId ? sasayakiMessage : ""}
+              error={sasayakiBookId === selectedSasayakiBook.bookId ? sasayakiError : ""}
+              busy={sasayakiBookId === selectedSasayakiBook.bookId && sasayakiBusy}
+              onClose={() => selectedSasayakiBook = null}
+              onImport={(copyAudio) => onImportSasayaki(selectedSasayakiBook!, copyAudio)}
+              onRemove={() => onRemoveSasayaki(selectedSasayakiBook!)}
+              onRematch={(searchWindow) => onRematchSasayaki(selectedSasayakiBook!, searchWindow)}
+              onCorrect={(cueId, chapterIndex, start, length) => onCorrectSasayakiCue(selectedSasayakiBook!, cueId, chapterIndex, start, length)}
+              onClearCorrection={(cueId) => onClearSasayakiCorrection(selectedSasayakiBook!, cueId)}
+            />
           {/if}
         </div>
       </section>
@@ -365,6 +421,10 @@
   .empty-state span { display: block; margin-top: 5px; color: var(--app-muted); font-size: 13px; line-height: 1.4; }
   .book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 184px)); gap: 22px 18px; align-items: start; padding-bottom: 24px; }
   .book-card { position: relative; min-width: 0; }
+  .sasayaki-trigger { position: absolute; top: 8px; left: 8px; min-height: 28px; padding: 5px 8px; background: color-mix(in srgb, var(--app-bg) 82%, transparent); color: var(--app-text); border: 1px solid color-mix(in srgb, var(--app-border) 80%, transparent); border-radius: 7px; cursor: pointer; font-size: 12px; opacity: 0; transition: opacity 120ms ease, background 120ms ease; }
+  .book-card:hover .sasayaki-trigger, .sasayaki-trigger:focus-visible { opacity: 1; }
+  .sasayaki-trigger:hover { background: var(--app-control-hover); }
+  .sasayaki-trigger:focus-visible { outline: var(--ui-focus-ring-width) solid var(--ui-focus-ring-color); outline-offset: var(--ui-focus-ring-offset); }
   .book-open { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 0; text-align: left; background: transparent; color: inherit; border: none; cursor: pointer; }
   .book-open:hover .book-cover { border-color: var(--app-muted); background: var(--app-surface-hover); }
   .book-cover { position: relative; width: 100%; aspect-ratio: 0.7; display: flex; align-items: center; justify-content: center; overflow: hidden; background: linear-gradient(155deg, var(--app-control), var(--app-bg)); color: var(--app-muted); border: 1px solid var(--app-border); border-radius: 8px; box-shadow: 0 8px 22px color-mix(in srgb, #000 20%, transparent); font-size: 13px; font-weight: 700; line-height: 1.2; transition: border-color 120ms ease, background 120ms ease; }
@@ -388,5 +448,6 @@
     .section-head { align-items: start; flex-direction: column; gap: 4px; }
     .book-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 14px; }
     .empty-state { grid-template-columns: 1fr; }
+    .sasayaki-trigger { opacity: 1; }
   }
 </style>
