@@ -8,7 +8,9 @@
   import { clearLookupHighlight, POPUP_LOOKUP_HIGHLIGHT, setLookupHighlightRange } from "./lookup-highlight";
   import { markLookupPerformance } from "./lookup-performance";
   import { popupSelectionPrefixRange, popupTextHitAtPoint, selectPopupTextFromHit, selectPopupTextFromPoint, type PopupTextHit, type PopupTextSelection } from "./popup-selection";
-  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, AnkiStoreBookCoverResult, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, AnkiStoreSasayakiAudioResult, DictResult, LookupAnkiPayload, ReaderSelection, WordAudioPlaybackResult, WordAudioResolveRequest } from "./types";
+  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, AnkiStoreBookCoverResult, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, AnkiStoreSasayakiAudioResult, DictResult, LookupAnkiPayload, ReaderSelection, SasayakiPlaybackCue, WordAudioPlaybackResult, WordAudioResolveRequest } from "./types";
+
+  type SasayakiPopupAction = "replayCue" | "togglePlayback" | "playForward";
 
   let {
     popupId,
@@ -43,6 +45,10 @@
     onPrepareWordAudio,
     onWordAudioPlaybackStart,
     onWordAudioPlaybackEnd,
+    sasayakiCue = null,
+    sasayakiPlaying = false,
+    sasayakiAvailable = false,
+    onSasayakiAction,
     onAddAnkiNote,
   }: {
     popupId: string;
@@ -77,6 +83,10 @@
     onPrepareWordAudio?: (request: WordAudioResolveRequest) => Promise<WordAudioPlaybackResult>;
     onWordAudioPlaybackStart?: () => number | void;
     onWordAudioPlaybackEnd?: (coordinationId: number | void) => void;
+    sasayakiCue?: SasayakiPlaybackCue | null;
+    sasayakiPlaying?: boolean;
+    sasayakiAvailable?: boolean;
+    onSasayakiAction?: (popupId: string, action: SasayakiPopupAction) => void;
     onAddAnkiNote?: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
   } = $props();
 
@@ -115,6 +125,7 @@
     harmonicFrequency: dictionarySettings.harmonicFrequency,
     deduplicatePitchAccents: dictionarySettings.deduplicatePitchAccents,
   }));
+  const canControlSasayaki = $derived(popupId === "root" && sasayakiAvailable && Boolean(sasayakiCue) && Boolean(onSasayakiAction));
 
   interface DictionaryMediaResource {
     mimeType: string;
@@ -613,6 +624,12 @@
     }
   }
 
+  function runSasayakiAction(action: SasayakiPopupAction) {
+    if (!canControlSasayaki || !onSasayakiAction) return;
+    stopWordAudio();
+    onSasayakiAction(popupId, action);
+  }
+
   $effect(() => {
     const lifecycleKey = `${popupId}:${requestId}:${selection.text}`;
     void lifecycleKey;
@@ -696,6 +713,13 @@
 >
   <div class="lookup-head">
     <span>Lookup</span>
+    {#if canControlSasayaki}
+      <div class="lookup-sasayaki-controls" aria-label="Sasayaki controls">
+        <button aria-label="Replay Sasayaki cue" title="Replay Sasayaki cue" onclick={() => runSasayakiAction("replayCue")}>↻</button>
+        <button aria-label={sasayakiPlaying ? "Pause Sasayaki" : "Play Sasayaki"} title={sasayakiPlaying ? "Pause Sasayaki" : "Play Sasayaki"} onclick={() => runSasayakiAction("togglePlayback")}>{sasayakiPlaying ? "■" : "▶"}</button>
+        <button aria-label="Play Sasayaki from this cue" title="Play Sasayaki from this cue" onclick={() => runSasayakiAction("playForward")}>▶|</button>
+      </div>
+    {/if}
     <div class="lookup-head-actions">
       <button aria-label="Back" title="Back" disabled={!canNavigateBack} onclick={() => onNavigateHistory(popupId, "back")}>&lt;</button>
       <button aria-label="Forward" title="Forward" disabled={!canNavigateForward} onclick={() => onNavigateHistory(popupId, "forward")}>&gt;</button>
@@ -880,6 +904,7 @@
   .lookup-content { display: flex; flex: 1 1 auto; flex-direction: column; gap: 8px; width: 100%; height: 100%; min-width: 0; min-height: 0; font-family: "Yu Gothic UI", "Meiryo", "Segoe UI", sans-serif; }
   .lookup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--app-muted, #999999); font-size: 11px; text-transform: uppercase; }
   .lookup-head-actions { display: flex; align-items: center; gap: 4px; }
+  .lookup-sasayaki-controls { display: flex; flex: 1 1 auto; justify-content: center; gap: 4px; min-width: 0; }
   .lookup-head button { flex-shrink: 0; min-width: 24px; padding: 3px 7px; background: var(--app-control, #1b1b1b); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 3px; cursor: pointer; font-size: 11px; text-transform: none; }
   .lookup-head button:disabled { color: var(--app-muted, #999999); cursor: not-allowed; opacity: 0.62; }
   .lookup-state-block { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }

@@ -1514,7 +1514,23 @@
     return Array.from(results[0]?.matched ?? "").length;
   }
 
+  function sasayakiCueForSelection(selection: ReaderSelection): SasayakiPlaybackCue | null {
+    const session = sasayakiPlayback;
+    if (!session?.configured || !session.audioAvailable) return null;
+    const offset = selection.chapterOffset;
+    if (typeof offset === "number") {
+      const cue = session.cues.find((item) => (
+        item.chapterIndex === selection.chapterIndex
+        && offset >= item.start
+        && offset < item.start + Math.max(1, item.length)
+      ));
+      if (cue) return cue;
+    }
+    return sasayakiActiveCue?.chapterIndex === selection.chapterIndex ? sasayakiActiveCue : null;
+  }
+
   function buildAnkiPayload(selection: ReaderSelection, result: DictResult, resultIndex: number): LookupAnkiPayload {
+    const selectionCue = sasayakiCueForSelection(selection);
     return {
       selectedText: selection.text,
       sentence: selection.sentence ?? selection.text,
@@ -1531,9 +1547,7 @@
       pitches: result.pitches,
       media: extractDictionaryMediaReferences(result.glossary),
       audioFilename: null,
-      sasayakiCueId: sasayakiActiveCue?.chapterIndex === selection.chapterIndex
-        ? sasayakiActiveCue.id
-        : null,
+      sasayakiCueId: selectionCue?.id ?? null,
       sasayakiAudioFilename: null,
       coverFilename: null,
       sourceBook: {
@@ -1813,6 +1827,7 @@
       historyForward: [],
       restoreScrollTop: 0,
       restoreScrollSignal: 0,
+      sasayakiCue: id === "root" ? sasayakiCueForSelection(selection) : null,
     };
   }
 
@@ -1848,6 +1863,7 @@
         selectionHighlightCount: 0,
         selectionHighlightSignal: popup.selectionHighlightSignal + 1,
         clearSelectionSignal: popup.clearSelectionSignal + 1,
+        sasayakiCue: popup.id === "root" ? sasayakiCueForSelection(popup.selection) : null,
       };
     });
     lookupPopups = reloaded;
@@ -1869,6 +1885,57 @@
     readerLookupHighlightSignal += 1;
     lookupPopups = [createLookupPopup("root", selection, requestId)];
     void lookupSelection("root", selection, requestId, null, true);
+  }
+
+  async function playSasayakiCue(cue: SasayakiPlaybackCue, stop: boolean) {
+    replaceWordAudioCoordination();
+    sasayakiPausedByLookup = false;
+    if (sasayakiLookupResumeTimer) {
+      clearTimeout(sasayakiLookupResumeTimer);
+      sasayakiLookupResumeTimer = null;
+    }
+    seekSasayaki(cue.startTime + (sasayakiPlayback?.delay ?? 0), true);
+    const audio = await ensureSasayakiAudio();
+    if (!audio) return;
+    let cleanupReplayStop = () => {};
+    if (stop) {
+      const endTime = Math.max(cue.startTime, cue.endTime) + (sasayakiPlayback?.delay ?? 0);
+      const cleanupStopAtEnd = () => {
+        audio.removeEventListener("timeupdate", stopAtEnd);
+        audio.removeEventListener("pause", cleanupStopAtEnd);
+        audio.removeEventListener("ended", cleanupStopAtEnd);
+      };
+      cleanupReplayStop = cleanupStopAtEnd;
+      const stopAtEnd = () => {
+        if (audio.currentTime < endTime) return;
+        cleanupStopAtEnd();
+        audio.pause();
+      };
+      audio.addEventListener("timeupdate", stopAtEnd);
+      audio.addEventListener("pause", cleanupStopAtEnd);
+      audio.addEventListener("ended", cleanupStopAtEnd);
+    }
+    sasayakiPlaybackError = "";
+    try {
+      await audio.play();
+    } catch (e) {
+      cleanupReplayStop();
+      sasayakiPlaybackError = String(e);
+    }
+  }
+
+  function handlePopupSasayakiAction(popupId: string, action: "replayCue" | "togglePlayback" | "playForward") {
+    const popup = lookupPopups.find((item) => item.id === popupId);
+    const cue = popup?.sasayakiCue ?? null;
+    if (!sasayakiPlayback?.configured || !sasayakiPlayback.audioAvailable) return;
+    if (action === "togglePlayback") {
+      sasayakiPausedByLookup = false;
+      void toggleSasayakiPlayback();
+      return;
+    }
+    if (!cue) return;
+    void playSasayakiCue(cue, action === "replayCue");
+    if (action === "playForward") closeReaderSelection();
   }
 
   function openChildLookup(parentId: string, selection: ReaderSelection) {
@@ -2207,6 +2274,9 @@
       onPrepareWordAudio={prepareWordAudio}
       onWordAudioPlaybackStart={beginCoordinatedWordAudioPlayback}
       onWordAudioPlaybackEnd={restoreWordAudioCoordination}
+      sasayakiPlaying={sasayakiPlaying}
+      sasayakiAvailable={Boolean(sasayakiPlayback?.configured && sasayakiPlayback.audioAvailable)}
+      onSasayakiAction={handlePopupSasayakiAction}
       onAddAnkiNote={addAnkiNote}
     />
     {#if showToc}

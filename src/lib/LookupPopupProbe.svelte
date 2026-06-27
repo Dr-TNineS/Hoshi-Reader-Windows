@@ -5,7 +5,9 @@
   import type { LookupState } from "./lookup-popup";
   import { lookupPopupStyle } from "./lookup-popup-position";
   import { normalizeLookupPopupSettings } from "./lookup-popup-settings";
-  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiNoteRequest, AnkiRemoteAudioRequest, AnkiSettings, AnkiStoreBookCoverResult, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, AnkiStoreSasayakiAudioResult, DictResult, LocalAudioStoreRequest, LocalAudioStoreResult, LookupAnkiPayload, ReaderSelection, WordAudioPlaybackResult, WordAudioResolveRequest } from "./types";
+  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiNoteRequest, AnkiRemoteAudioRequest, AnkiSettings, AnkiStoreBookCoverResult, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, AnkiStoreSasayakiAudioResult, DictResult, LocalAudioStoreRequest, LocalAudioStoreResult, LookupAnkiPayload, ReaderSelection, SasayakiPlaybackCue, WordAudioPlaybackResult, WordAudioResolveRequest } from "./types";
+
+  type SasayakiPopupAction = "replayCue" | "togglePlayback" | "playForward";
 
   const params = new URLSearchParams(window.location.search);
   const allowedStates: LookupState[] = ["loading", "noDictionaries", "engineUnavailable", "empty", "error", "ready"];
@@ -23,6 +25,8 @@
   const audioFieldEnabled = params.get("audioField") !== "disabled";
   const coverFieldEnabled = params.get("coverField") !== "disabled";
   const sasayakiFieldEnabled = params.get("sasayakiField") === "enabled";
+  const sasayakiControlsEnabled = params.get("sasayakiControls") === "enabled";
+  const sasayakiPlayingInitial = params.get("sasayakiPlaying") === "enabled";
   const sasayakiStoreMode = params.get("sasayakiStoreMode") ?? "success";
   const noSasayakiCue = params.has("noSasayakiCue");
   const noBookId = params.has("noBookId");
@@ -51,8 +55,18 @@
     text: "school",
     sentence: "The academy school sentence contains the selected lookup term in a longer source paragraph.",
     sentenceOffset: "The academy ".length,
+    chapterOffset: 16,
     chapterIndex: 0,
     rect: { x: 460, y: bottomEdge ? Math.max(120, window.innerHeight - 118) : 180, width: 36, height: 120 },
+  };
+
+  const probeSasayakiCue: SasayakiPlaybackCue = {
+    id: "cue-42",
+    startTime: 12,
+    endTime: 16,
+    chapterIndex: 0,
+    start: 10,
+    length: 24,
   };
 
   const glossaryText = longResult
@@ -220,6 +234,7 @@
     historyForward: Array<{ selection: ReaderSelection; scrollTop: number }>;
     restoreScrollTop: number;
     restoreScrollSignal: number;
+    sasayakiCue?: SasayakiPlaybackCue | null;
   }
 
   let popups: ProbePopup[] = $state([{
@@ -234,6 +249,7 @@
     historyForward: [],
     restoreScrollTop: 0,
     restoreScrollSignal: 0,
+    sasayakiCue: sasayakiControlsEnabled && !noSasayakiCue ? probeSasayakiCue : null,
   }]);
   let importClicks = $state(0);
   let closeClicks = $state(0);
@@ -248,6 +264,8 @@
   let sasayakiStoreRequests = $state<Array<{ bookId: string; cueId: string }>>([]);
   let operationEvents = $state<string[]>([]);
   let wordAudioPrepareRequests = $state<WordAudioResolveRequest[]>([]);
+  let sasayakiActions = $state<Array<{ popupId: string; action: SasayakiPopupAction }>>([]);
+  let sasayakiPlaying = $state(sasayakiPlayingInitial);
 
   function readerBottomBoundary(): number {
     const controls = document.querySelector<HTMLElement>(".probe-ctrls");
@@ -312,6 +330,7 @@
         historyForward: [],
         restoreScrollTop: 0,
         restoreScrollSignal: 0,
+        sasayakiCue: null,
       },
     ];
     window.setTimeout(() => {
@@ -550,6 +569,11 @@
     };
   }
 
+  function handleSasayakiAction(popupId: string, action: SasayakiPopupAction) {
+    sasayakiActions = [...sasayakiActions, { popupId, action }];
+    if (action === "togglePlayback") sasayakiPlaying = !sasayakiPlaying;
+  }
+
   async function loadDictionaryStyles(dictionary: string) {
     if (dictionary !== "Jitendex.org [probe]") return { source: dictionary, css: "" };
     return {
@@ -620,6 +644,10 @@
         onStoreAnkiWordAudio={storeAnkiWordAudio}
         onStoreAnkiSasayakiAudio={storeAnkiSasayakiAudio}
         onPrepareWordAudio={prepareWordAudio}
+        sasayakiCue={popup.sasayakiCue ?? null}
+        {sasayakiPlaying}
+        sasayakiAvailable={sasayakiControlsEnabled}
+        onSasayakiAction={handleSasayakiAction}
         onAddAnkiNote={addAnkiNote}
       />
     </aside>
@@ -652,6 +680,9 @@
     data-operation-events={operationEvents.join(",")}
     data-word-audio-prepare-count={wordAudioPrepareRequests.length}
     data-word-audio-last-request={JSON.stringify(wordAudioPrepareRequests[wordAudioPrepareRequests.length - 1] ?? null)}
+    data-sasayaki-action-count={sasayakiActions.length}
+    data-sasayaki-last-action={JSON.stringify(sasayakiActions[sasayakiActions.length - 1] ?? null)}
+    data-sasayaki-playing={sasayakiPlaying}
     data-dictionary-settings={JSON.stringify(dictionarySettings)}
     data-state={lookupState}
     aria-hidden="true"

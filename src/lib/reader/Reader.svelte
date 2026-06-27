@@ -572,6 +572,20 @@
     lastAppliedLookupHighlightCount = characterCount;
   }
 
+  function chapterOffsetForRange(range: Range): number | undefined {
+    if (!contentEl) return undefined;
+    const prefixRange = document.createRange();
+    try {
+      prefixRange.selectNodeContents(contentEl);
+      prefixRange.setEnd(range.startContainer, range.startOffset);
+      return Array.from(prefixRange.toString()).length;
+    } catch {
+      return undefined;
+    } finally {
+      prefixRange.detach();
+    }
+  }
+
   function clearSasayakiHighlight() {
     clearLookupHighlight(READER_SASAYAKI_HIGHLIGHT);
     sasayakiHighlightRects = [];
@@ -669,7 +683,8 @@
 
     const anchorRect = hit.rect;
     const context = sentenceContext(root, visibleRange);
-    const selection = { text, ...context, rect, anchorRect, chapterIndex };
+    const chapterOffset = chapterOffsetForRange(visibleRange);
+    const selection = { text, ...context, ...(chapterOffset !== undefined ? { chapterOffset } : {}), rect, anchorRect, chapterIndex };
     hasActiveSelection = true;
     onSelectionChange(selection);
     return selection;

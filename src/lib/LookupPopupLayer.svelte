@@ -18,7 +18,10 @@
     WordAudioPlaybackResult,
     WordAudioResolveRequest,
     ReaderSelection,
+    SasayakiPlaybackCue,
   } from "./types";
+
+  type SasayakiPopupAction = "replayCue" | "togglePlayback" | "playForward";
 
   type LookupPopupHistoryEntry = {
     selection: ReaderSelection;
@@ -39,6 +42,7 @@
     historyForward: LookupPopupHistoryEntry[];
     restoreScrollTop: number;
     restoreScrollSignal: number;
+    sasayakiCue?: SasayakiPlaybackCue | null;
   };
 
   let {
@@ -62,6 +66,9 @@
     onPrepareWordAudio,
     onWordAudioPlaybackStart,
     onWordAudioPlaybackEnd,
+    sasayakiPlaying = false,
+    sasayakiAvailable = false,
+    onSasayakiAction,
     onAddAnkiNote,
   }: {
     popups?: LookupPopupItem[];
@@ -84,6 +91,9 @@
     onPrepareWordAudio: (request: WordAudioResolveRequest) => Promise<WordAudioPlaybackResult>;
     onWordAudioPlaybackStart?: () => number | void;
     onWordAudioPlaybackEnd?: (coordinationId: number | void) => void;
+    sasayakiPlaying?: boolean;
+    sasayakiAvailable?: boolean;
+    onSasayakiAction?: (popupId: string, action: SasayakiPopupAction) => void;
     onAddAnkiNote: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
   } = $props();
 
@@ -157,6 +167,10 @@
       onPrepareWordAudio={onPrepareWordAudio}
       onWordAudioPlaybackStart={onWordAudioPlaybackStart}
       onWordAudioPlaybackEnd={onWordAudioPlaybackEnd}
+      sasayakiCue={popup.sasayakiCue ?? null}
+      {sasayakiPlaying}
+      {sasayakiAvailable}
+      onSasayakiAction={onSasayakiAction}
       onAddAnkiNote={onAddAnkiNote}
     />
   </aside>
