@@ -403,7 +403,9 @@ persist in the versioned per-book sidecar with legacy defaults.
 
 Key changes:
 
-- Highlight the active cue without introducing reflow.
+- Highlight the active cue without introducing reflow. As of the 2026-06-27
+  repaint-freeze fix, Sasayaki cue presentation uses reader-owned overlay
+  rectangles instead of the CSS Custom Highlight API.
 - Support automatic page/chapter navigation, auto-scroll, and auto-pause.
 - Add skip behavior and light/dark cue colors.
 - Revalidate normal pages, final pages, image pages, chapter boundaries, and
@@ -418,6 +420,9 @@ Validation:
 - Automated Chromium checks cover no-reflow highlighting, aligned-page reveal,
   cross-chapter navigation requests, Auto-Pause resume, cue/fixed-seconds
   skipping, light/dark colors, and 520px overflow.
+- Follow-up validation now asserts the Sasayaki cue does not populate
+  `CSS.highlights`; the cue is rendered through the overlay layer while lookup
+  highlighting keeps its existing boundary.
 - Manual Tauri vertical-pagination/audio-output validation remains
   `not verified` because desktop window control was unavailable in this
   session.
@@ -513,7 +518,7 @@ until its acceptance and validation entries are satisfied and recorded.
 | 5I | Completed (2026-06-24) | Per-book sidecar/import/status/removal only; no matching or playback | 5I-0 verifies MP3 and WAV minimum | Staged atomic audio/SRT import by `bookId`; external/copy modes persist; failure preserves old data; external originals are never deleted | Passed: 119 Rust tests plus 2 ignored, Rust check, frontend check/build, bookshelf status/import/removal probe, wide/520px visual and focus checks, portable package build and launch smoke; real audiobook/SRT import `not verified` |
 | 5J | Completed (2026-06-24) | Cue parsing, matching, inspection, rematch and correction; no playback | 5I sidecar and SRT storage | Stable cue ids and chapter/offset/length matches persist; unmatched state and corrections survive; ruby/punctuation/repetition/boundaries pass fixtures | Passed: strict parser and matcher/correction Rust fixtures, 123 Rust tests plus 2 ignored, Rust check, frontend check/build, bookshelf matching/correction probe, wide/520px visual and overflow checks; real EPUB/audiobook/SRT characterization `not verified` |
 | 5K | Completed (2026-06-24) | Sasayaki player lifecycle and controls; highlighting/following deferred | 5J stable cues | Playback/navigation/rate/delay work and restore; missing external audio relinks; lifecycle does not leak players | Passed: playback restore/value/relink Rust fixtures, 125 Rust tests plus 2 ignored, Rust check, frontend check/build, dedicated playback probe, reader visual and TOC probes, wide/520px overflow checks; a real backend M4B fixture is now available, but actual Tauri/WebView audio output remains `not verified` |
-| 5L | Completed (2026-06-25) | Cue presentation and reader coordination without replacing pagination | 5K playback events and 5J ranges | CSS Highlight causes no reflow; active cues follow aligned pages/chapters; lookup auto-pause resumes only lookup-paused playback; skip/settings persist | Passed: 127 Rust tests plus 3 ignored, Rust check, frontend check/build, playback/reader visual/TOC probes, real EPUB/M4B/SRT backend pipeline; manual Tauri audio/visual check `not verified` |
+| 5L | Completed (2026-06-25) | Cue presentation and reader coordination without replacing pagination | 5K playback events and 5J ranges | Sasayaki cue overlay causes no reflow; active cues follow aligned pages/chapters; lookup auto-pause resumes only lookup-paused playback; skip/settings persist | Passed: 127 Rust tests plus 3 ignored, Rust check, frontend check/build, playback/reader visual/TOC probes, real EPUB/M4B/SRT backend pipeline; 2026-06-27 overlay regression probe verifies no Sasayaki CSS Highlight; manual Tauri audio/visual check `not verified` |
 | 5M | Completed (2026-06-25) | `{sasayaki-audio}` accepts `bookId + cueId`; Rust owns path/range; no arbitrary frontend time/path | 5I-0 clipping plus stable 5J-L cues | Deterministic WAV sound tag; ordinary no-cue/decode failures warn and create text cards; tampering/escape/range/oversize blocks; ordering is covered | Passed: 130 Rust tests plus 3 ignored, Rust check, frontend check/build, panel/popup probes, real M4B cue clipping; real Anki playback `not verified` |
 | 5N | Current | Coordinate HSW-owned word and Sasayaki audio only; no Windows-wide focus | 5H word playback and 5K-L Sasayaki playback | Interrupt/Duck/Mix restore exact prior state; autoplay shares coordinator; rapid actions/failures/manual pause/navigation/shutdown are correct | Coordinator state-machine tests, rapid-action probes, manual Tauri playback for all modes |
 | 5O | Pending | Runtime evidence and parity closure only; missing fixtures remain visible | 5F-5N committed at automated level | Full real pipeline order passes where fixtures exist; HSA defaults/states/failures have explicit parity results; gaps say `not verified` | All common checks, real Anki add/media/sync, real HSA DB/remote audio, packaged playback, Sasayaki end-to-end, `npm run package` |

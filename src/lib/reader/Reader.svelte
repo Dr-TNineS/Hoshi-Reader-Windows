@@ -1,4 +1,5 @@
 ﻿<script lang="ts">
+  import { untrack } from "svelte";
   import { countChars, createWalker, getTotalChars, rawOffsetForReaderChars, readerRangeForOffsets, textEndOffsets } from "../reader";
   import type { ReaderAppearancePalette } from "../appearance";
   import {
@@ -63,6 +64,8 @@
   let layoutRun = 0;
   let resizeRun = 0;
   let contentMaxScroll = 0;
+  let sasayakiHighlightRects = $state<{ left: number; top: number; width: number; height: number }[]>([]);
+  let sasayakiHighlightText = $state("");
 
   let styleVars = $derived(`--page-width:${pageWidth}px;--page-height:${pageHeight}px`);
   let themeVars = $derived(appearancePalette
@@ -569,6 +572,27 @@
     lastAppliedLookupHighlightCount = characterCount;
   }
 
+  function clearSasayakiHighlight() {
+    clearLookupHighlight(READER_SASAYAKI_HIGHLIGHT);
+    sasayakiHighlightRects = [];
+    sasayakiHighlightText = "";
+  }
+
+  function sasayakiOverlayRectsFor(range: Range): { left: number; top: number; width: number; height: number }[] {
+    if (!containerEl) return [];
+
+    const viewportRect = containerEl.getBoundingClientRect();
+    const scrollTop = logicalScrollPos();
+    return Array.from(range.getClientRects())
+      .filter((rect) => rect.width > 0 && rect.height > 0)
+      .map((rect) => ({
+        left: rect.left - viewportRect.left,
+        top: rect.top - viewportRect.top + scrollTop,
+        width: rect.width,
+        height: rect.height,
+      }));
+  }
+
   function selectTextFromPoint(
     x: number,
     y: number,
@@ -788,18 +812,18 @@
   }
 
   function applySasayakiCue() {
-    clearLookupHighlight(READER_SASAYAKI_HIGHLIGHT);
+    clearSasayakiHighlight();
     if (!layoutReady || !contentEl || !sasayakiCue || sasayakiCue.chapterIndex !== chapterIndex) return;
 
     const range = readerRangeForOffsets(contentEl, sasayakiCue.start, sasayakiCue.length);
     if (!range) return;
-    setLookupHighlightRange(READER_SASAYAKI_HIGHLIGHT, range);
+    const rects = sasayakiOverlayRectsFor(range);
+    sasayakiHighlightRects = rects;
+    sasayakiHighlightText = range.toString().replace(/\s+/g, " ").trim();
 
     if (sasayakiReveal && containerEl) {
-      const rects = Array.from(range.getClientRects()).filter((rect) => rect.width > 0 && rect.height > 0);
       if (rects.length > 0) {
-        const viewportTop = containerEl.getBoundingClientRect().top;
-        const logicalTop = Math.min(...rects.map((rect) => rect.top)) - viewportTop + logicalScrollPos();
+        const logicalTop = Math.min(...rects.map((rect) => rect.top));
         goPage(Math.floor(Math.max(0, logicalTop + PAGE_EPSILON) / pageSize()));
       }
     }
@@ -838,6 +862,7 @@
     if (run !== resizeRun || activeRun !== layoutRun || !containerEl) return;
     initializing = false;
     logReaderGeometry("resize-realign");
+    applySasayakiCue();
     scheduleProgressEmit();
   }
 
@@ -984,7 +1009,7 @@
       initializing = true;
       scrollTailTop = 0;
       clearSelection();
-      clearLookupHighlight(READER_SASAYAKI_HIGHLIGHT);
+      clearSasayakiHighlight();
       lastPointer = null;
       resetShiftHoverState();
       layoutRun += 1;
@@ -1001,10 +1026,10 @@
     sasayakiCue;
     sasayakiReveal;
     layoutReady;
-    applySasayakiCue();
+    untrack(() => applySasayakiCue());
   });
 
-  $effect(() => () => clearLookupHighlight(READER_SASAYAKI_HIGHLIGHT));
+  $effect(() => () => clearSasayakiHighlight());
 
   $effect(() => {
     const el = containerEl;
@@ -1093,6 +1118,16 @@
     {#if scrollTailTop > 0}
       <div class="scroll-tail" style={`top:${scrollTailTop}px`} aria-hidden="true"></div>
     {/if}
+    {#if sasayakiHighlightRects.length > 0}
+      <div class="sasayaki-highlight-layer" data-highlight-text={sasayakiHighlightText} aria-hidden="true">
+        {#each sasayakiHighlightRects as rect}
+          <span
+            class="sasayaki-highlight-rect"
+            style={`left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px`}
+          ></span>
+        {/each}
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -1139,6 +1174,22 @@
     height: 1px;
     margin: 0;
     padding: 0;
+    pointer-events: none;
+  }
+
+  .sasayaki-highlight-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .sasayaki-highlight-rect {
+    position: absolute;
+    display: block;
+    border-radius: 2px;
+    background: var(--sasayaki-highlight-background, rgba(135, 206, 235, 0.4));
     pointer-events: none;
   }
 

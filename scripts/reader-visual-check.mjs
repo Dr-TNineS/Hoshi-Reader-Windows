@@ -234,16 +234,20 @@ async function probeRenderedHighlightText(page) {
 
 async function sasayakiHighlightState(page) {
   return page.evaluate(() => {
-    const highlight = CSS.highlights?.get("hsw-reader-sasayaki-cue");
-    const ranges = highlight ? Array.from(highlight) : [];
+    const cssHighlightSize = CSS.highlights?.get("hsw-reader-sasayaki-cue")?.size ?? 0;
     const reader = document.querySelector(".rc");
     const viewport = document.querySelector(".rv");
+    const layer = document.querySelector(".sasayaki-highlight-layer");
+    const rects = Array.from(document.querySelectorAll(".sasayaki-highlight-rect"));
+    const firstRect = rects[0];
     return {
-      text: ranges.map((range) => range.toString()).join("").replace(/\s+/g, " ").trim(),
+      text: layer instanceof HTMLElement ? layer.dataset.highlightText ?? "" : "",
+      rectCount: rects.length,
+      cssHighlightSize,
       scrollTop: viewport instanceof HTMLElement ? viewport.scrollTop : -1,
       pageSize: viewport instanceof HTMLElement ? viewport.clientHeight : 0,
       textColor: reader ? getComputedStyle(reader).getPropertyValue("--sasayaki-highlight-text").trim() : "",
-      backgroundColor: reader ? getComputedStyle(reader).getPropertyValue("--sasayaki-highlight-background").trim() : "",
+      backgroundColor: firstRect ? getComputedStyle(firstRect).backgroundColor : "",
     };
   });
 }
@@ -731,9 +735,13 @@ async function main() {
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto(`${url}&sasayakiMode=highlight&theme=light`);
     await page.locator(".rv.ready").waitFor({ timeout: 10000 });
-    await page.waitForFunction(() => (CSS.highlights?.get("hsw-reader-sasayaki-cue")?.size ?? 0) > 0);
+    await page.waitForFunction(() => document.querySelectorAll(".sasayaki-highlight-rect").length > 0);
     const lightCue = await sasayakiHighlightState(page);
-    assert(lightCue.text.length > 0 && lightCue.scrollTop === 0, "A current-chapter cue should highlight without moving the page when reveal is disabled.", lightCue);
+    assert(
+      lightCue.text.length > 0 && lightCue.rectCount > 0 && lightCue.cssHighlightSize === 0 && lightCue.scrollTop === 0,
+      "A current-chapter cue should render an overlay highlight without CSS Highlight or page movement when reveal is disabled.",
+      lightCue,
+    );
     const highlightedMetrics = await readerMetrics(page);
     assert(
       highlightedMetrics.totalPages === desktop.totalPages,
@@ -751,11 +759,14 @@ async function main() {
     await page.waitForFunction(() => {
       const viewport = document.querySelector(".rv");
       return viewport instanceof HTMLElement && viewport.scrollTop > 0 &&
-        (CSS.highlights?.get("hsw-reader-sasayaki-cue")?.size ?? 0) > 0;
+        document.querySelectorAll(".sasayaki-highlight-rect").length > 0;
     });
     const darkCue = await sasayakiHighlightState(page);
     assert(
-      darkCue.scrollTop > 0 && Math.abs(darkCue.scrollTop - Math.round(darkCue.scrollTop / darkCue.pageSize) * darkCue.pageSize) <= 1,
+      darkCue.cssHighlightSize === 0 &&
+        darkCue.rectCount > 0 &&
+        darkCue.scrollTop > 0 &&
+        Math.abs(darkCue.scrollTop - Math.round(darkCue.scrollTop / darkCue.pageSize) * darkCue.pageSize) <= 1,
       "Revealing an active cue should move only to an aligned reader page.",
       darkCue,
     );
