@@ -143,6 +143,7 @@
   let sasayakiPendingCueForceReveal = false;
   let sasayakiSuppressNextPlayReveal = false;
   let sasayakiReplayCleanup: (() => void) | null = null;
+  let sasayakiPreserveLookupNavigation = false;
   let wordAudioCoordinationRun = 0;
   let wordAudioCoordination: WordAudioCoordinationState | null = null;
   let bookImportBusy = $state(false);
@@ -827,16 +828,21 @@
 
     if (!cue || chapterToLoad === null) return;
     const run = ++sasayakiCueNavigationRun;
+    const preserveLookup = lookupPopups.length > 0;
     startAtEnd = false;
-    closeReaderSelection();
+    if (preserveLookup) sasayakiPreserveLookupNavigation = true;
+    else closeReaderSelection();
     recordSasayakiDiagnostic("chapter-load", { target: chapterToLoad });
     void loadChapter(
       chapterToLoad,
       0,
       () => run === sasayakiCueNavigationRun && sasayakiActiveCue?.id === cue.id,
+      { preserveLookup },
     ).then(() => {
       if (run !== sasayakiCueNavigationRun || sasayakiActiveCue?.id !== cue.id) return;
       sasayakiCueSignal += 1;
+    }).finally(() => {
+      if (run === sasayakiCueNavigationRun) sasayakiPreserveLookupNavigation = false;
     });
   }
 
@@ -1121,11 +1127,12 @@
     idx: number,
     chapterProgress = 0,
     shouldCommit: () => boolean = () => true,
+    options: { preserveLookup?: boolean } = {},
   ) {
     if (!meta || !isTauriRuntime()) return;
 
     try {
-      closeReaderSelection();
+      if (!options.preserveLookup) closeReaderSelection();
       const safeIndex = clampChapter(idx, meta.spine.length);
       readerInitialProgress = clampUnit(chapterProgress);
       currentReaderProgress = null;
@@ -1470,6 +1477,7 @@
   }
 
   function closeReaderSelection() {
+    sasayakiPreserveLookupNavigation = false;
     const shouldResumeSasayaki = sasayakiPausedByLookup;
     window.getSelection()?.removeAllRanges();
     clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
@@ -2011,6 +2019,7 @@
 
   function handleReaderSelection(selection: ReaderSelection | null) {
     if (!selection) {
+      if (sasayakiPreserveLookupNavigation && lookupPopups.length > 0) return;
       closeReaderSelection();
       return;
     }
