@@ -141,6 +141,8 @@
   let sasayakiLastTimeCommitAt = 0;
   let sasayakiCueSyncTimer: ReturnType<typeof setTimeout> | null = null;
   let sasayakiPendingCueForceReveal = false;
+  let sasayakiSuppressNextPlayReveal = false;
+  let sasayakiReplayCleanup: (() => void) | null = null;
   let wordAudioCoordinationRun = 0;
   let wordAudioCoordination: WordAudioCoordinationState | null = null;
   let bookImportBusy = $state(false);
@@ -761,9 +763,15 @@
     sasayakiPendingCueForceReveal = false;
   }
 
+  function clearSasayakiReplayCleanup() {
+    sasayakiReplayCleanup?.();
+    sasayakiReplayCleanup = null;
+  }
+
   function teardownSasayakiAudio() {
     replaceWordAudioCoordination();
     clearSasayakiCueTimer();
+    clearSasayakiReplayCleanup();
     if (sasayakiAudio) {
       sasayakiSuppressPauseSave = true;
       sasayakiAudio.pause();
@@ -872,13 +880,16 @@
 
   function handleSasayakiTimeUpdate() {
     commitSasayakiAudioTime(false);
+    if (sasayakiReplayCleanup) return;
     if (Date.now() - sasayakiLastSavedAt >= 5000) scheduleSasayakiPlaybackSave();
   }
 
   function handleSasayakiPlay() {
     sasayakiPlaying = true;
     sasayakiHasPlayedOnce = true;
-    commitSasayakiAudioTime(true, true);
+    const revealCue = !sasayakiSuppressNextPlayReveal;
+    sasayakiSuppressNextPlayReveal = false;
+    commitSasayakiAudioTime(revealCue, true);
     recordSasayakiDiagnostic("play");
   }
 
@@ -996,14 +1007,14 @@
     }
   }
 
-  function seekSasayaki(seconds: number, revealCue = true) {
+  function seekSasayaki(seconds: number, revealCue = true, savePosition = true) {
     const target = clampPlaybackTime(seconds, sasayakiDuration);
     const audio = sasayakiAudio;
     if (audio) audio.currentTime = target;
     sasayakiCurrentTime = target;
     sasayakiLastTimeCommitAt = performance.now();
     scheduleSasayakiCuePresentation(revealCue, true);
-    scheduleSasayakiPlaybackSave(true);
+    if (savePosition) scheduleSasayakiPlaybackSave(true);
     recordSasayakiDiagnostic("seek", { target });
   }
 
@@ -1889,31 +1900,52 @@
 
   async function playSasayakiCue(cue: SasayakiPlaybackCue, stop: boolean) {
     replaceWordAudioCoordination();
-    sasayakiPausedByLookup = false;
+    if (!stop) sasayakiPausedByLookup = false;
     if (sasayakiLookupResumeTimer) {
       clearTimeout(sasayakiLookupResumeTimer);
       sasayakiLookupResumeTimer = null;
     }
-    seekSasayaki(cue.startTime + (sasayakiPlayback?.delay ?? 0), true);
+    clearSasayakiReplayCleanup();
+    const returnTime = clampPlaybackTime(sasayakiAudio?.currentTime ?? sasayakiCurrentTime, sasayakiDuration);
+    sasayakiSuppressNextPlayReveal = true;
+    seekSasayaki(cue.startTime + (sasayakiPlayback?.delay ?? 0), false, !stop);
     const audio = await ensureSasayakiAudio();
     if (!audio) return;
     let cleanupReplayStop = () => {};
     if (stop) {
       const endTime = Math.max(cue.startTime, cue.endTime) + (sasayakiPlayback?.delay ?? 0);
+      let restored = false;
+      const restoreReplayPosition = () => {
+        if (restored) return;
+        restored = true;
+        audio.currentTime = returnTime;
+        sasayakiCurrentTime = returnTime;
+        sasayakiLastTimeCommitAt = performance.now();
+        scheduleSasayakiCuePresentation(false, true);
+      };
       const cleanupStopAtEnd = () => {
         audio.removeEventListener("timeupdate", stopAtEnd);
-        audio.removeEventListener("pause", cleanupStopAtEnd);
-        audio.removeEventListener("ended", cleanupStopAtEnd);
+        audio.removeEventListener("pause", restoreOnReplayEnd);
+        audio.removeEventListener("ended", restoreOnReplayEnd);
+        if (sasayakiReplayCleanup === cleanupStopAtEnd) sasayakiReplayCleanup = null;
+      };
+      const restoreOnReplayEnd = () => {
+        cleanupStopAtEnd();
+        restoreReplayPosition();
       };
       cleanupReplayStop = cleanupStopAtEnd;
       const stopAtEnd = () => {
         if (audio.currentTime < endTime) return;
         cleanupStopAtEnd();
+        restoreReplayPosition();
+        sasayakiSuppressPauseSave = true;
         audio.pause();
+        sasayakiSuppressPauseSave = false;
       };
       audio.addEventListener("timeupdate", stopAtEnd);
-      audio.addEventListener("pause", cleanupStopAtEnd);
-      audio.addEventListener("ended", cleanupStopAtEnd);
+      audio.addEventListener("pause", restoreOnReplayEnd);
+      audio.addEventListener("ended", restoreOnReplayEnd);
+      sasayakiReplayCleanup = cleanupStopAtEnd;
     }
     sasayakiPlaybackError = "";
     try {
@@ -1929,7 +1961,11 @@
     const cue = popup?.sasayakiCue ?? null;
     if (!sasayakiPlayback?.configured || !sasayakiPlayback.audioAvailable) return;
     if (action === "togglePlayback") {
-      sasayakiPausedByLookup = false;
+      if (sasayakiPausedByLookup) {
+        sasayakiPausedByLookup = false;
+        return;
+      }
+      sasayakiSuppressNextPlayReveal = true;
       void toggleSasayakiPlayback();
       return;
     }
