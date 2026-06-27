@@ -25,6 +25,7 @@
     shouldAutoPauseSasayaki,
     shouldCommitPlaybackTime,
   } from "./lib/sasayaki-playback";
+  import { sasayakiShortcutAction } from "./lib/sasayaki-shortcuts";
   import { createSettingsState } from "./lib/state/settings.svelte";
   import {
     beginWordAudioCoordination,
@@ -1032,6 +1033,19 @@
       direction,
     );
     if (target !== null) seekSasayaki(target, true);
+  }
+
+  function handleSasayakiShortcut(event: KeyboardEvent) {
+    if (view !== "reader" || !sasayakiPlayback?.configured || !sasayakiPlayback.audioAvailable) return;
+    const action = sasayakiShortcutAction(event);
+    if (!action) return;
+
+    event.preventDefault();
+    if (action === "togglePlayback") {
+      void toggleSasayakiPlayback();
+    } else {
+      applySasayakiSkip(action === "previous" ? -1 : 1);
+    }
   }
 
   function setSasayakiRate(rate: number) {
@@ -2194,6 +2208,8 @@
   }
 
 </script>
+
+<svelte:window onkeydown={handleSasayakiShortcut} />
 
 <main
   class="app"

@@ -7,6 +7,7 @@
     shouldAutoPauseSasayaki,
     shouldCommitPlaybackTime,
   } from "./sasayaki-playback";
+  import { sasayakiShortcutAction } from "./sasayaki-shortcuts";
   import {
     beginWordAudioCoordination,
     endWordAudioCoordination,
@@ -129,7 +130,38 @@
     if (!plan.pauseSasayaki && plan.setSasayakiVolume === null) events = [...events, `word-${mode}`];
     return id;
   }
+
+  function togglePlayback() {
+    playing = !playing;
+    if (playing) hasPlayedOnce = true;
+    else pausedByLookup = false;
+    events = [...events, playing ? "play" : "pause"];
+  }
+
+  function applySkipAction(direction: -1 | 1) {
+    const next = sasayakiSkipTarget(
+      session.cues,
+      currentTime,
+      session.delay,
+      session.skipAction,
+      direction,
+    );
+    if (next !== null) currentTime = next;
+    events = [...events, `${direction < 0 ? "previous" : "next"}:${currentTime}`];
+  }
+
+  function handleSasayakiShortcut(event: KeyboardEvent) {
+    if (!session.configured || !session.audioAvailable) return;
+    const action = sasayakiShortcutAction(event);
+    if (!action) return;
+
+    event.preventDefault();
+    if (action === "togglePlayback") togglePlayback();
+    else applySkipAction(action === "previous" ? -1 : 1);
+  }
 </script>
+
+<svelte:window onkeydown={handleSasayakiShortcut} />
 
 <main class="probe" data-ui-portal-root>
   <div class="reader-copy">Reader content remains visible until the Audio panel is opened.</div>
@@ -219,28 +251,13 @@
           open = false;
           requestAnimationFrame(() => document.getElementById("reader-sasayaki-trigger")?.focus());
         }}
-        onToggle={() => {
-          playing = !playing;
-          if (playing) hasPlayedOnce = true;
-          else pausedByLookup = false;
-          events = [...events, playing ? "play" : "pause"];
-        }}
+        onToggle={togglePlayback}
         onSeek={(seconds) => {
           currentTime = seconds;
           events = [...events, `seek:${seconds}`];
         }}
         onSkip={(seconds) => events = [...events, `skip:${seconds}`]}
-        onSkipAction={(direction) => {
-          const next = sasayakiSkipTarget(
-            session.cues,
-            currentTime,
-            session.delay,
-            session.skipAction,
-            direction,
-          );
-          if (next !== null) currentTime = next;
-          events = [...events, `${direction < 0 ? "previous" : "next"}:${currentTime}`];
-        }}
+        onSkipAction={applySkipAction}
         onRateChange={(rate) => {
           session = { ...session, rate };
           events = [...events, `rate:${rate}`];

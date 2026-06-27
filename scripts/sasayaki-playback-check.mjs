@@ -131,9 +131,24 @@ async function main() {
     await panel.getByLabel("Sasayaki Auto-Pause on Lookup").uncheck();
     await panel.getByLabel("Sasayaki skip action").selectOption("seconds15");
     await panel.getByRole("button", { name: "Skip forward 15 seconds", exact: true }).click();
+    const beforeFocusedControlKeys = await events(page);
+    await panel.getByLabel("Sasayaki playback speed").focus();
+    await page.keyboard.press("p");
+    await panel.getByLabel("Sasayaki skip action").focus();
+    await page.keyboard.press("]");
     assert(
-      await events(page) === "play,audio-throttled,audio-time:12.30,lookup-pause,lookup-resume,word-pause,word-resume,word-pause,word-pause,word-resume,word-duck:0.25,word-volume:1,word-mix,pause,previous:5.25,next:15.25,skip:-10,skip:10,rate:1.5,delay:-0.5,autoScroll:false,autoPause:false,skipAction:seconds15,next:30.25",
-      "Playback controls should emit stable lifecycle, cue/seconds skip, rate, delay, and coordination settings.",
+      await events(page) === beforeFocusedControlKeys,
+      "Sasayaki keyboard shortcuts should not fire from focused playback controls.",
+    );
+    await page.evaluate(() => {
+      if (document.activeElement instanceof HTMLElement) document.activeElement.blur();
+    });
+    await page.keyboard.press("p");
+    await page.keyboard.press("[");
+    await page.keyboard.press("]");
+    assert(
+      await events(page) === "play,audio-throttled,audio-time:12.30,lookup-pause,lookup-resume,word-pause,word-resume,word-pause,word-pause,word-resume,word-duck:0.25,word-volume:1,word-mix,pause,previous:5.25,next:15.25,skip:-10,skip:10,rate:1.5,delay:-0.5,autoScroll:false,autoPause:false,skipAction:seconds15,next:30.25,play,previous:15.25,next:30.25",
+      "Playback controls and keyboard shortcuts should emit stable lifecycle, cue/seconds skip, rate, delay, and coordination settings.",
     );
     const wideOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     assert(!wideOverflow, "Wide playback panel should not overflow horizontally.");
