@@ -1061,13 +1061,14 @@ fn parse_srt(text: &str) -> Result<Vec<SasayakiCue>, String> {
     let mut previous_number = 0_u64;
     let mut previous_start = -1.0_f64;
     for (block_index, block) in text.split("\n\n").enumerate() {
-        let lines = block.lines().collect::<Vec<_>>();
-        if lines.iter().all(|line| line.trim().is_empty()) {
+        let block = block.trim();
+        if block.is_empty() {
             continue;
         }
-        if lines.len() < 3 {
+        let lines = block.lines().collect::<Vec<_>>();
+        if lines.len() < 2 {
             return Err(format!(
-                "SRT block {} must contain a number, timing row, and text.",
+                "SRT block {} must contain a number and timing row.",
                 block_index + 1
             ));
         }
@@ -1091,7 +1092,9 @@ fn parse_srt(text: &str) -> Result<Vec<SasayakiCue>, String> {
             .collect::<Vec<_>>()
             .join(" ");
         if cue_text.is_empty() {
-            return Err(format!("SRT cue {number} has no text."));
+            previous_number = number;
+            previous_start = start_time;
+            continue;
         }
         cues.push(SasayakiCue {
             id: number.to_string(),
@@ -1712,7 +1715,7 @@ mod tests {
     }
 
     #[test]
-    fn strict_srt_rejects_bad_numbering_times_and_empty_text() {
+    fn strict_srt_rejects_bad_numbering_times_and_missing_timing() {
         assert!(parse_srt(
             "2\n00:00:01,000 --> 00:00:02,000\none\n\n1\n00:00:03,000 --> 00:00:04,000\ntwo"
         )
@@ -1724,9 +1727,23 @@ mod tests {
         assert!(parse_srt("1\n00:61:00,000 --> 01:02:00,000\ntext")
             .unwrap_err()
             .contains("normal"));
-        assert!(parse_srt("1\n00:00:00,000 --> 00:00:01,000\n  ")
-            .unwrap_err()
-            .contains("no text"));
+        assert!(parse_srt("1").unwrap_err().contains("number and timing"));
+    }
+
+    #[test]
+    fn skips_empty_srt_cues_after_validating_numbering_and_timing() {
+        let cues = parse_srt(
+            "1\n00:00:00,000 --> 00:00:01,000\nfirst\n\n2\n00:00:01,500 --> 00:00:02,000\n\n\n3\n00:00:02,500 --> 00:00:03,000\n  \n\n4\n00:00:03,500 --> 00:00:04,000\nlast",
+        )
+        .unwrap();
+        assert_eq!(cues.len(), 2);
+        assert_eq!(cues[0].id, "1");
+        assert_eq!(cues[1].id, "4");
+        assert!(parse_srt(
+            "1\n00:00:00,000 --> 00:00:01,000\nfirst\n\n2\n00:00:01,500 --> 00:00:01,000\n\n3\n00:00:02,500 --> 00:00:03,000\nlast"
+        )
+        .unwrap_err()
+        .contains("end after"));
     }
 
     #[test]
