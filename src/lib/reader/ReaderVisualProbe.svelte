@@ -220,6 +220,7 @@
   data-rendered-highlight-text={renderedLookupHighlightText}
   data-sasayaki-highlight={renderedSasayakiHighlightText}
   data-sentence={lastSelection?.sentence ?? ""}
+  data-sentence-offset={lastSelection?.sentenceOffset ?? -1}
   data-selection-count={selectionCount}
   data-anchor-x={lastSelection?.anchorRect?.x ?? lastSelection?.rect.x ?? -1}
   data-anchor-y={lastSelection?.anchorRect?.y ?? lastSelection?.rect.y ?? -1}

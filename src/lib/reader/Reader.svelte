@@ -39,6 +39,22 @@
   const MAX_SELECTION_TEXT = 80;
   const MAX_SENTENCE_CONTEXT_TEXT = 1200;
   const SCAN_BOUNDARY_PATTERN = /[\s\u3000\u3001\u3002\uff01\uff1f\uff08\uff09\u300c\u300d\u300e\u300f\u3010\u3011\u2014\u2026.,!?;:()[\]{}"'<>/\\|]/u;
+  const SENTENCE_DELIMITERS = "。！？.!?\n\r";
+  const TRAILING_SENTENCE_CHARS = "。、！？…‥」』）)】〉》〕｝}］]";
+  const SENTENCE_BRACKETS: Record<string, string> = {
+    "「": "」",
+    "『": "』",
+    "（": "）",
+    "(": ")",
+    "【": "】",
+    "〈": "〉",
+    "《": "》",
+    "〔": "〕",
+    "｛": "｝",
+    "{": "}",
+    "［": "］",
+    "[": "]",
+  };
 
   let containerEl: HTMLDivElement = $state()!;
   let contentEl: HTMLDivElement = $state()!;
@@ -472,31 +488,124 @@
     return element?.closest("p, li, blockquote, div, section, article") ?? contentEl;
   }
 
-  function normalizedSentenceText(text: string): string {
-    return text.replace(/\s+/g, " ");
+  function trimSentenceContext(rawSentence: string, rawSelectedOffset: number): { sentence: string; sentenceOffset?: number } {
+    const leadingTrim = rawSentence.length - rawSentence.trimStart().length;
+    let selectedOffset = Math.max(0, rawSelectedOffset - leadingTrim);
+    const sentence = rawSentence.trim().slice(0, MAX_SENTENCE_CONTEXT_TEXT);
+
+    const closeBrackets = new Set(Object.values(SENTENCE_BRACKETS));
+    const openBrackets = new Set(Object.keys(SENTENCE_BRACKETS));
+    const stack: string[] = [];
+    const unmatchedClose: string[] = [];
+
+    for (const ch of sentence) {
+      if (openBrackets.has(ch)) {
+        stack.push(ch);
+      } else if (closeBrackets.has(ch)) {
+        if (stack.length > 0 && SENTENCE_BRACKETS[stack[stack.length - 1]] === ch) {
+          stack.pop();
+        } else {
+          unmatchedClose.push(ch);
+        }
+      }
+    }
+
+    let startSlice = 0;
+    while (stack.length > 0 && startSlice < sentence.length - 1) {
+      if (stack[0] === sentence[startSlice]) {
+        stack.shift();
+      } else {
+        break;
+      }
+      startSlice += 1;
+    }
+
+    let endSlice = sentence.length - 1;
+    let endIdx = sentence.length - 1;
+    while (unmatchedClose.length > 0 && endIdx > startSlice) {
+      if (unmatchedClose[unmatchedClose.length - 1] === sentence[endIdx]) {
+        unmatchedClose.pop();
+        endSlice = endIdx - 1;
+      } else if (!SENTENCE_DELIMITERS.includes(sentence[endIdx])) {
+        break;
+      }
+      endIdx -= 1;
+    }
+
+    const sliced = sentence.slice(startSlice, endSlice + 1);
+    const slicedLeadingTrim = sliced.length - sliced.trimStart().length;
+    selectedOffset = Math.max(0, selectedOffset - startSlice - slicedLeadingTrim);
+    const trimmed = sliced.trim();
+    return {
+      sentence: trimmed,
+      ...(selectedOffset >= 0 && selectedOffset < trimmed.length ? { sentenceOffset: selectedOffset } : {}),
+    };
   }
 
   function sentenceContext(root: Node, range: Range): { sentence: string; sentenceOffset?: number } {
-    const raw = root.textContent ?? "";
-    const normalized = normalizedSentenceText(raw);
-    const leadingTrim = normalized.length - normalized.trimStart().length;
-    const sentence = normalized.trim().slice(0, MAX_SENTENCE_CONTEXT_TEXT);
-
-    const prefixRange = document.createRange();
-    try {
-      prefixRange.selectNodeContents(root);
-      prefixRange.setEnd(range.startContainer, range.startOffset);
-      const before = normalizedSentenceText(prefixRange.toString());
-      const sentenceOffset = before.length - leadingTrim;
-      return {
-        sentence,
-        ...(sentenceOffset >= 0 && sentenceOffset < sentence.length ? { sentenceOffset } : {}),
-      };
-    } catch {
-      return { sentence };
-    } finally {
-      prefixRange.detach();
+    const startNode = range.startContainer;
+    if (startNode.nodeType !== Node.TEXT_NODE) {
+      return { sentence: selectionText(root.textContent ?? "") };
     }
+
+    const walker = createWalker(root);
+    walker.currentNode = startNode;
+    const partsBefore: string[] = [];
+    let node: Node | null = startNode;
+    let limit = range.startOffset;
+
+    while (node) {
+      const text = node.textContent ?? "";
+      let foundStart = false;
+      for (let i = limit - 1; i >= 0; i -= 1) {
+        if (SENTENCE_DELIMITERS.includes(text[i])) {
+          partsBefore.push(text.slice(i + 1, limit));
+          foundStart = true;
+          break;
+        }
+      }
+
+      if (foundStart) break;
+
+      partsBefore.push(text.slice(0, limit));
+      node = walker.previousNode();
+      if (node) limit = node.textContent?.length ?? 0;
+    }
+
+    walker.currentNode = startNode;
+    const partsAfter: string[] = [];
+    node = startNode;
+    let start = range.startOffset;
+
+    while (node) {
+      const text = node.textContent ?? "";
+      let foundEnd = false;
+
+      for (let i = start; i < text.length; i += 1) {
+        if (SENTENCE_DELIMITERS.includes(text[i])) {
+          let end = i + 1;
+          while (end < text.length) {
+            if (!TRAILING_SENTENCE_CHARS.includes(text[end])) break;
+            end += 1;
+          }
+          partsAfter.push(text.slice(start, end));
+          foundEnd = true;
+          break;
+        }
+      }
+
+      if (foundEnd) break;
+
+      partsAfter.push(text.slice(start));
+      node = walker.nextNode();
+      start = 0;
+    }
+
+    const beforeText = partsBefore.reverse().join("");
+    const rawSentence = beforeText + partsAfter.join("");
+    const context = trimSentenceContext(rawSentence, beforeText.length);
+    if (context.sentence) return context;
+    return { sentence: selectionText(root.textContent ?? "") };
   }
 
   function detachActiveLookupRange() {

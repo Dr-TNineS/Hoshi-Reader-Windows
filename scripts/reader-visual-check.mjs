@@ -397,6 +397,10 @@ async function probeSentenceText(page) {
   return await page.locator(".probe-state").getAttribute("data-sentence") ?? "";
 }
 
+async function probeSentenceOffset(page) {
+  return Number(await page.locator(".probe-state").getAttribute("data-sentence-offset") ?? -1);
+}
+
 async function probeSelectionCount(page) {
   return Number(await page.locator(".probe-state").getAttribute("data-selection-count") ?? 0);
 }
@@ -743,10 +747,15 @@ async function main() {
     assert(shiftHoverDomSelection === "", "Shift hover lookup should not leave a native browser selection.", { shiftHoverDomSelection, shiftHoverRenderedHighlight });
     assert(shiftHoverRenderedHighlight === "", "Shift hover should keep lookup selection hidden while no matched result is available.", { shiftHoverRenderedHighlight });
     const shiftHoverSentence = await probeSentenceText(page);
+    const shiftHoverSentenceOffset = await probeSentenceOffset(page);
     assert(
-      shiftHoverSentence.includes(shiftHoverSelection) && shiftHoverSentence.length > shiftHoverSelection.length,
-      "Shift hover should capture the source paragraph separately from the lookup term.",
-      { lookupPoint, shiftHoverSelection, shiftHoverSentence },
+      shiftHoverSentence.includes(shiftHoverSelection) &&
+        shiftHoverSentence.length > shiftHoverSelection.length &&
+        !shiftHoverSentence.slice(0, -1).includes("。") &&
+        shiftHoverSentenceOffset >= 0 &&
+        shiftHoverSentence.slice(shiftHoverSentenceOffset, shiftHoverSentenceOffset + shiftHoverSelection.length) === shiftHoverSelection,
+      "Shift hover should capture only the sentence containing the lookup term with a usable Anki sentence offset.",
+      { lookupPoint, shiftHoverSelection, shiftHoverSentence, shiftHoverSentenceOffset },
     );
     const shiftHoverCount = await probeSelectionCount(page);
 
