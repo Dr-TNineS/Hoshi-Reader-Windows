@@ -5,8 +5,8 @@ Last updated: 2026-06-27
 This document defines the next Anki scope after text note creation and
 dictionary image media export.
 
-Implementation status as of 2026-06-27: Slices 5A-5N are implemented at the
-documented validation level. Slice 5O is current.
+Implementation status as of 2026-06-27: Slices 5A-5O are implemented at the
+documented validation level.
 Real runtime coverage remains explicitly separate from automated validation.
 
 ## Current Baseline
@@ -102,7 +102,7 @@ Real runtime coverage remains explicitly separate from automated validation.
 | 5L | Completed | See repository history |
 | 5M | Completed | See repository history |
 | 5N | Completed | See repository history |
-| 5O | Current | Not started |
+| 5O | Completed | See repository history |
 
 Post-slice format extension on 2026-06-24: M4B/AAC-LC import, playback source
 preparation, and deterministic cue clipping were enabled through Symphonia
@@ -496,6 +496,15 @@ Validation:
 Goal: validate the complete chain against real data and record remaining facts
 without overstating them.
 
+Status: completed on 2026-06-27. Real AnkiConnect v6 was available at
+`127.0.0.1:8765`; the ignored runtime tests for add-note/duplicate handling and
+dictionary media storage passed. Common automated checks, Rust checks/tests,
+all focused frontend probes, portable package build, and a five-second release
+executable launch smoke passed. Runtime fixtures for a real HSA local-audio
+database, remote word-audio source, media-bearing dictionary, and real
+Sasayaki/Tauri audio playback were not available in this session, so those
+remain `not verified`.
+
 Key changes:
 
 - Exercise tags, duplicate scopes, cover media, multiple sources, a real HSA
@@ -504,6 +513,27 @@ Key changes:
   render, duplicate/addNote, optional sync.
 - Compare HSA defaults, status text, warnings, hard errors, and fallback
   behavior. Mark unavailable fixture coverage as `not verified`.
+
+Validation:
+
+- Passed: real AnkiConnect v6 `validates_real_ankiconnect_add_note_and_duplicate_check`.
+- Passed: real AnkiConnect v6 `validates_real_ankiconnect_store_dictionary_media`.
+- Passed: `cargo test --lib` (130 passed, 3 ignored), `cargo check`,
+  `npm run check`, `npm run build`, `npm run check:anki-connect`,
+  `npm run check:lookup-popup`, `npm run check:sasayaki-playback`,
+  `npm run check:bookshelf`, `npm run check:dictionary-management`,
+  `npm run check:settings-state`, `npm run check:lookup-performance`,
+  `npm run check:reader-toc`, and `npm run check:reader-visual`.
+- Passed: `npm run package`, producing `release/Hoshi-Reader-v0.1.0-portable.zip`.
+- Passed: five-second launch smoke of `src-tauri/target/release/hoshi-reader-windows.exe`.
+- Not verified: real HSA local-audio database import, real remote word-audio
+  source plus AnkiConnect, real media-bearing dictionary combined add-note
+  flow, real popup word-audio playback, real word/Sasayaki playback
+  coordination in Tauri, real Sasayaki sentence-clip playback from Anki, real
+  Tauri Sasayaki audio output, real post-add sync, and HSA status-text/default
+  comparison beyond the implemented automated probes.
+- Not verified in this shell: linked hoshidicts checks, because `cmake` was not
+  available in `PATH`.
 
 ## Media Ordering Tradeoff
 
@@ -539,7 +569,7 @@ until its acceptance and validation entries are satisfied and recorded.
 | 5L | Completed (2026-06-25) | Cue presentation and reader coordination without replacing pagination | 5K playback events and 5J ranges | Sasayaki cue overlay causes no reflow; active cues follow aligned pages/chapters; lookup auto-pause resumes only lookup-paused playback; skip/settings persist | Passed: 127 Rust tests plus 3 ignored, Rust check, frontend check/build, playback/reader visual/TOC probes, real EPUB/M4B/SRT backend pipeline; 2026-06-27 overlay regression probe verifies no Sasayaki CSS Highlight; manual Tauri audio/visual check `not verified` |
 | 5M | Completed (2026-06-25) | `{sasayaki-audio}` accepts `bookId + cueId`; Rust owns path/range; no arbitrary frontend time/path | 5I-0 clipping plus stable 5J-L cues | Deterministic WAV sound tag; ordinary no-cue/decode failures warn and create text cards; tampering/escape/range/oversize blocks; ordering is covered | Passed: 130 Rust tests plus 3 ignored, Rust check, frontend check/build, panel/popup probes, real M4B cue clipping; real Anki playback `not verified` |
 | 5N | Completed (2026-06-27) | Coordinate HSW-owned word and Sasayaki audio only; no Windows-wide focus | 5H word playback and 5K-L Sasayaki playback | Interrupt/Duck/Mix restore exact prior state; autoplay shares coordinator; rapid actions/failures/manual pause/navigation/shutdown are correct | Passed: coordinator helper coverage through Sasayaki playback probe, rapid-action probe coverage, lookup popup lifecycle probe, frontend check/build; manual Tauri playback for all modes `not verified` |
-| 5O | Current | Runtime evidence and parity closure only; missing fixtures remain visible | 5F-5N committed at automated level | Full real pipeline order passes where fixtures exist; HSA defaults/states/failures have explicit parity results; gaps say `not verified` | All common checks, real Anki add/media/sync, real HSA DB/remote audio, packaged playback, Sasayaki end-to-end, `npm run package` |
+| 5O | Completed (2026-06-27) | Runtime evidence and parity closure only; missing fixtures remain visible | 5F-5N committed at automated level | Full real pipeline order passes where fixtures exist; HSA defaults/states/failures have explicit parity results; gaps say `not verified` | Passed: common checks, real Anki add/duplicate and store-media tests, package build, release launch smoke; real sync, HSA DB, remote audio, media-bearing dictionary, and Tauri/Sasayaki audio playback remain `not verified` |
 
 Common checks mean `npm run check`, `npm run build`, the affected frontend
 probes, VS developer-shell `cargo test --lib`, and VS developer-shell
@@ -547,6 +577,5 @@ probes, VS developer-shell `cargo test --lib`, and VS developer-shell
 
 ## Recommended Next Step
 
-Run Slice 5O as the next committed slice. Close the Anki/audio route with real
-runtime evidence where fixtures and local services are available, and keep
-missing coverage explicitly marked `not verified`.
+The Anki/audio route is closed at the documented validation level. Start a new
+documented slice before adding new Anki, audio, sync, or settings behavior.
