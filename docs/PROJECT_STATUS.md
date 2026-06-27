@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Project Status
 
-Last updated: 2026-06-25
+Last updated: 2026-06-27
 
 This file records current implementation facts for `hoshi-reader-windows`. It is not an agent rule file, product roadmap, or substitute for checking the current code.
 
@@ -156,6 +156,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - The media pipeline stores dictionary images, then book cover, word audio, and Sasayaki sentence audio before rendering and addNote. Duplicate notes may leave shared content-hash media; HSW does not automatically delete it.
   - Remote word-audio sources have stable ids and support add/remove/edit/enable/reorder. Export tries local audio first, then every enabled remote source in saved order; ordinary warnings fall through and security errors stop immediately.
   - Anki export and popup playback now share the Rust local-first/ordered-remote word-audio resolver. Popup audio supports play, stop, logical request cancellation, lookup cleanup, and optional autoplay through a content-hash cache bounded to 20 files and 50 MiB.
+  - Popup word-audio playback coordinates with HSW-owned Sasayaki reader audio according to the persisted playback mode: Interrupt pauses and conditionally resumes Sasayaki, Duck temporarily lowers and restores Sasayaki volume, and Mix leaves Sasayaki playing. Rapid word-audio replacements keep coordinator state on the latest request, and failures/manual Sasayaki controls/navigation/shutdown clear the coordinator without claiming Windows-wide audio focus.
   - A pure-Rust audio clipping capability decodes M4B/AAC-LC, MP3, and WAV and emits deterministic 16-bit PCM cue WAV bytes. It enforces a 60-second clip limit, a 64 MiB output limit, bounded channel/sample-rate shapes, and clear corrupt/out-of-range errors; fixtures cover exact timing, long sources, Unicode paths, and deterministic M4B clipping.
   - Per-book Sasayaki data lives under `library/books/<bookId>/Sasayaki`. The versioned sidecar initializes cue/match/playback state, SRT is normalized and copied as UTF-8, and verified M4B/MP3/WAV audio is either linked externally or copied into app storage.
   - Sasayaki import validates the manifest-owned book directory, audio codec, SRT extension/UTF-8/timing marker/size, stages the complete replacement, and restores old data if installation fails. Removal and bookshelf Forget delete only app-owned Sasayaki data; linked external audio is never deleted.
@@ -173,7 +174,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata and reading state are still JSON.
-- Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; real remote-audio-plus-AnkiConnect, real HSA local-audio database, real popup word-audio playback, real Sasayaki sentence-clip playback from Anki, real Tauri Sasayaki audio output, and real post-add sync runtime validation are also not verified. Generic M4A/raw AAC and OGG/Opus clipping are not verified.
+- Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; real remote-audio-plus-AnkiConnect, real HSA local-audio database, real popup word-audio playback, real word/Sasayaki playback coordination in Tauri, real Sasayaki sentence-clip playback from Anki, real Tauri Sasayaki audio output, and real post-add sync runtime validation are also not verified. Generic M4A/raw AAC and OGG/Opus clipping are not verified.
 - No full settings surface; Appearance, Advanced startup behavior, dictionary popup sizing/scale, and core HSA dictionary settings are implemented. HSA profile-scoped settings, recommended dictionary downloads, automatic updates, dictionary default tab, and custom CSS are not implemented.
 - No verified app-owned cover thumbnail cache.
 - Runtime validation with a normal media-bearing Yomitan dictionary is not verified; on 2026-06-16, `HSW_MEDIA_YOMITAN_ZIP` was unset, `OALDPE10.zip` had `mediaCount=0`, and `MK3Fix0213.zip` remained unsuitable because compatibility import intentionally skipped media. Packed-media command tests now cover `media.idx`/`media.bin` reads, but full popup runtime validation with a media-preserving import is still not verified.

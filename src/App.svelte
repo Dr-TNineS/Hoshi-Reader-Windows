@@ -28,6 +28,11 @@
   } from "./lib/sasayaki-playback";
   import { createSettingsState } from "./lib/state/settings.svelte";
   import {
+    beginWordAudioCoordination,
+    endWordAudioCoordination,
+    type WordAudioCoordinationState,
+  } from "./lib/word-audio-coordination";
+  import {
     buildReadingProgressUpdate,
     clampUnit,
     clearReadingSession,
@@ -136,6 +141,8 @@
   let sasayakiLastTimeCommitAt = 0;
   let sasayakiCueSyncTimer: ReturnType<typeof setTimeout> | null = null;
   let sasayakiPendingCueForceReveal = false;
+  let wordAudioCoordinationRun = 0;
+  let wordAudioCoordination: WordAudioCoordinationState | null = null;
   let bookImportBusy = $state(false);
   let debug = $state("");
   let triedStartup = false;
@@ -680,6 +687,73 @@
     recordSasayakiDiagnostic("audio-source", { path: nextPath });
   }
 
+  function restoreWordAudioCoordination(id: number | void = wordAudioCoordination?.id) {
+    const active = wordAudioCoordination;
+    if (!active || id !== active.id) return;
+    const plan = endWordAudioCoordination({
+      state: active,
+      id: active.id,
+      hasSasayakiAudio: Boolean(sasayakiAudio),
+      sasayakiPlaying,
+    });
+    wordAudioCoordination = null;
+    if (plan.restoreSasayakiVolume !== null && sasayakiAudio) {
+      sasayakiAudio.volume = plan.restoreSasayakiVolume;
+    }
+    if (plan.resumeSasayaki) {
+      void ensureSasayakiAudio().then((audio) => audio?.play()).catch((e) => {
+        sasayakiPlaybackError = String(e);
+      });
+    }
+    recordSasayakiDiagnostic("word-audio-end", {
+      id: active.id,
+      mode: active.mode,
+      resume: plan.resumeSasayaki,
+      restoreVolume: plan.restoreSasayakiVolume,
+    });
+  }
+
+  function cancelWordAudioCoordination() {
+    restoreWordAudioCoordination();
+    wordAudioCoordination = null;
+  }
+
+  function replaceWordAudioCoordination(): boolean {
+    const active = wordAudioCoordination;
+    if (!active) return false;
+    if (active.duckedSasayaki && sasayakiAudio) sasayakiAudio.volume = active.previousVolume;
+    wordAudioCoordination = null;
+    return active.pausedSasayaki;
+  }
+
+  function beginCoordinatedWordAudioPlayback(): number {
+    const wasPausedByPreviousWordAudio = replaceWordAudioCoordination();
+    const id = ++wordAudioCoordinationRun;
+    const mode = ankiSettings?.audioPlaybackMode ?? "mix";
+    const audio = sasayakiAudio;
+    const plan = beginWordAudioCoordination({
+      id,
+      mode,
+      sasayakiPlaying: sasayakiPlaying || wasPausedByPreviousWordAudio,
+      hasSasayakiAudio: Boolean(audio),
+      currentVolume: audio?.volume ?? 1,
+    });
+    wordAudioCoordination = plan.state;
+    if (plan.setSasayakiVolume !== null && audio) audio.volume = plan.setSasayakiVolume;
+    if (plan.pauseSasayaki && audio) {
+      sasayakiSuppressPauseSave = true;
+      audio.pause();
+      sasayakiSuppressPauseSave = false;
+    }
+    recordSasayakiDiagnostic("word-audio-start", {
+      id,
+      mode,
+      pause: plan.pauseSasayaki,
+      volume: plan.setSasayakiVolume,
+    });
+    return id;
+  }
+
   function clearSasayakiCueTimer() {
     if (!sasayakiCueSyncTimer) return;
     clearTimeout(sasayakiCueSyncTimer);
@@ -688,6 +762,7 @@
   }
 
   function teardownSasayakiAudio() {
+    replaceWordAudioCoordination();
     clearSasayakiCueTimer();
     if (sasayakiAudio) {
       sasayakiSuppressPauseSave = true;
@@ -820,6 +895,7 @@
   }
 
   function handleSasayakiEnded() {
+    replaceWordAudioCoordination();
     const audio = sasayakiAudio;
     sasayakiPlaying = false;
     sasayakiCurrentTime = audio ? clampPlaybackTime(audio.duration, sasayakiDuration) : sasayakiDuration;
@@ -829,6 +905,7 @@
   }
 
   function handleSasayakiError() {
+    replaceWordAudioCoordination();
     sasayakiPlaying = false;
     sasayakiPlaybackError = "Sasayaki audio could not be played. Relink the audiobook if it moved or changed.";
     recordSasayakiDiagnostic("error");
@@ -877,6 +954,7 @@
   }
 
   async function stopSasayakiPlayback(save: boolean) {
+    replaceWordAudioCoordination();
     if (sasayakiLookupResumeTimer) {
       clearTimeout(sasayakiLookupResumeTimer);
       sasayakiLookupResumeTimer = null;
@@ -898,6 +976,7 @@
   }
 
   async function toggleSasayakiPlayback() {
+    replaceWordAudioCoordination();
     if (sasayakiPlaying) {
       sasayakiPausedByLookup = false;
       if (sasayakiLookupResumeTimer) {
@@ -2126,6 +2205,8 @@
       onStoreAnkiWordAudio={storeAnkiWordAudio}
       onStoreAnkiSasayakiAudio={storeAnkiSasayakiAudio}
       onPrepareWordAudio={prepareWordAudio}
+      onWordAudioPlaybackStart={beginCoordinatedWordAudioPlayback}
+      onWordAudioPlaybackEnd={restoreWordAudioCoordination}
       onAddAnkiNote={addAnkiNote}
     />
     {#if showToc}

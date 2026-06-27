@@ -53,6 +53,8 @@ async function presentation(page) {
     audioElement: await state.getAttribute("data-audio-element"),
     audioTimeCommits: await state.getAttribute("data-audio-time-commits"),
     repaintSentinel: await state.getAttribute("data-repaint-sentinel"),
+    wordCoordinationActive: await state.getAttribute("data-word-coordination-active"),
+    sasayakiVolume: await state.getAttribute("data-sasayaki-volume"),
   };
 }
 
@@ -95,6 +97,18 @@ async function main() {
     await page.getByRole("button", { name: "Probe close lookup", exact: true }).dispatchEvent("click");
     await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-playing") === "true");
     assert((await presentation(page)).playing === "true", "Closing the lookup should resume only playback paused by lookup.");
+    await page.getByRole("button", { name: "Probe word interrupt", exact: true }).dispatchEvent("click");
+    await page.getByRole("button", { name: "Probe rapid word interrupt", exact: true }).dispatchEvent("click");
+    await page.getByRole("button", { name: "Probe word duck", exact: true }).dispatchEvent("click");
+    await page.getByRole("button", { name: "Probe word mix", exact: true }).dispatchEvent("click");
+    const coordinated = await presentation(page);
+    assert(
+      coordinated.playing === "true" &&
+        coordinated.wordCoordinationActive === "false" &&
+        coordinated.sasayakiVolume === "1",
+      "Word audio coordination should restore Sasayaki playback and volume after interrupt, duck, mix, and rapid replacement.",
+      coordinated,
+    );
     await panel.getByRole("button", { name: "Close Sasayaki playback", exact: true }).click();
     assert((await presentation(page)).playing === "true", "Closing the playback panel should not stop active audio state.");
     await page.waitForFunction(() => document.activeElement?.id === "reader-sasayaki-trigger");
@@ -118,7 +132,7 @@ async function main() {
     await panel.getByLabel("Sasayaki skip action").selectOption("seconds15");
     await panel.getByRole("button", { name: "Skip forward 15 seconds", exact: true }).click();
     assert(
-      await events(page) === "play,audio-throttled,audio-time:12.30,lookup-pause,lookup-resume,pause,previous:5.25,next:15.25,skip:-10,skip:10,rate:1.5,delay:-0.5,autoScroll:false,autoPause:false,skipAction:seconds15,next:30.25",
+      await events(page) === "play,audio-throttled,audio-time:12.30,lookup-pause,lookup-resume,word-pause,word-resume,word-pause,word-pause,word-resume,word-duck:0.25,word-volume:1,word-mix,pause,previous:5.25,next:15.25,skip:-10,skip:10,rate:1.5,delay:-0.5,autoScroll:false,autoPause:false,skipAction:seconds15,next:30.25",
       "Playback controls should emit stable lifecycle, cue/seconds skip, rate, delay, and coordination settings.",
     );
     const wideOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);

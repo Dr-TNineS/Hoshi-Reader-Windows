@@ -41,6 +41,8 @@
     onStoreAnkiWordAudio,
     onStoreAnkiSasayakiAudio,
     onPrepareWordAudio,
+    onWordAudioPlaybackStart,
+    onWordAudioPlaybackEnd,
     onAddAnkiNote,
   }: {
     popupId: string;
@@ -73,6 +75,8 @@
     onStoreAnkiWordAudio?: (request: WordAudioResolveRequest) => Promise<AnkiStoreRemoteAudioResult>;
     onStoreAnkiSasayakiAudio?: (bookId: string, cueId: string) => Promise<AnkiStoreSasayakiAudioResult>;
     onPrepareWordAudio?: (request: WordAudioResolveRequest) => Promise<WordAudioPlaybackResult>;
+    onWordAudioPlaybackStart?: () => number | void;
+    onWordAudioPlaybackEnd?: (coordinationId: number | void) => void;
     onAddAnkiNote?: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
   } = $props();
 
@@ -97,6 +101,7 @@
   let wordAudioMessage = $state("");
   let wordAudioElement: HTMLAudioElement | null = null;
   let wordAudioRequestGeneration = 0;
+  let wordAudioCoordinationId: number | void = undefined;
   let lastAutoplayKey = "";
   let styleRequestId = 0;
   let firstPaintRequestId = 0;
@@ -529,12 +534,15 @@
 
   function stopWordAudio(message = "") {
     wordAudioRequestGeneration += 1;
+    const coordinationId = wordAudioCoordinationId;
+    wordAudioCoordinationId = undefined;
     if (wordAudioElement) {
       wordAudioElement.pause();
       wordAudioElement.src = "";
       wordAudioElement.load();
       wordAudioElement = null;
     }
+    onWordAudioPlaybackEnd?.(coordinationId);
     wordAudioKey = "";
     wordAudioState = "idle";
     wordAudioMessage = message;
@@ -568,6 +576,9 @@
       audio.onended = () => {
         if (wordAudioElement !== audio) return;
         wordAudioElement = null;
+        const coordinationId = wordAudioCoordinationId;
+        wordAudioCoordinationId = undefined;
+        onWordAudioPlaybackEnd?.(coordinationId);
         wordAudioKey = "";
         wordAudioState = "idle";
         wordAudioMessage = warningText || `Played word audio${resolved.sourceName ? ` from ${resolved.sourceName}` : ""}.`;
@@ -575,18 +586,28 @@
       audio.onerror = () => {
         if (wordAudioElement !== audio) return;
         wordAudioElement = null;
+        const coordinationId = wordAudioCoordinationId;
+        wordAudioCoordinationId = undefined;
+        onWordAudioPlaybackEnd?.(coordinationId);
         wordAudioState = "error";
         wordAudioMessage = "Word audio could not be played.";
       };
+      wordAudioCoordinationId = onWordAudioPlaybackStart?.();
       await audio.play();
       if (generation !== wordAudioRequestGeneration || wordAudioElement !== audio) {
         audio.pause();
+        const coordinationId = wordAudioCoordinationId;
+        wordAudioCoordinationId = undefined;
+        onWordAudioPlaybackEnd?.(coordinationId);
         return;
       }
       wordAudioState = "playing";
       wordAudioMessage = warningText || `Playing word audio${resolved.sourceName ? ` from ${resolved.sourceName}` : ""}.`;
     } catch (error) {
       if (generation !== wordAudioRequestGeneration) return;
+      const coordinationId = wordAudioCoordinationId;
+      wordAudioCoordinationId = undefined;
+      onWordAudioPlaybackEnd?.(coordinationId);
       wordAudioState = "error";
       wordAudioMessage = String(error);
     }

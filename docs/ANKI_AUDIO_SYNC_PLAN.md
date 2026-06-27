@@ -1,12 +1,12 @@
 # Anki Audio And Sync Plan
 
-Last updated: 2026-06-25
+Last updated: 2026-06-27
 
 This document defines the next Anki scope after text note creation and
 dictionary image media export.
 
-Implementation status as of 2026-06-25: Slices 5A-5M are implemented at the
-documented validation level. Slice 5N is current. Slice 5O is pending.
+Implementation status as of 2026-06-27: Slices 5A-5N are implemented at the
+documented validation level. Slice 5O is current.
 Real runtime coverage remains explicitly separate from automated validation.
 
 ## Current Baseline
@@ -101,8 +101,8 @@ Real runtime coverage remains explicitly separate from automated validation.
 | 5K | Completed | See repository history |
 | 5L | Completed | See repository history |
 | 5M | Completed | See repository history |
-| 5N | Current | Not started |
-| 5O | Pending | Not started |
+| 5N | Completed | See repository history |
+| 5O | Current | Not started |
 
 Post-slice format extension on 2026-06-24: M4B/AAC-LC import, playback source
 preparation, and deterministic cue clipping were enabled through Symphonia
@@ -465,6 +465,16 @@ Validation:
 
 Goal: complete the HSA-visible word-audio playback modes inside HSW.
 
+Status: implemented on 2026-06-27. Word audio playback now coordinates with the
+HSW-owned Sasayaki reader audio element through the persisted playback mode:
+Interrupt pauses Sasayaki and resumes only when the coordinator paused it, Duck
+temporarily lowers Sasayaki volume and restores the prior volume, and Mix leaves
+Sasayaki untouched. The same popup lifecycle is used for button playback and
+autoplay. Rapid word-audio replacements transfer the paused/ducked Sasayaki
+state to the latest word request; word playback failures, manual Sasayaki
+controls, navigation, shutdown, and Sasayaki teardown clear the coordinator.
+This does not claim Windows-wide audio focus control.
+
 Key changes:
 
 - Interrupt pauses and conditionally resumes Sasayaki, Duck temporarily lowers
@@ -472,6 +482,14 @@ Key changes:
 - Apply the same rules to autoplay and handle rapid lookups, failures, manual
   pauses, chapter changes, and shutdown.
 - Coordinate HSW audio only; do not promise Windows-wide audio focus control.
+
+Validation:
+
+- Passed: `npm run check`, `npm run build`, `npm run check:sasayaki-playback`,
+  and `npm run check:lookup-popup`.
+- Sasayaki playback probe covers interrupt resume, rapid interrupt replacement,
+  duck volume restore, mix no-op behavior, and existing lookup auto-pause.
+- Manual Tauri playback for all modes remains `not verified`.
 
 ### Slice 5O: Runtime Validation And Alignment Closure
 
@@ -520,8 +538,8 @@ until its acceptance and validation entries are satisfied and recorded.
 | 5K | Completed (2026-06-24) | Sasayaki player lifecycle and controls; highlighting/following deferred | 5J stable cues | Playback/navigation/rate/delay work and restore; missing external audio relinks; lifecycle does not leak players | Passed: playback restore/value/relink Rust fixtures, 125 Rust tests plus 2 ignored, Rust check, frontend check/build, dedicated playback probe, reader visual and TOC probes, wide/520px overflow checks; a real backend M4B fixture is now available, but actual Tauri/WebView audio output remains `not verified` |
 | 5L | Completed (2026-06-25) | Cue presentation and reader coordination without replacing pagination | 5K playback events and 5J ranges | Sasayaki cue overlay causes no reflow; active cues follow aligned pages/chapters; lookup auto-pause resumes only lookup-paused playback; skip/settings persist | Passed: 127 Rust tests plus 3 ignored, Rust check, frontend check/build, playback/reader visual/TOC probes, real EPUB/M4B/SRT backend pipeline; 2026-06-27 overlay regression probe verifies no Sasayaki CSS Highlight; manual Tauri audio/visual check `not verified` |
 | 5M | Completed (2026-06-25) | `{sasayaki-audio}` accepts `bookId + cueId`; Rust owns path/range; no arbitrary frontend time/path | 5I-0 clipping plus stable 5J-L cues | Deterministic WAV sound tag; ordinary no-cue/decode failures warn and create text cards; tampering/escape/range/oversize blocks; ordering is covered | Passed: 130 Rust tests plus 3 ignored, Rust check, frontend check/build, panel/popup probes, real M4B cue clipping; real Anki playback `not verified` |
-| 5N | Current | Coordinate HSW-owned word and Sasayaki audio only; no Windows-wide focus | 5H word playback and 5K-L Sasayaki playback | Interrupt/Duck/Mix restore exact prior state; autoplay shares coordinator; rapid actions/failures/manual pause/navigation/shutdown are correct | Coordinator state-machine tests, rapid-action probes, manual Tauri playback for all modes |
-| 5O | Pending | Runtime evidence and parity closure only; missing fixtures remain visible | 5F-5N committed at automated level | Full real pipeline order passes where fixtures exist; HSA defaults/states/failures have explicit parity results; gaps say `not verified` | All common checks, real Anki add/media/sync, real HSA DB/remote audio, packaged playback, Sasayaki end-to-end, `npm run package` |
+| 5N | Completed (2026-06-27) | Coordinate HSW-owned word and Sasayaki audio only; no Windows-wide focus | 5H word playback and 5K-L Sasayaki playback | Interrupt/Duck/Mix restore exact prior state; autoplay shares coordinator; rapid actions/failures/manual pause/navigation/shutdown are correct | Passed: coordinator helper coverage through Sasayaki playback probe, rapid-action probe coverage, lookup popup lifecycle probe, frontend check/build; manual Tauri playback for all modes `not verified` |
+| 5O | Current | Runtime evidence and parity closure only; missing fixtures remain visible | 5F-5N committed at automated level | Full real pipeline order passes where fixtures exist; HSA defaults/states/failures have explicit parity results; gaps say `not verified` | All common checks, real Anki add/media/sync, real HSA DB/remote audio, packaged playback, Sasayaki end-to-end, `npm run package` |
 
 Common checks mean `npm run check`, `npm run build`, the affected frontend
 probes, VS developer-shell `cargo test --lib`, and VS developer-shell
@@ -529,6 +547,6 @@ probes, VS developer-shell `cargo test --lib`, and VS developer-shell
 
 ## Recommended Next Step
 
-Implement Slice 5N as the next committed slice. Coordinate HSW-owned word audio
-with Sasayaki playback through Interrupt, Duck, and Mix without claiming
-Windows-wide audio-focus control.
+Run Slice 5O as the next committed slice. Close the Anki/audio route with real
+runtime evidence where fixtures and local services are available, and keep
+missing coverage explicitly marked `not verified`.

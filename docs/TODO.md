@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Agent TODO
 
-Last updated: 2026-06-25
+Last updated: 2026-06-27
 
 This file is the short operational handoff for future agents. Keep detailed state in `docs/PROJECT_STATUS.md` and lookup-specific slice details in `docs/LOOKUP_ROADMAP.md`.
 
@@ -47,8 +47,15 @@ This file is the short operational handoff for future agents. Keep detailed stat
    - Anki HSA/Windows alignment is documented in `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`; AnkiConnect readiness/configuration, field preview, minimal duplicate-check/add-note plumbing, and real AnkiConnect runtime add-note validation are complete.
 5. Treat the storage/model migration as complete at the JSON-store level: reading progress, recent books, and session now live in Tauri app data `reading/state.json`, with one-time legacy `localStorage` import and browser fallback.
 6. Follow the complete Anki/audio route in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
-   - Current: Slice 5N, word and Sasayaki playback coordination.
-   - Next: Slice 5O, runtime validation and alignment closure.
+   - Current: Slice 5O, runtime validation and alignment closure.
+   - Next: none until Slice 5O records available real runtime evidence and
+     explicit `not verified` gaps.
+   - Completed on 2026-06-27: Slice 5N word/Sasayaki playback coordination.
+     Interrupt pauses and conditionally resumes Sasayaki, Duck temporarily
+     lowers and restores Sasayaki volume, Mix leaves Sasayaki untouched, and
+     rapid word-audio replacement transfers coordinator state to the latest
+     request. Automated checks passed; manual Tauri playback for all modes
+     remains `not verified`.
    - Completed on 2026-06-25: Slice 5M `{sasayaki-audio}` export from
      `bookId + cueId`, Rust-owned sidecar/path/range resolution, deterministic
      `hsw_sasayaki_<hash>.wav` storage, optional-media warnings, security hard

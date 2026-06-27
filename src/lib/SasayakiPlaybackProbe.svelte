@@ -7,7 +7,12 @@
     shouldAutoPauseSasayaki,
     shouldCommitPlaybackTime,
   } from "./sasayaki-playback";
-  import type { SasayakiPlaybackSession } from "./types";
+  import {
+    beginWordAudioCoordination,
+    endWordAudioCoordination,
+    type WordAudioCoordinationState,
+  } from "./word-audio-coordination";
+  import type { AudioPlaybackMode, SasayakiPlaybackSession } from "./types";
 
   let open = $state(false);
   let playing = $state(false);
@@ -21,6 +26,9 @@
   let lastCommittedAt = 1000;
   let audioTimeCommits = $state(0);
   let repaintSentinel = $state(0);
+  let coordinationRun = 0;
+  let wordAudioCoordination = $state<WordAudioCoordinationState | null>(null);
+  let sasayakiVolume = $state(1);
   let session = $state<SasayakiPlaybackSession>({
     configured: true,
     audioPath: "C:/Books/audio.wav",
@@ -70,6 +78,57 @@
     }
     events = [...events, "audio-throttled"];
   }
+
+  function restoreWordAudioCoordination(id = wordAudioCoordination?.id) {
+    const active = wordAudioCoordination;
+    if (!active || id !== active.id) return;
+    const plan = endWordAudioCoordination({
+      state: active,
+      id,
+      hasSasayakiAudio: true,
+      sasayakiPlaying: playing,
+    });
+    wordAudioCoordination = null;
+    if (plan.restoreSasayakiVolume !== null) {
+      sasayakiVolume = plan.restoreSasayakiVolume;
+      events = [...events, `word-volume:${sasayakiVolume}`];
+    }
+    if (plan.resumeSasayaki) {
+      playing = true;
+      events = [...events, "word-resume"];
+    }
+  }
+
+  function replaceWordAudioCoordination(): boolean {
+    const active = wordAudioCoordination;
+    if (!active) return false;
+    if (active.duckedSasayaki) sasayakiVolume = active.previousVolume;
+    wordAudioCoordination = null;
+    return active.pausedSasayaki;
+  }
+
+  function beginWordAudio(mode: AudioPlaybackMode): number {
+    const wasPausedByPreviousWordAudio = replaceWordAudioCoordination();
+    const id = ++coordinationRun;
+    const plan = beginWordAudioCoordination({
+      id,
+      mode,
+      sasayakiPlaying: playing || wasPausedByPreviousWordAudio,
+      hasSasayakiAudio: true,
+      currentVolume: sasayakiVolume,
+    });
+    wordAudioCoordination = plan.state;
+    if (plan.setSasayakiVolume !== null) {
+      sasayakiVolume = plan.setSasayakiVolume;
+      events = [...events, `word-duck:${sasayakiVolume}`];
+    }
+    if (plan.pauseSasayaki) {
+      playing = false;
+      events = [...events, "word-pause"];
+    }
+    if (!plan.pauseSasayaki && plan.setSasayakiVolume === null) events = [...events, `word-${mode}`];
+    return id;
+  }
 </script>
 
 <main class="probe" data-ui-portal-root>
@@ -117,6 +176,39 @@
         aria-label="Probe committed audio tick"
         onclick={() => probeAudioTimeUpdate(0.3, 250)}
       >Audio tick committed</button>
+      <button
+        class="probe-action"
+        aria-label="Probe word interrupt"
+        onclick={() => {
+          const id = beginWordAudio("interrupt");
+          restoreWordAudioCoordination(id);
+        }}
+      >Word interrupt</button>
+      <button
+        class="probe-action"
+        aria-label="Probe rapid word interrupt"
+        onclick={() => {
+          beginWordAudio("interrupt");
+          const second = beginWordAudio("interrupt");
+          restoreWordAudioCoordination(second);
+        }}
+      >Rapid word interrupt</button>
+      <button
+        class="probe-action"
+        aria-label="Probe word duck"
+        onclick={() => {
+          const id = beginWordAudio("duck");
+          restoreWordAudioCoordination(id);
+        }}
+      >Word duck</button>
+      <button
+        class="probe-action"
+        aria-label="Probe word mix"
+        onclick={() => {
+          const id = beginWordAudio("mix");
+          restoreWordAudioCoordination(id);
+        }}
+      >Word mix</button>
       <audio class="sasayaki-probe-audio" bind:this={audioEl} preload="metadata"></audio>
       <SasayakiPlayerPanel
         {session}
@@ -185,6 +277,8 @@
     data-audio-element={Boolean(audioEl)}
     data-audio-time-commits={audioTimeCommits}
     data-repaint-sentinel={repaintSentinel}
+    data-word-coordination-active={Boolean(wordAudioCoordination)}
+    data-sasayaki-volume={sasayakiVolume}
   ></div>
 </main>
 
