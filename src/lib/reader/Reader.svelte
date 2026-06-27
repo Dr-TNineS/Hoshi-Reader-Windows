@@ -7,6 +7,7 @@
     READER_LOOKUP_HIGHLIGHT,
     READER_SASAYAKI_HIGHLIGHT,
     setLookupHighlightRange,
+    setLookupHighlightRanges,
   } from "../lookup-highlight";
   import type { ReaderProgress, ReaderSelection, ReaderSelectionRect, SasayakiPlaybackCue } from "../types";
 
@@ -59,7 +60,7 @@
   let pointerDownPoint: { x: number; y: number } | null = null;
   let lastShiftHoverHit: { node: Text; offset: number } | null = null;
   let lastAppliedLookupHighlightCount = -1;
-  let activeLookupRange: Range | null = null;
+  let activeLookupRanges: Range[] = [];
   let shiftHoverFrame: number | null = null;
   let layoutRun = 0;
   let resizeRun = 0;
@@ -499,76 +500,68 @@
   }
 
   function detachActiveLookupRange() {
-    activeLookupRange?.detach();
-    activeLookupRange = null;
+    activeLookupRanges.forEach((range) => range.detach());
+    activeLookupRanges = [];
     lastAppliedLookupHighlightCount = -1;
     clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
   }
 
-  function rangePrefixEnd(range: Range, characterCount: number): { node: Text; offset: number } | null {
-    if (characterCount <= 0 || !range.startContainer.parentElement?.isConnected) return null;
-
-    const commonRoot = range.commonAncestorContainer;
-    const walkerRoot = commonRoot.nodeType === Node.TEXT_NODE
-      ? commonRoot.parentElement
-      : commonRoot;
-    if (!walkerRoot) return null;
-
-    const walker = createWalker(walkerRoot);
-    if (range.startContainer.nodeType === Node.TEXT_NODE) walker.currentNode = range.startContainer;
-
-    let node: Text | null = range.startContainer.nodeType === Node.TEXT_NODE
-      ? range.startContainer as Text
-      : walker.nextNode() as Text | null;
+  function lookupPrefixRanges(characterCount: number): Range[] {
+    if (characterCount <= 0) return [];
+    const prefixRanges: Range[] = [];
     let remaining = characterCount;
 
-    while (node) {
-      if (!range.intersectsNode(node)) {
-        const next = walker.nextNode();
-        node = next?.nodeType === Node.TEXT_NODE ? next as Text : null;
-        continue;
-      }
+    for (const sourceRange of activeLookupRanges) {
+      if (remaining <= 0) break;
+      if (!sourceRange.startContainer.parentElement?.isConnected) continue;
+      if (sourceRange.startContainer.nodeType !== Node.TEXT_NODE || sourceRange.endContainer.nodeType !== Node.TEXT_NODE) continue;
 
+      const node = sourceRange.startContainer as Text;
       const content = node.textContent ?? "";
-      const startOffset = node === range.startContainer ? range.startOffset : 0;
-      const endOffset = node === range.endContainer ? range.endOffset : content.length;
+      const startOffset = sourceRange.startOffset;
+      const endOffset = sourceRange.endOffset;
       let offset = startOffset;
       while (offset < endOffset) {
         const char = String.fromCodePoint(content.codePointAt(offset) ?? 0);
         const nextOffset = Math.min(endOffset, offset + char.length);
         remaining -= 1;
-        if (remaining === 0) return { node, offset: nextOffset };
+        if (remaining === 0) {
+          const range = document.createRange();
+          range.setStart(node, startOffset);
+          range.setEnd(node, nextOffset);
+          prefixRanges.push(range);
+          return prefixRanges;
+        }
         offset = nextOffset;
       }
 
-      if (node === range.endContainer) break;
-      const next = walker.nextNode();
-      node = next?.nodeType === Node.TEXT_NODE ? next as Text : null;
+      const range = document.createRange();
+      range.setStart(node, startOffset);
+      range.setEnd(node, endOffset);
+      prefixRanges.push(range);
     }
 
-    return null;
+    prefixRanges.forEach((range) => range.detach());
+    return [];
   }
 
   function applyLookupHighlightCount(characterCount: number) {
-    if (!activeLookupRange || characterCount === lastAppliedLookupHighlightCount) return;
+    if (activeLookupRanges.length === 0 || characterCount === lastAppliedLookupHighlightCount) return;
     if (characterCount <= 0) {
       clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
       lastAppliedLookupHighlightCount = 0;
       return;
     }
 
-    const end = rangePrefixEnd(activeLookupRange, characterCount);
-    if (!end) {
+    const ranges = lookupPrefixRanges(characterCount);
+    if (ranges.length === 0) {
       clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
       lastAppliedLookupHighlightCount = characterCount;
       return;
     }
 
-    const visibleRange = document.createRange();
-    visibleRange.setStart(activeLookupRange.startContainer, activeLookupRange.startOffset);
-    visibleRange.setEnd(end.node, end.offset);
-    setLookupHighlightRange(READER_LOOKUP_HIGHLIGHT, visibleRange);
-    visibleRange.detach();
+    setLookupHighlightRanges(READER_LOOKUP_HIGHLIGHT, ranges);
+    ranges.forEach((range) => range.detach());
     lastAppliedLookupHighlightCount = characterCount;
   }
 
@@ -660,7 +653,7 @@
     const lastRange = ranges[ranges.length - 1];
     visibleRange.setEnd(lastRange.endContainer, lastRange.endOffset);
     detachActiveLookupRange();
-    activeLookupRange = visibleRange.cloneRange();
+    activeLookupRanges = ranges.map((range) => range.cloneRange());
     lastAppliedLookupHighlightCount = 0;
     clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
     window.getSelection()?.removeAllRanges();

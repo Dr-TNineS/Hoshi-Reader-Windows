@@ -53,6 +53,12 @@
   }
 
   function chapterContent(title: string, paragraphs: ReturnType<typeof chapterParagraphs>, includeImage = false) {
+    const rubyHighlightProbeHtml = `
+      <p data-ruby-highlight-probe>
+        <ruby>優<rt>やさ</rt></ruby>しい<ruby>微笑<rt>ほほえ</rt></ruby>みを見た。
+      </p>
+    `;
+    const rubyHighlightProbeText = "優しい微笑みを見た。";
     const offsetProbeHtml = `
       <p data-offset-probe>
         始<ruby>母<rt>はは</rt><rp>（</rp><rp>）</rp></ruby>後語。選択位置確認。
@@ -67,13 +73,14 @@
           <img src="data:image/svg+xml,${imageSvg}" alt="Reader visual probe cover" />
         </p>
       ` : ""}
+      ${rubyHighlightProbeHtml}
       ${offsetProbeHtml}
       ${paragraphs.html}
     </section>
   `;
     return {
       html,
-      charCount: countChars(`${title}${offsetProbeText}${paragraphs.text}`),
+      charCount: countChars(`${title}${rubyHighlightProbeText}${offsetProbeText}${paragraphs.text}`),
     };
   }
 
@@ -124,6 +131,12 @@
       window.setTimeout(() => {
         if (generation !== lookupGeneration) return;
         lookupHighlightText = Array.from(selection.text).slice(0, 2).join("");
+        lookupHighlightSignal += 1;
+      }, 120);
+    } else if (selection && lookupHighlightMode === "rubyFull") {
+      window.setTimeout(() => {
+        if (generation !== lookupGeneration) return;
+        lookupHighlightText = "優しい微笑み";
         lookupHighlightSignal += 1;
       }, 120);
     }

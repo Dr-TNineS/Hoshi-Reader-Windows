@@ -180,6 +180,7 @@ async function visibleParagraphPoint(page) {
     const viewport = rv.getBoundingClientRect();
     for (const paragraph of rct.querySelectorAll("p")) {
       if (paragraph.hasAttribute("data-offset-probe")) continue;
+      if (paragraph.hasAttribute("data-ruby-highlight-probe")) continue;
       const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
       while (walker.nextNode()) {
         const node = walker.currentNode;
@@ -259,6 +260,7 @@ async function offsetProbePoint(page) {
 
     const paragraph = document.querySelector("[data-offset-probe]");
     const h1 = document.querySelector(".rct h1");
+    const precedingRubyProbeChars = countChars("優しい微笑みを見た");
     if (!(paragraph instanceof HTMLElement) || !(h1 instanceof HTMLElement)) {
       throw new Error("Offset probe fixture not found.");
     }
@@ -280,11 +282,42 @@ async function offsetProbePoint(page) {
       return {
         x: rect.left + rect.width / 2,
         y: rect.top + rect.height / 2,
+        rubyProbeChars: precedingRubyProbeChars,
         expectedOffset: countChars(h1.textContent ?? "") + countChars("始母"),
         domOffset: Array.from(`${h1.textContent ?? ""}${paragraph.textContent ?? ""}`.split("後")[0]).length,
       };
     }
     throw new Error("Offset probe target was not found.");
+  });
+}
+
+async function rubyHighlightProbePoint(page) {
+  return page.evaluate(() => {
+    const paragraph = document.querySelector("[data-ruby-highlight-probe]");
+    if (!(paragraph instanceof HTMLElement)) {
+      throw new Error("Ruby highlight probe fixture not found.");
+    }
+    const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => node.parentElement?.closest("rt, rp")
+        ? NodeFilter.FILTER_REJECT
+        : NodeFilter.FILTER_ACCEPT,
+    });
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const text = node.textContent ?? "";
+      const index = text.indexOf("優");
+      if (index < 0) continue;
+      const range = document.createRange();
+      range.setStart(node, index);
+      range.setEnd(node, index + "優".length);
+      const rect = range.getBoundingClientRect();
+      range.detach();
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+    }
+    throw new Error("Ruby highlight probe target was not found.");
   });
 }
 
@@ -306,6 +339,38 @@ async function probeHighlightText(page) {
 
 async function probeRenderedHighlightText(page) {
   return await page.locator(".probe-state").getAttribute("data-rendered-highlight-text") ?? "";
+}
+
+async function readerLookupHighlightState(page) {
+  return page.evaluate(() => {
+    const highlight = CSS.highlights?.get("hsw-reader-lookup-selection");
+    const ranges = [];
+    if (highlight?.forEach) {
+      highlight.forEach((range) => ranges.push(range));
+    } else if (highlight?.[Symbol.iterator]) {
+      for (const range of highlight) ranges.push(range);
+    }
+
+    return {
+      text: ranges.map((range) => range.toString()).join(""),
+      rangeCount: ranges.length,
+      domSelection: window.getSelection()?.toString().replace(/\s+/g, " ").trim() ?? "",
+      containsRubyText: ranges.some((range) => /やさ|ほほえ/.test(range.toString())),
+      containsRubyNode: ranges.some((range) => {
+        const fragment = range.cloneContents();
+        return !!fragment.querySelector?.("rt, rp");
+      }),
+      endpointInsideRuby: ranges.some((range) => {
+        const start = range.startContainer.nodeType === Node.TEXT_NODE
+          ? range.startContainer.parentElement
+          : range.startContainer;
+        const end = range.endContainer.nodeType === Node.TEXT_NODE
+          ? range.endContainer.parentElement
+          : range.endContainer;
+        return !!start?.closest?.("rt, rp") || !!end?.closest?.("rt, rp");
+      }),
+    };
+  });
 }
 
 async function sasayakiHighlightState(page) {
@@ -499,9 +564,10 @@ async function main() {
     }, { timeout: 10000 });
     const rubyOffsetSelection = await probeSelectionText(page);
     const rubyChapterOffset = await probeSelectionChapterOffset(page);
+    const expectedRubyChapterOffset = rubyOffsetPoint.expectedOffset + rubyOffsetPoint.rubyProbeChars;
     assert(
       rubyOffsetSelection.startsWith("後") &&
-        rubyChapterOffset === rubyOffsetPoint.expectedOffset &&
+        rubyChapterOffset === expectedRubyChapterOffset &&
         rubyChapterOffset < rubyOffsetPoint.domOffset,
       "Reader selection chapterOffset should use Sasayaki/reader character coordinates, not raw DOM text offsets that include ruby text.",
       { rubyOffsetPoint, rubyOffsetSelection, rubyChapterOffset },
@@ -766,6 +832,32 @@ async function main() {
         fullLookupSelection.replace(/\s+/g, "").startsWith(highlightText),
       "Lookup highlight text should narrow the visible browser selection without changing the lookup input.",
       { highlightPoint, fullLookupSelection, narrowedDomSelection, renderedHighlightText, highlightText },
+    );
+
+    await page.goto(`${url}&lookupHighlightMode=rubyFull`);
+    await page.locator(".rv.ready").waitFor({ timeout: 10000 });
+    const rubyHighlightPoint = await rubyHighlightProbePoint(page);
+    await page.mouse.click(rubyHighlightPoint.x, rubyHighlightPoint.y);
+    await page.waitForFunction(() => (document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "").length > 0);
+    await page.waitForFunction(() => {
+      const state = document.querySelector(".probe-state");
+      return (state?.getAttribute("data-highlight-text") ?? "") === "優しい微笑み" &&
+        (state?.getAttribute("data-rendered-highlight-text") ?? "") === "優しい微笑み" &&
+        (state?.getAttribute("data-dom-selection") ?? "") === "";
+    }, { timeout: 10000 });
+    const rubyLookupSelection = await probeSelectionText(page);
+    const rubyHighlightState = await readerLookupHighlightState(page);
+    assert(
+      rubyLookupSelection.startsWith("優しい微笑み") &&
+        rubyLookupSelection.length > "優しい微笑み".length &&
+        rubyHighlightState.text === "優しい微笑み" &&
+        rubyHighlightState.rangeCount > 1 &&
+        rubyHighlightState.domSelection === "" &&
+        !rubyHighlightState.containsRubyText &&
+        !rubyHighlightState.containsRubyNode &&
+        !rubyHighlightState.endpointInsideRuby,
+      "Ruby lookup highlight should cover base text segments without including furigana.",
+      { rubyHighlightPoint, rubyLookupSelection, rubyHighlightState },
     );
 
     await page.locator(".rv").click();
