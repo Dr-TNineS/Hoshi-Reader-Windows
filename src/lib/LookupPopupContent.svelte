@@ -624,7 +624,13 @@
     }
   }
 
-  function runSasayakiAction(action: SasayakiPopupAction) {
+  function protectSasayakiControlPointer(event: PointerEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function runSasayakiAction(action: SasayakiPopupAction, event?: MouseEvent) {
+    event?.stopPropagation();
     if (!canControlSasayaki || !onSasayakiAction) return;
     stopWordAudio();
     onSasayakiAction(popupId, action);
@@ -715,9 +721,9 @@
     <span>Lookup</span>
     {#if canControlSasayaki}
       <div class="lookup-sasayaki-controls" aria-label="Sasayaki controls">
-        <button aria-label="Replay Sasayaki cue" title="Replay Sasayaki cue" onclick={() => runSasayakiAction("replayCue")}>↻</button>
-        <button aria-label={sasayakiPlaying ? "Pause Sasayaki" : "Play Sasayaki"} title={sasayakiPlaying ? "Pause Sasayaki" : "Play Sasayaki"} onclick={() => runSasayakiAction("togglePlayback")}>{sasayakiPlaying ? "■" : "▶"}</button>
-        <button aria-label="Play Sasayaki from this cue" title="Play Sasayaki from this cue" onclick={() => runSasayakiAction("playForward")}>▶|</button>
+        <button aria-label="Replay Sasayaki cue" title="Replay Sasayaki cue" onpointerdown={protectSasayakiControlPointer} onclick={(event) => runSasayakiAction("replayCue", event)}>↻</button>
+        <button aria-label={sasayakiPlaying ? "Pause Sasayaki" : "Play Sasayaki"} title={sasayakiPlaying ? "Pause Sasayaki" : "Play Sasayaki"} onpointerdown={protectSasayakiControlPointer} onclick={(event) => runSasayakiAction("togglePlayback", event)}>{sasayakiPlaying ? "■" : "▶"}</button>
+        <button aria-label="Play Sasayaki from this cue" title="Play Sasayaki from this cue" onpointerdown={protectSasayakiControlPointer} onclick={(event) => runSasayakiAction("playForward", event)}>▶|</button>
       </div>
     {/if}
     <div class="lookup-head-actions">

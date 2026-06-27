@@ -507,15 +507,23 @@ async function main() {
     await openProbe(page, "ready", { ankiMode: "configured", sasayakiControls: true });
     const sasayakiControls = await popupMetrics(page);
     assert(sasayakiControls.sasayakiControls === 3, "Root lookup with a matched Sasayaki cue should expose replay, toggle, and play-forward controls.", sasayakiControls);
+    const replayPointerPreservedSelection = await page.getByRole("button", { name: "Replay Sasayaki cue", exact: true }).evaluate((button) => {
+      const event = new PointerEvent("pointerdown", { bubbles: true, cancelable: true });
+      button.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    assert(replayPointerPreservedSelection, "Replay pointerdown should preserve the reader selection so the root popup stays open.", replayPointerPreservedSelection);
     await page.getByRole("button", { name: "Play audio" }).first().click();
     await page.waitForFunction(() => Number(document.querySelector(".probe-state")?.getAttribute("data-word-audio-prepare-count") ?? 0) === 1);
     await page.getByRole("button", { name: "Replay Sasayaki cue", exact: true }).click();
     const replaySasayaki = await popupMetrics(page);
     assert(replaySasayaki.sasayakiLastAction.action === "replayCue" && replaySasayaki.sasayakiLastAction.popupId === "root", "Replay should target the root popup Sasayaki cue.", replaySasayaki);
+    assert(replaySasayaki.popupCount === 1, "Replay should keep the root dictionary popup open.", replaySasayaki);
     assert(replaySasayaki.audioTitle.includes("Play word audio"), "Sasayaki controls should stop any active popup word audio before acting.", replaySasayaki);
     await page.getByRole("button", { name: "Play Sasayaki", exact: true }).click();
     const toggledSasayaki = await popupMetrics(page);
     assert(toggledSasayaki.sasayakiLastAction.action === "togglePlayback" && toggledSasayaki.sasayakiPlaying, "Toggle should update the Sasayaki playback state.", toggledSasayaki);
+    assert(toggledSasayaki.popupCount === 1, "Toggle playback should keep the root dictionary popup open.", toggledSasayaki);
     await page.getByRole("button", { name: "Play Sasayaki from this cue", exact: true }).click();
     const forwardSasayaki = await popupMetrics(page);
     assert(forwardSasayaki.sasayakiLastAction.action === "playForward", "Play-forward should dispatch the HSA root popup Sasayaki action.", forwardSasayaki);
