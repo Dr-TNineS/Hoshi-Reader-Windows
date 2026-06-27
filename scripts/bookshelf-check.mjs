@@ -71,6 +71,19 @@ async function main() {
       await page.locator(".panel-head").getByRole("heading", { name: panel, exact: true }).waitFor();
       assert(await entry.getAttribute("aria-current") === "page", `${panel} should become the single active panel.`);
       assert(await navigation.locator('[aria-current="page"]').count() === 1, "Bookshelf should expose exactly one active panel.");
+      if (panel === "Shortcuts") {
+        const shortcutText = await page.getByRole("region", { name: "Keyboard shortcuts", exact: true }).textContent();
+        assert(
+          shortcutText?.includes("Sasayaki") &&
+            shortcutText.includes("Toggle playback") &&
+            shortcutText.includes("Skip backward") &&
+            shortcutText.includes("Skip forward") &&
+            shortcutText.includes("P") &&
+            shortcutText.includes("[") &&
+            shortcutText.includes("]"),
+          "Shortcuts panel should document Sasayaki playback shortcuts.",
+        );
+      }
     }
 
     const ownedCard = page.locator(".book-card").filter({ hasText: "Owned Book" });
