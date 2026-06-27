@@ -5,6 +5,7 @@
     cuePresentationAtTime,
     sasayakiSkipTarget,
     shouldAutoPauseSasayaki,
+    shouldCommitPlaybackTime,
   } from "./sasayaki-playback";
   import type { SasayakiPlaybackSession } from "./types";
 
@@ -15,6 +16,11 @@
   let hasPlayedOnce = $state(false);
   let pausedByLookup = $state(false);
   let chapterIndex = $state(0);
+  let audioEl = $state<HTMLAudioElement | null>(null);
+  let probeNow = 1000;
+  let lastCommittedAt = 1000;
+  let audioTimeCommits = $state(0);
+  let repaintSentinel = $state(0);
   let session = $state<SasayakiPlaybackSession>({
     configured: true,
     audioPath: "C:/Books/audio.wav",
@@ -40,6 +46,30 @@
     session.autoScroll,
     hasPlayedOnce,
   ));
+
+  function probeAudioTimeUpdate(delta: number, elapsedMs: number) {
+    if (!audioEl) return;
+    const target = Math.max(0, currentTime + delta);
+    try {
+      audioEl.currentTime = target;
+    } catch {
+      // Browsers may reject seeking a source-less probe element; the App path
+      // uses a real media source, while this probe still validates throttling.
+    }
+    const observedTime = Number.isFinite(audioEl.currentTime) && audioEl.currentTime > 0
+      ? audioEl.currentTime
+      : target;
+    probeNow += elapsedMs;
+    repaintSentinel += 1;
+    if (shouldCommitPlaybackTime(observedTime, currentTime, probeNow, lastCommittedAt)) {
+      currentTime = observedTime;
+      lastCommittedAt = probeNow;
+      audioTimeCommits += 1;
+      events = [...events, `audio-time:${currentTime.toFixed(2)}`];
+      return;
+    }
+    events = [...events, "audio-throttled"];
+  }
 </script>
 
 <main class="probe" data-ui-portal-root>
@@ -77,6 +107,17 @@
           }
         }}
       >Close lookup</button>
+      <button
+        class="probe-action"
+        aria-label="Probe throttled audio tick"
+        onclick={() => probeAudioTimeUpdate(0.01, 50)}
+      >Audio tick throttled</button>
+      <button
+        class="probe-action"
+        aria-label="Probe committed audio tick"
+        onclick={() => probeAudioTimeUpdate(0.3, 250)}
+      >Audio tick committed</button>
+      <audio class="sasayaki-probe-audio" bind:this={audioEl} preload="metadata"></audio>
       <SasayakiPlayerPanel
         {session}
         {playing}
@@ -141,6 +182,9 @@
     data-cue-reveal={presentation.reveal}
     data-chapter-to-load={presentation.chapterToLoad ?? ""}
     data-chapter-index={chapterIndex}
+    data-audio-element={Boolean(audioEl)}
+    data-audio-time-commits={audioTimeCommits}
+    data-repaint-sentinel={repaintSentinel}
   ></div>
 </main>
 

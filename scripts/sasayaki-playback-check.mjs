@@ -50,6 +50,9 @@ async function presentation(page) {
     reveal: await state.getAttribute("data-cue-reveal"),
     chapterToLoad: await state.getAttribute("data-chapter-to-load"),
     playing: await state.getAttribute("data-playing"),
+    audioElement: await state.getAttribute("data-audio-element"),
+    audioTimeCommits: await state.getAttribute("data-audio-time-commits"),
+    repaintSentinel: await state.getAttribute("data-repaint-sentinel"),
   };
 }
 
@@ -75,14 +78,28 @@ async function main() {
     await panel.waitFor();
     assert((await panel.textContent())?.includes("星の音.wav"), "Playback should show the restored audio source.");
     assert((await panel.textContent())?.includes("0:12") && (await panel.textContent())?.includes("2:00"), "Playback should show restored progress and duration.");
+    assert((await presentation(page)).audioElement === "true", "Playback probe should mount a controlled audio element.");
     await panel.getByRole("button", { name: "Play Sasayaki", exact: true }).click();
     await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-playing") === "true");
+    await page.getByRole("button", { name: "Probe throttled audio tick", exact: true }).dispatchEvent("click");
+    await page.getByRole("button", { name: "Probe committed audio tick", exact: true }).dispatchEvent("click");
+    const audioTick = await presentation(page);
+    assert(
+      audioTick.audioTimeCommits === "1" && audioTick.repaintSentinel === "2",
+      "Probe audio time updates should throttle low-value ticks and commit after the UI interval.",
+      audioTick,
+    );
     await page.getByRole("button", { name: "Probe open lookup", exact: true }).dispatchEvent("click");
     await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-playing") === "false");
     assert((await presentation(page)).playing === "false", "Auto-Pause should pause active Sasayaki playback when lookup opens.");
     await page.getByRole("button", { name: "Probe close lookup", exact: true }).dispatchEvent("click");
     await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-playing") === "true");
     assert((await presentation(page)).playing === "true", "Closing the lookup should resume only playback paused by lookup.");
+    await panel.getByRole("button", { name: "Close Sasayaki playback", exact: true }).click();
+    assert((await presentation(page)).playing === "true", "Closing the playback panel should not stop active audio state.");
+    await page.waitForFunction(() => document.activeElement?.id === "reader-sasayaki-trigger");
+    await audioButton.click();
+    await panel.waitFor();
     await panel.getByRole("button", { name: "Pause Sasayaki", exact: true }).click();
     await panel.getByRole("button", { name: "Skip backward sentence", exact: true }).click();
     await panel.getByRole("button", { name: "Skip forward sentence", exact: true }).click();
@@ -101,7 +118,7 @@ async function main() {
     await panel.getByLabel("Sasayaki skip action").selectOption("seconds15");
     await panel.getByRole("button", { name: "Skip forward 15 seconds", exact: true }).click();
     assert(
-      await events(page) === "play,lookup-pause,lookup-resume,pause,previous:5.25,next:15.25,skip:-10,skip:10,rate:1.5,delay:-0.5,autoScroll:false,autoPause:false,skipAction:seconds15,next:30.25",
+      await events(page) === "play,audio-throttled,audio-time:12.30,lookup-pause,lookup-resume,pause,previous:5.25,next:15.25,skip:-10,skip:10,rate:1.5,delay:-0.5,autoScroll:false,autoPause:false,skipAction:seconds15,next:30.25",
       "Playback controls should emit stable lifecycle, cue/seconds skip, rate, delay, and coordination settings.",
     );
     const wideOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);

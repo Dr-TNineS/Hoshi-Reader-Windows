@@ -1,8 +1,23 @@
 import type { SasayakiPlaybackCue, SasayakiSkipAction } from "./types";
 
+export const SASAYAKI_TIME_UI_INTERVAL_MS = 250;
+
 export function clampPlaybackTime(value: number, duration: number): number {
   const safe = Number.isFinite(value) ? Math.max(0, value) : 0;
   return duration > 0 && Number.isFinite(duration) ? Math.min(safe, duration) : safe;
+}
+
+export function shouldCommitPlaybackTime(
+  currentTime: number,
+  lastCommittedTime: number,
+  nowMs: number,
+  lastCommittedAtMs: number,
+  force = false,
+): boolean {
+  if (force) return true;
+  if (!Number.isFinite(currentTime)) return false;
+  return nowMs - lastCommittedAtMs >= SASAYAKI_TIME_UI_INTERVAL_MS
+    || Math.abs(currentTime - lastCommittedTime) >= SASAYAKI_TIME_UI_INTERVAL_MS / 1000;
 }
 
 export function nextCueTime(cues: SasayakiPlaybackCue[], currentTime: number, delay: number): number | null {

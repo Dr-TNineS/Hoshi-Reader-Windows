@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { tick } from "svelte";
   import { convertFileSrc, invoke, isTauri as isTauriRuntime } from "@tauri-apps/api/core";
   import { open } from "@tauri-apps/plugin-dialog";
   import { getCurrentWindow } from "@tauri-apps/api/window";
@@ -23,6 +24,7 @@
     cuePresentationAtTime,
     sasayakiSkipTarget,
     shouldAutoPauseSasayaki,
+    shouldCommitPlaybackTime,
   } from "./lib/sasayaki-playback";
   import { createSettingsState } from "./lib/state/settings.svelte";
   import {
@@ -115,7 +117,9 @@
   let sasayakiCurrentTime = $state(0);
   let sasayakiDuration = $state(0);
   let sasayakiPlaybackError = $state("");
-  let sasayakiAudio: HTMLAudioElement | null = null;
+  let sasayakiAudio = $state<HTMLAudioElement | null>(null);
+  let sasayakiAudioSrc = $state("");
+  let sasayakiRepaintSentinel = $state(0);
   let sasayakiPlaybackBookId: string | null = null;
   let sasayakiLastSavedAt = 0;
   let sasayakiSaveTimer: ReturnType<typeof setTimeout> | null = null;
@@ -128,6 +132,10 @@
   let sasayakiPausedByLookup = false;
   let sasayakiLookupResumeTimer: ReturnType<typeof setTimeout> | null = null;
   let sasayakiCueNavigationRun = 0;
+  let sasayakiLoadedAudioPath: string | null = null;
+  let sasayakiLastTimeCommitAt = 0;
+  let sasayakiCueSyncTimer: ReturnType<typeof setTimeout> | null = null;
+  let sasayakiPendingCueForceReveal = false;
   let bookImportBusy = $state(false);
   let debug = $state("");
   let triedStartup = false;
@@ -639,37 +647,77 @@
       const session = await invoke<SasayakiPlaybackSession>("sasayaki_prepare_playback", { bookId });
       if (sasayakiPlaybackBookId !== bookId) return;
       sasayakiPlayback = session;
+      setSasayakiAudioSource(session);
       sasayakiCurrentTime = session.lastPosition;
-      syncSasayakiCuePresentation(false);
+      scheduleSasayakiCuePresentation(false, true);
     } catch (e) {
       if (sasayakiPlaybackBookId === bookId) sasayakiPlaybackError = String(e);
     }
   }
 
+  function sasayakiDiagnosticsEnabled(): boolean {
+    return typeof localStorage !== "undefined" && localStorage.getItem("hoshi_sasayaki_debug") === "1";
+  }
+
+  function recordSasayakiDiagnostic(event: string, details: Record<string, unknown> = {}) {
+    if (!sasayakiDiagnosticsEnabled()) return;
+    sasayakiRepaintSentinel += 1;
+    console.debug("[HSW Sasayaki]", event, {
+      currentTime: sasayakiCurrentTime,
+      duration: sasayakiDuration,
+      chapterIndex,
+      activeCue: sasayakiActiveCue?.id ?? null,
+      sentinel: sasayakiRepaintSentinel,
+      ...details,
+    });
+  }
+
+  function setSasayakiAudioSource(session: SasayakiPlaybackSession | null) {
+    const nextPath = session?.audioPath ?? null;
+    sasayakiAudioSrc = nextPath ? convertFileSrc(nextPath) : "";
+    sasayakiLoadedAudioPath = null;
+    sasayakiLastTimeCommitAt = 0;
+    recordSasayakiDiagnostic("audio-source", { path: nextPath });
+  }
+
+  function clearSasayakiCueTimer() {
+    if (!sasayakiCueSyncTimer) return;
+    clearTimeout(sasayakiCueSyncTimer);
+    sasayakiCueSyncTimer = null;
+    sasayakiPendingCueForceReveal = false;
+  }
+
   function teardownSasayakiAudio() {
-    if (!sasayakiAudio) {
-      sasayakiPlaying = false;
-      sasayakiActiveCue = null;
-      sasayakiCueReveal = false;
-      sasayakiCueSignal += 1;
-      return;
+    clearSasayakiCueTimer();
+    if (sasayakiAudio) {
+      sasayakiSuppressPauseSave = true;
+      sasayakiAudio.pause();
+      sasayakiSuppressPauseSave = false;
     }
-    sasayakiAudio.onloadedmetadata = null;
-    sasayakiAudio.ontimeupdate = null;
-    sasayakiAudio.onplay = null;
-    sasayakiAudio.onpause = null;
-    sasayakiAudio.onended = null;
-    sasayakiAudio.onerror = null;
-    sasayakiSuppressPauseSave = true;
-    sasayakiAudio.pause();
-    sasayakiAudio.src = "";
-    sasayakiAudio.load();
-    sasayakiAudio = null;
+    sasayakiAudioSrc = "";
+    sasayakiLoadedAudioPath = null;
+    sasayakiLastTimeCommitAt = 0;
     sasayakiPlaying = false;
-    sasayakiSuppressPauseSave = false;
     sasayakiActiveCue = null;
     sasayakiCueReveal = false;
     sasayakiCueSignal += 1;
+    recordSasayakiDiagnostic("teardown");
+  }
+
+  function scheduleSasayakiCuePresentation(forceReveal: boolean, immediate = false) {
+    sasayakiPendingCueForceReveal = sasayakiPendingCueForceReveal || forceReveal;
+    if (immediate) {
+      clearSasayakiCueTimer();
+      syncSasayakiCuePresentation(forceReveal);
+      return;
+    }
+    if (sasayakiCueSyncTimer) return;
+    sasayakiCueSyncTimer = setTimeout(() => {
+      const nextForceReveal = sasayakiPendingCueForceReveal;
+      sasayakiCueSyncTimer = null;
+      sasayakiPendingCueForceReveal = false;
+      syncSasayakiCuePresentation(nextForceReveal);
+    }, 150);
   }
 
   function syncSasayakiCuePresentation(forceReveal: boolean) {
@@ -692,11 +740,13 @@
     sasayakiActiveCue = cue;
     sasayakiCueReveal = reveal;
     sasayakiCueSignal += 1;
+    recordSasayakiDiagnostic("cue", { cue: cue?.id ?? null, reveal, chapterToLoad });
 
     if (!cue || chapterToLoad === null) return;
     const run = ++sasayakiCueNavigationRun;
     startAtEnd = false;
     closeReaderSelection();
+    recordSasayakiDiagnostic("chapter-load", { target: chapterToLoad });
     void loadChapter(
       chapterToLoad,
       0,
@@ -707,53 +757,81 @@
     });
   }
 
-  function ensureSasayakiAudio(): HTMLAudioElement | null {
+  async function ensureSasayakiAudio(): Promise<HTMLAudioElement | null> {
     if (sasayakiAudio) return sasayakiAudio;
-    if (!sasayakiPlayback?.audioPath) return null;
-    const audio = new Audio(convertFileSrc(sasayakiPlayback.audioPath));
-    audio.preload = "metadata";
-    audio.playbackRate = sasayakiPlayback.rate;
-    audio.onloadedmetadata = () => {
-      if (sasayakiAudio !== audio) return;
-      sasayakiDuration = Number.isFinite(audio.duration) ? audio.duration : 0;
+    if (!sasayakiAudioSrc || !sasayakiPlayback?.audioPath) return null;
+    await tick();
+    return sasayakiAudio;
+  }
+
+  function commitSasayakiAudioTime(forceReveal = false, forceCommit = false) {
+    const audio = sasayakiAudio;
+    if (!audio) return;
+    const nextTime = clampPlaybackTime(audio.currentTime, sasayakiDuration);
+    const now = performance.now();
+    if (shouldCommitPlaybackTime(nextTime, sasayakiCurrentTime, now, sasayakiLastTimeCommitAt, forceCommit)) {
+      sasayakiCurrentTime = nextTime;
+      sasayakiLastTimeCommitAt = now;
+      scheduleSasayakiCuePresentation(forceReveal);
+      recordSasayakiDiagnostic("timeupdate", { time: nextTime });
+    } else if (forceReveal) {
+      scheduleSasayakiCuePresentation(true);
+    }
+  }
+
+  function handleSasayakiLoadedMetadata() {
+    const audio = sasayakiAudio;
+    if (!audio) return;
+    sasayakiDuration = Number.isFinite(audio.duration) ? audio.duration : 0;
+    const path = sasayakiPlayback?.audioPath ?? null;
+    if (path && sasayakiLoadedAudioPath !== path) {
       const restored = clampPlaybackTime(sasayakiPlayback?.lastPosition ?? 0, sasayakiDuration);
       audio.currentTime = restored;
       sasayakiCurrentTime = restored;
-      syncSasayakiCuePresentation(false);
-    };
-    audio.ontimeupdate = () => {
-      if (sasayakiAudio !== audio) return;
-      sasayakiCurrentTime = audio.currentTime;
-      syncSasayakiCuePresentation(false);
-      if (Date.now() - sasayakiLastSavedAt >= 5000) scheduleSasayakiPlaybackSave();
-    };
-    audio.onplay = () => {
-      if (sasayakiAudio === audio) {
-        sasayakiPlaying = true;
-        sasayakiHasPlayedOnce = true;
-        syncSasayakiCuePresentation(true);
-      }
-    };
-    audio.onpause = () => {
-      if (sasayakiAudio !== audio) return;
-      sasayakiPlaying = false;
-      sasayakiCurrentTime = audio.currentTime;
-      if (!sasayakiSuppressPauseSave) scheduleSasayakiPlaybackSave(true);
-    };
-    audio.onended = () => {
-      if (sasayakiAudio !== audio) return;
-      sasayakiPlaying = false;
-      sasayakiCurrentTime = audio.duration;
-      syncSasayakiCuePresentation(false);
-      scheduleSasayakiPlaybackSave(true);
-    };
-    audio.onerror = () => {
-      if (sasayakiAudio !== audio) return;
-      sasayakiPlaying = false;
-      sasayakiPlaybackError = "Sasayaki audio could not be played. Relink the audiobook if it moved or changed.";
-    };
-    sasayakiAudio = audio;
-    return audio;
+      sasayakiLoadedAudioPath = path;
+      sasayakiLastTimeCommitAt = performance.now();
+      scheduleSasayakiCuePresentation(false, true);
+      recordSasayakiDiagnostic("loadedmetadata", { restored });
+    }
+  }
+
+  function handleSasayakiTimeUpdate() {
+    commitSasayakiAudioTime(false);
+    if (Date.now() - sasayakiLastSavedAt >= 5000) scheduleSasayakiPlaybackSave();
+  }
+
+  function handleSasayakiPlay() {
+    sasayakiPlaying = true;
+    sasayakiHasPlayedOnce = true;
+    commitSasayakiAudioTime(true, true);
+    recordSasayakiDiagnostic("play");
+  }
+
+  function handleSasayakiPause() {
+    const audio = sasayakiAudio;
+    sasayakiPlaying = false;
+    if (audio) sasayakiCurrentTime = clampPlaybackTime(audio.currentTime, sasayakiDuration);
+    if (!sasayakiAudioSrc) {
+      recordSasayakiDiagnostic("pause", { ignored: "teardown" });
+      return;
+    }
+    if (!sasayakiSuppressPauseSave) scheduleSasayakiPlaybackSave(true);
+    recordSasayakiDiagnostic("pause");
+  }
+
+  function handleSasayakiEnded() {
+    const audio = sasayakiAudio;
+    sasayakiPlaying = false;
+    sasayakiCurrentTime = audio ? clampPlaybackTime(audio.duration, sasayakiDuration) : sasayakiDuration;
+    scheduleSasayakiCuePresentation(false, true);
+    scheduleSasayakiPlaybackSave(true);
+    recordSasayakiDiagnostic("ended");
+  }
+
+  function handleSasayakiError() {
+    sasayakiPlaying = false;
+    sasayakiPlaybackError = "Sasayaki audio could not be played. Relink the audiobook if it moved or changed.";
+    recordSasayakiDiagnostic("error");
   }
 
   function scheduleSasayakiPlaybackSave(immediate = false) {
@@ -810,7 +888,6 @@
     }
     if (sasayakiAudio) {
       sasayakiCurrentTime = sasayakiAudio.currentTime;
-      sasayakiAudio.onpause = null;
       sasayakiSuppressPauseSave = true;
       sasayakiAudio.pause();
       sasayakiSuppressPauseSave = false;
@@ -830,11 +907,11 @@
       sasayakiAudio?.pause();
       return;
     }
-    const audio = ensureSasayakiAudio();
-    if (!audio) return;
+    const resolvedAudio = await ensureSasayakiAudio();
+    if (!resolvedAudio) return;
     sasayakiPlaybackError = "";
     try {
-      await audio.play();
+      await resolvedAudio.play();
     } catch (e) {
       sasayakiPlaybackError = String(e);
     }
@@ -842,11 +919,13 @@
 
   function seekSasayaki(seconds: number, revealCue = true) {
     const target = clampPlaybackTime(seconds, sasayakiDuration);
-    const audio = ensureSasayakiAudio();
+    const audio = sasayakiAudio;
     if (audio) audio.currentTime = target;
     sasayakiCurrentTime = target;
-    syncSasayakiCuePresentation(revealCue);
+    sasayakiLastTimeCommitAt = performance.now();
+    scheduleSasayakiCuePresentation(revealCue, true);
     scheduleSasayakiPlaybackSave(true);
+    recordSasayakiDiagnostic("seek", { target });
   }
 
   function skipSasayaki(seconds: number) {
@@ -876,14 +955,14 @@
   function setSasayakiDelay(delay: number) {
     if (!sasayakiPlayback) return;
     sasayakiPlayback = { ...sasayakiPlayback, delay: Math.max(-2, Math.min(2, delay)) };
-    syncSasayakiCuePresentation(false);
+    scheduleSasayakiCuePresentation(false, true);
     scheduleSasayakiPlaybackSave();
   }
 
   function setSasayakiAutoScroll(autoScroll: boolean) {
     if (!sasayakiPlayback) return;
     sasayakiPlayback = { ...sasayakiPlayback, autoScroll };
-    syncSasayakiCuePresentation(autoScroll);
+    scheduleSasayakiCuePresentation(autoScroll, true);
     scheduleSasayakiPlaybackSave();
   }
 
@@ -917,9 +996,7 @@
       sasayakiLookupResumeTimer = null;
       if (!sasayakiPausedByLookup) return;
       sasayakiPausedByLookup = false;
-      const audio = ensureSasayakiAudio();
-      if (!audio) return;
-      void audio.play().catch((e) => {
+      void ensureSasayakiAudio().then((audio) => audio?.play()).catch((e) => {
         sasayakiPlaybackError = String(e);
       });
     }, 0);
@@ -941,8 +1018,9 @@
       if (sasayakiPlaybackBookId !== bookId) return;
       teardownSasayakiAudio();
       sasayakiPlayback = session;
+      setSasayakiAudioSource(session);
       sasayakiCurrentTime = session.lastPosition;
-      syncSasayakiCuePresentation(false);
+      scheduleSasayakiCuePresentation(false, true);
       sasayakiPlaybackError = "";
     } catch (e) {
       sasayakiPlaybackError = String(e);
@@ -1932,7 +2010,13 @@
 
 </script>
 
-<main class="app" data-ui-portal-root data-theme={settings.readerAppearance.theme} style={settings.appearanceVars}>
+<main
+  class="app"
+  data-ui-portal-root
+  data-theme={settings.readerAppearance.theme}
+  data-sasayaki-repaint-sentinel={sasayakiRepaintSentinel}
+  style={settings.appearanceVars}
+>
   {#if view === "bookshelf"}
     <BookshelfView
       {books}
@@ -2062,6 +2146,20 @@
       sasayakiOpen={sasayakiPlaybackOpen}
       sasayakiAvailable={Boolean(sasayakiPlayback?.configured)}
     />
+    {#if sasayakiAudioSrc}
+      <audio
+        class="sasayaki-audio"
+        bind:this={sasayakiAudio}
+        src={sasayakiAudioSrc}
+        preload="metadata"
+        onloadedmetadata={handleSasayakiLoadedMetadata}
+        ontimeupdate={handleSasayakiTimeUpdate}
+        onplay={handleSasayakiPlay}
+        onpause={handleSasayakiPause}
+        onended={handleSasayakiEnded}
+        onerror={handleSasayakiError}
+      ></audio>
+    {/if}
     {#if sasayakiPlaybackOpen && sasayakiPlayback}
       <div id="sasayaki-player">
         <SasayakiPlayerPanel
@@ -2091,4 +2189,5 @@
   :global(*) { margin: 0; padding: 0; box-sizing: border-box; }
   :global(body) { background: var(--app-bg, #000); color: var(--app-text, #fff); font-family: "Segoe UI", sans-serif; overflow: hidden; }
   .app { width: 100vw; height: 100vh; background: var(--app-bg); color: var(--app-text); }
+  .sasayaki-audio { position: fixed; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
 </style>
