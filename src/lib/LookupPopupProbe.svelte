@@ -261,7 +261,7 @@
   let ankiAudioStoreRequests = $state<AnkiRemoteAudioRequest[]>([]);
   let localAudioStoreRequests = $state<LocalAudioStoreRequest[]>([]);
   let coverStoreRequests = $state<string[]>([]);
-  let sasayakiStoreRequests = $state<Array<{ bookId: string; cueId: string }>>([]);
+  let sasayakiStoreRequests = $state<Array<{ bookId: string; cueId: string; sentence: string }>>([]);
   let operationEvents = $state<string[]>([]);
   let wordAudioPrepareRequests = $state<WordAudioResolveRequest[]>([]);
   let sasayakiActions = $state<Array<{ popupId: string; action: SasayakiPopupAction }>>([]);
@@ -546,9 +546,10 @@
   async function storeAnkiSasayakiAudio(
     bookId: string,
     cueId: string,
+    sentence: string,
   ): Promise<AnkiStoreSasayakiAudioResult> {
     operationEvents = [...operationEvents, "sasayaki"];
-    sasayakiStoreRequests = [...sasayakiStoreRequests, { bookId, cueId }];
+    sasayakiStoreRequests = [...sasayakiStoreRequests, { bookId, cueId, sentence }];
     if (sasayakiStoreMode === "error") {
       throw new Error("Sasayaki audio path escapes the app-owned sidecar directory.");
     }

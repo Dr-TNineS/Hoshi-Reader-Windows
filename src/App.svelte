@@ -1785,6 +1785,7 @@
   async function storeAnkiSasayakiAudio(
     bookId: string,
     cueId: string,
+    sentence: string,
   ): Promise<AnkiStoreSasayakiAudioResult> {
     if (!isTauriRuntime()) throw new Error("Sasayaki audio storage requires Tauri runtime.");
     const endpoint = ankiSettings?.endpoint?.trim() || ankiEndpointDraft;
@@ -1792,6 +1793,7 @@
       endpoint,
       bookId,
       cueId,
+      sentence,
     });
   }
 

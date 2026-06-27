@@ -87,7 +87,7 @@
     onStoreAnkiMedia: (media: AnkiDictionaryMediaRef[]) => Promise<AnkiStoreMediaResult>;
     onStoreAnkiBookCover: (bookId: string) => Promise<AnkiStoreBookCoverResult>;
     onStoreAnkiWordAudio: (request: WordAudioResolveRequest) => Promise<AnkiStoreRemoteAudioResult>;
-    onStoreAnkiSasayakiAudio: (bookId: string, cueId: string) => Promise<AnkiStoreSasayakiAudioResult>;
+    onStoreAnkiSasayakiAudio: (bookId: string, cueId: string, sentence: string) => Promise<AnkiStoreSasayakiAudioResult>;
     onPrepareWordAudio: (request: WordAudioResolveRequest) => Promise<WordAudioPlaybackResult>;
     onWordAudioPlaybackStart?: () => number | void;
     onWordAudioPlaybackEnd?: (coordinationId: number | void) => void;

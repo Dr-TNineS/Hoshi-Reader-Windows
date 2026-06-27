@@ -467,10 +467,11 @@ pub fn anki_store_sasayaki_audio(
     endpoint: String,
     book_id: String,
     cue_id: String,
+    sentence: String,
     app: AppHandle,
 ) -> Result<AnkiStoreSasayakiAudioResult, String> {
     let endpoint = normalize_endpoint(&endpoint)?;
-    match crate::sasayaki::resolve_anki_cue_clip(&app, &book_id, &cue_id)? {
+    match crate::sasayaki::resolve_anki_cue_clip(&app, &book_id, &cue_id, &sentence)? {
         crate::sasayaki::SasayakiCueClip::Ready(bytes) => {
             let filename = store_sasayaki_audio_bytes(&endpoint, &bytes)?;
             Ok(AnkiStoreSasayakiAudioResult {

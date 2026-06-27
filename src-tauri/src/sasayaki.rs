@@ -853,15 +853,17 @@ pub(crate) fn resolve_anki_cue_clip(
     app: &AppHandle,
     book_id: &str,
     cue_id: &str,
+    sentence: &str,
 ) -> Result<SasayakiCueClip, String> {
     let book_dir = library_book_dir(app, book_id)?;
-    resolve_anki_cue_clip_from_book_dir(&book_dir, book_id, cue_id)
+    resolve_anki_cue_clip_from_book_dir(&book_dir, book_id, cue_id, sentence)
 }
 
 fn resolve_anki_cue_clip_from_book_dir(
     book_dir: &Path,
     book_id: &str,
     cue_id: &str,
+    sentence: &str,
 ) -> Result<SasayakiCueClip, String> {
     validate_book_context(book_dir, book_id)?;
     let root = book_dir.join(SIDECAR_DIR_NAME);
@@ -890,7 +892,7 @@ fn resolve_anki_cue_clip_from_book_dir(
             "The selected Sasayaki cue is no longer matched.".into(),
         ));
     };
-    let range = cue_clip_range(cue)?;
+    let range = cue_clip_range(&sidecar.match_data, cue, sentence, sidecar.playback.delay)?;
     let Some(audio) = resolve_export_audio_path(&root, &sidecar)? else {
         return Ok(SasayakiCueClip::Warning(
             "The linked Sasayaki audiobook is unavailable. Relink it to export sentence audio."
@@ -906,20 +908,68 @@ fn resolve_anki_cue_clip_from_book_dir(
     }
 }
 
-fn cue_clip_range(cue: &SasayakiMatch) -> Result<AudioClipRange, String> {
-    if !cue.start_time.is_finite()
-        || !cue.end_time.is_finite()
-        || cue.start_time < 0.0
-        || cue.end_time <= cue.start_time
+fn cue_clip_range(
+    match_data: &SasayakiMatchData,
+    cue: &SasayakiMatch,
+    sentence: &str,
+    delay: f64,
+) -> Result<AudioClipRange, String> {
+    let (start_time, end_time) = expanded_cue_audio_range(match_data, cue, sentence);
+    if !start_time.is_finite()
+        || !end_time.is_finite()
+        || !delay.is_finite()
+        || start_time < 0.0
+        || end_time <= start_time
     {
         return Err("Sasayaki cue contains an invalid audio range.".into());
     }
-    let start_ms = (cue.start_time * 1000.0).floor() as u64;
-    let end_ms = (cue.end_time * 1000.0).ceil() as u64;
+    let delayed_start = (start_time + delay).max(0.0);
+    let delayed_end = (end_time + delay).max(delayed_start);
+    let start_ms = (delayed_start * 1000.0).floor() as u64;
+    let end_ms = (delayed_end * 1000.0).ceil() as u64;
     if end_ms.saturating_sub(start_ms) > MAX_ANKI_CUE_DURATION_MS {
         return Err("Sasayaki cue exceeds the 60 second export limit.".into());
     }
     Ok(AudioClipRange { start_ms, end_ms })
+}
+
+fn expanded_cue_audio_range(
+    match_data: &SasayakiMatchData,
+    cue: &SasayakiMatch,
+    sentence: &str,
+) -> (f64, f64) {
+    let chapter_cues = match_data
+        .matches
+        .iter()
+        .filter(|matched| matched.chapter_index == cue.chapter_index)
+        .collect::<Vec<_>>();
+    let Some(index) = chapter_cues.iter().position(|matched| matched.id == cue.id) else {
+        return (cue.start_time, cue.end_time);
+    };
+
+    let filtered_sentence = filtered_reader_text(sentence);
+    if filtered_sentence.is_empty() {
+        return (cue.start_time, cue.end_time);
+    }
+
+    let mut start = index;
+    let mut end = index;
+    while start > 0 {
+        let previous = filtered_reader_text(&chapter_cues[start - 1].text);
+        if previous.is_empty() || !filtered_sentence.contains(&previous) {
+            break;
+        }
+        start -= 1;
+    }
+    while end + 1 < chapter_cues.len() {
+        let next = filtered_reader_text(&chapter_cues[end + 1].text);
+        if next.is_empty() || !filtered_sentence.contains(&next) {
+            break;
+        }
+        end += 1;
+    }
+
+    (chapter_cues[start].start_time, chapter_cues[end].end_time)
 }
 
 fn resolve_export_audio_path(
@@ -2024,8 +2074,9 @@ mod tests {
         }];
         write_sidecar(&root, &sidecar).unwrap();
 
-        let first = resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id).unwrap();
-        let second = resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id).unwrap();
+        let first = resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id, "").unwrap();
+        let second =
+            resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id, "").unwrap();
         let SasayakiCueClip::Ready(first) = first else {
             panic!("expected a ready cue clip, got {first:?}");
         };
@@ -2036,16 +2087,86 @@ mod tests {
         assert!(first.starts_with(b"RIFF"));
 
         assert!(matches!(
-            resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", "missing").unwrap(),
+            resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", "missing", "").unwrap(),
             SasayakiCueClip::Warning(message) if message.contains("no longer matched")
         ));
 
         fs::remove_file(&audio).unwrap();
         assert!(matches!(
-            resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id).unwrap(),
+            resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id, "").unwrap(),
             SasayakiCueClip::Warning(message) if message.contains("unavailable")
         ));
         let _ = fs::remove_dir_all(book_dir.parent().unwrap().parent().unwrap());
+    }
+
+    #[test]
+    fn anki_cue_clip_range_expands_to_sentence_adjacent_cues() {
+        let match_data = SasayakiMatchData {
+            matches: vec![
+                SasayakiMatch {
+                    id: "1".into(),
+                    start_time: 0.0,
+                    end_time: 1.0,
+                    text: "before".into(),
+                    chapter_index: 0,
+                    start: 0,
+                    length: 6,
+                },
+                SasayakiMatch {
+                    id: "2".into(),
+                    start_time: 1.0,
+                    end_time: 2.0,
+                    text: "school".into(),
+                    chapter_index: 0,
+                    start: 6,
+                    length: 6,
+                },
+                SasayakiMatch {
+                    id: "3".into(),
+                    start_time: 2.0,
+                    end_time: 3.5,
+                    text: "after".into(),
+                    chapter_index: 0,
+                    start: 12,
+                    length: 5,
+                },
+                SasayakiMatch {
+                    id: "4".into(),
+                    start_time: 3.5,
+                    end_time: 4.0,
+                    text: "outside".into(),
+                    chapter_index: 0,
+                    start: 17,
+                    length: 7,
+                },
+                SasayakiMatch {
+                    id: "5".into(),
+                    start_time: 9.0,
+                    end_time: 10.0,
+                    text: "before".into(),
+                    chapter_index: 1,
+                    start: 0,
+                    length: 6,
+                },
+            ],
+            unmatched: 0,
+        };
+
+        let cue = &match_data.matches[1];
+        assert_eq!(
+            cue_clip_range(&match_data, cue, "before school after.", 0.25).unwrap(),
+            AudioClipRange {
+                start_ms: 250,
+                end_ms: 3750,
+            },
+        );
+        assert_eq!(
+            cue_clip_range(&match_data, cue, "school", -0.25).unwrap(),
+            AudioClipRange {
+                start_ms: 750,
+                end_ms: 1750,
+            },
+        );
     }
 
     #[test]
@@ -2080,7 +2201,7 @@ mod tests {
         sidecar.match_data.matches[0].end_time = sidecar.match_data.matches[0].start_time + 61.0;
         write_sidecar(&root, &sidecar).unwrap();
         assert!(
-            resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id)
+            resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id, "")
                 .unwrap_err()
                 .contains("60 second")
         );
@@ -2090,7 +2211,7 @@ mod tests {
             *file_name = "../outside.wav".into();
         }
         write_sidecar(&root, &sidecar).unwrap();
-        assert!(resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id).is_err());
+        assert!(resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id, "").is_err());
 
         if let SasayakiAudioSource::Copied {
             file_name,
@@ -2105,7 +2226,7 @@ mod tests {
         }
         write_sidecar(&root, &sidecar).unwrap();
         assert!(matches!(
-            resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id).unwrap(),
+            resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &cue_id, "").unwrap(),
             SasayakiCueClip::Warning(message) if message.contains("could not be decoded")
         ));
         let _ = fs::remove_dir_all(book_dir.parent().unwrap().parent().unwrap());
@@ -2149,8 +2270,9 @@ mod tests {
             Some(audio.canonicalize().unwrap().to_string_lossy().to_string())
         );
         assert!(!playback.cues.is_empty());
-        let clip = resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &playback.cues[0].id)
-            .unwrap();
+        let clip =
+            resolve_anki_cue_clip_from_book_dir(&book_dir, "book-id", &playback.cues[0].id, "")
+                .unwrap();
         assert!(matches!(
             clip,
             SasayakiCueClip::Ready(bytes) if bytes.starts_with(b"RIFF")

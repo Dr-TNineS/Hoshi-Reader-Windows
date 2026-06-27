@@ -578,8 +578,9 @@ async function main() {
     assert(
       ankiSasayaki.sasayakiStoreCount === 1 &&
         ankiSasayaki.sasayakiLastRequest.bookId === "probe-book" &&
-        ankiSasayaki.sasayakiLastRequest.cueId === "cue-42",
-      "Sasayaki export should pass only bookId and cueId.",
+        ankiSasayaki.sasayakiLastRequest.cueId === "cue-42" &&
+        ankiSasayaki.sasayakiLastRequest.sentence === "The academy school sentence contains the selected lookup term in a longer source paragraph.",
+      "Sasayaki export should pass bookId, cueId, and the Anki sentence context.",
       ankiSasayaki,
     );
     assert(

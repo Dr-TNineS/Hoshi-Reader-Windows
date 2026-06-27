@@ -49,8 +49,9 @@ Real runtime coverage remains explicitly separate from automated validation.
   aligned vertical pages and chapters after playback or an explicit seek,
   Auto-Pause pauses and resumes around reader lookup, and cue/fixed-seconds
   skip behavior plus the HSA light/dark cue colors persist per book.
-- HSW exports `{sasayaki-audio}` from the active matched cue. Frontend authority
-  is limited to `bookId + cueId`; Rust reopens the app-owned sidecar, validates
+- HSW exports `{sasayaki-audio}` from the active matched cue expanded to the
+  Anki sentence context. Frontend authority is limited to `bookId + cueId` plus
+  the already-built sentence text; Rust reopens the app-owned sidecar, validates
   its book/audio/range boundary, clips deterministic PCM WAV, stores
   `hsw_sasayaki_<hash>.wav` through AnkiConnect, and renders a sound tag.
 - Real store-media runtime validation passed with a throwaway SVG media file.
@@ -429,21 +430,24 @@ Validation:
 
 ### Slice 5M: Sasayaki Sentence Audio Export
 
-Goal: implement `{sasayaki-audio}` from the current matched cue.
+Goal: implement `{sasayaki-audio}` from the current matched cue, expanded to
+the Anki sentence context when adjacent matched cues are part of that sentence.
 
-Status: implemented on 2026-06-25. Lookup payloads retain only the active cue id
-when it belongs to the lookup chapter. The Tauri command accepts only
-`endpoint + bookId + cueId`; Rust resolves the app-owned sidecar and source,
-clips the persisted match time range, and stores a deterministic WAV filename.
-Missing/no-longer-matched cues, unavailable external audio, and ordinary decode
-failures warn and continue with a text note. Wrong-book sidecars, copied-path
-escape, changed sources, invalid/overlong ranges, oversized output, and unsafe
-Anki endpoints remain hard failures.
+Status: implemented on 2026-06-25; HSA sentence-context expansion aligned on
+2026-06-28. Lookup payloads retain the active cue id when it belongs to the
+lookup chapter and pass the Anki sentence text to the Tauri command. Rust
+resolves the app-owned sidecar and source, expands to adjacent same-chapter
+matched cues contained in the filtered sentence, clips the resulting time range,
+and stores a deterministic WAV filename. Missing/no-longer-matched cues,
+unavailable external audio, and ordinary decode failures warn and continue with
+a text note. Wrong-book sidecars, copied-path escape, changed sources,
+invalid/overlong ranges, oversized output, and unsafe Anki endpoints remain hard
+failures.
 
 Key changes:
 
-- Pass only `bookId + cueId` from lookup; resolve paths and time ranges from the
-  Rust-owned sidecar.
+- Pass `bookId + cueId + sentence` from lookup; resolve paths and time ranges
+  from the Rust-owned sidecar and match data.
 - Clip using the Slice 5I-0 stack, write deterministic WAV, store
   `hsw_sasayaki_<hash>.wav`, and render `[sound:filename]`.
 - Keep missing/unmatched/ordinary decoding failures non-fatal; reject tampered
@@ -451,14 +455,14 @@ Key changes:
 
 Validation:
 
-- Passed: 130 Rust tests plus 3 ignored, Rust check, frontend check/build,
-  Anki panel probe, and lookup popup ordering/warning/error probes.
+- Passed: 132 Rust tests plus 3 ignored, Rust check, frontend check/build,
+  lookup popup ordering/warning/error probe, and Sasayaki playback probe.
 - The real `汝、星のごとく` EPUB/M4B/SRT fixture produced a WAV
   clip from its first matched cue after importing 11,798 cues and matching
   11,792 with 6 unmatched.
-- Popup coverage verifies dictionary → cover → word audio → Sasayaki audio →
-  addNote ordering, exact `bookId + cueId` authority, sound-tag rendering,
-  no-active/removed-cue warnings, and hard sidecar error blocking.
+- Popup coverage verifies dictionary, cover, word audio, Sasayaki audio, and
+  addNote ordering, exact `bookId + cueId + sentence` request shape, sound-tag
+  rendering, no-active/removed-cue warnings, and hard sidecar error blocking.
 - Real AnkiConnect playback of the stored sentence clip remains `not verified`.
 
 ### Slice 5N: Word And Sasayaki Playback Coordination
@@ -567,7 +571,7 @@ until its acceptance and validation entries are satisfied and recorded.
 | 5J | Completed (2026-06-24) | Cue parsing, matching, inspection, rematch and correction; no playback | 5I sidecar and SRT storage | Stable cue ids and chapter/offset/length matches persist; unmatched state and corrections survive; ruby/punctuation/repetition/boundaries pass fixtures | Passed: strict parser and matcher/correction Rust fixtures, 123 Rust tests plus 2 ignored, Rust check, frontend check/build, bookshelf matching/correction probe, wide/520px visual and overflow checks; real EPUB/audiobook/SRT characterization `not verified` |
 | 5K | Completed (2026-06-24) | Sasayaki player lifecycle and controls; highlighting/following deferred | 5J stable cues | Playback/navigation/rate/delay work and restore; missing external audio relinks; lifecycle does not leak players | Passed: playback restore/value/relink Rust fixtures, 125 Rust tests plus 2 ignored, Rust check, frontend check/build, dedicated playback probe, reader visual and TOC probes, wide/520px overflow checks; a real backend M4B fixture is now available, but actual Tauri/WebView audio output remains `not verified` |
 | 5L | Completed (2026-06-25) | Cue presentation and reader coordination without replacing pagination | 5K playback events and 5J ranges | Sasayaki cue overlay causes no reflow; active cues follow aligned pages/chapters; lookup auto-pause resumes only lookup-paused playback; skip/settings persist | Passed: 127 Rust tests plus 3 ignored, Rust check, frontend check/build, playback/reader visual/TOC probes, real EPUB/M4B/SRT backend pipeline; 2026-06-27 overlay regression probe verifies no Sasayaki CSS Highlight; manual Tauri audio/visual check `not verified` |
-| 5M | Completed (2026-06-25) | `{sasayaki-audio}` accepts `bookId + cueId`; Rust owns path/range; no arbitrary frontend time/path | 5I-0 clipping plus stable 5J-L cues | Deterministic WAV sound tag; ordinary no-cue/decode failures warn and create text cards; tampering/escape/range/oversize blocks; ordering is covered | Passed: 130 Rust tests plus 3 ignored, Rust check, frontend check/build, panel/popup probes, real M4B cue clipping; real Anki playback `not verified` |
+| 5M | Completed (2026-06-25; sentence expansion aligned 2026-06-28) | `{sasayaki-audio}` accepts `bookId + cueId + sentence`; Rust owns path/range and expands via sidecar match data; no arbitrary frontend time/path | 5I-0 clipping plus stable 5J-L cues | Deterministic WAV sound tag; ordinary no-cue/decode failures warn and create text cards; tampering/escape/range/oversize blocks; ordering is covered | Passed: 132 Rust tests plus 3 ignored, Rust check, frontend check/build, popup and Sasayaki playback probes, real M4B cue clipping; real Anki playback `not verified` |
 | 5N | Completed (2026-06-27) | Coordinate HSW-owned word and Sasayaki audio only; no Windows-wide focus | 5H word playback and 5K-L Sasayaki playback | Interrupt/Duck/Mix restore exact prior state; autoplay shares coordinator; rapid actions/failures/manual pause/navigation/shutdown are correct | Passed: coordinator helper coverage through Sasayaki playback probe, rapid-action probe coverage, lookup popup lifecycle probe, frontend check/build; manual Tauri playback for all modes `not verified` |
 | 5O | Completed (2026-06-27) | Runtime evidence and parity closure only; missing fixtures remain visible | 5F-5N committed at automated level | Full real pipeline order passes where fixtures exist; HSA defaults/states/failures have explicit parity results; gaps say `not verified` | Passed: common checks, real Anki add/duplicate and store-media tests, package build, release launch smoke; real sync, HSA DB, remote audio, media-bearing dictionary, and Tauri/Sasayaki audio playback remain `not verified` |
 

@@ -79,7 +79,7 @@
     onStoreAnkiMedia?: (media: AnkiDictionaryMediaRef[]) => Promise<AnkiStoreMediaResult>;
     onStoreAnkiBookCover?: (bookId: string) => Promise<AnkiStoreBookCoverResult>;
     onStoreAnkiWordAudio?: (request: WordAudioResolveRequest) => Promise<AnkiStoreRemoteAudioResult>;
-    onStoreAnkiSasayakiAudio?: (bookId: string, cueId: string) => Promise<AnkiStoreSasayakiAudioResult>;
+    onStoreAnkiSasayakiAudio?: (bookId: string, cueId: string, sentence: string) => Promise<AnkiStoreSasayakiAudioResult>;
     onPrepareWordAudio?: (request: WordAudioResolveRequest) => Promise<WordAudioPlaybackResult>;
     onWordAudioPlaybackStart?: () => number | void;
     onWordAudioPlaybackEnd?: (coordinationId: number | void) => void;
@@ -525,7 +525,7 @@
       return { filename: null, warnings: ["No matched Sasayaki cue is active for this lookup."] };
     }
     if (!onStoreAnkiSasayakiAudio) return null;
-    return onStoreAnkiSasayakiAudio(bookId, cueId);
+    return onStoreAnkiSasayakiAudio(bookId, cueId, payload.sentence);
   }
 
   function wordAudioResolveRequest(expression: string, reading: string): WordAudioResolveRequest {
