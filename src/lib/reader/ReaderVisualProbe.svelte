@@ -53,6 +53,12 @@
   }
 
   function chapterContent(title: string, paragraphs: ReturnType<typeof chapterParagraphs>, includeImage = false) {
+    const offsetProbeHtml = `
+      <p data-offset-probe>
+        始<ruby>母<rt>はは</rt><rp>（</rp><rp>）</rp></ruby>後語。選択位置確認。
+      </p>
+    `;
+    const offsetProbeText = "始母後語。選択位置確認。";
     const html = `
     <section class="main">
       <h1>${title}</h1>
@@ -61,12 +67,13 @@
           <img src="data:image/svg+xml,${imageSvg}" alt="Reader visual probe cover" />
         </p>
       ` : ""}
+      ${offsetProbeHtml}
       ${paragraphs.html}
     </section>
   `;
     return {
       html,
-      charCount: countChars(`${title}${paragraphs.text}`),
+      charCount: countChars(`${title}${offsetProbeText}${paragraphs.text}`),
     };
   }
 
@@ -194,6 +201,7 @@
   data-fixture-chapter-start={chapters[chapterIndex].startChars}
   data-fixture-chapter-count={chapters[chapterIndex].charCount}
   data-selection={lastSelection?.text ?? ""}
+  data-selection-chapter-offset={lastSelection?.chapterOffset ?? -1}
   data-dom-selection={visibleSelectionText}
   data-highlight-text={lookupHighlightText}
   data-rendered-highlight-text={renderedLookupHighlightText}

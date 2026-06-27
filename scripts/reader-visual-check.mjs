@@ -179,6 +179,7 @@ async function visibleParagraphPoint(page) {
 
     const viewport = rv.getBoundingClientRect();
     for (const paragraph of rct.querySelectorAll("p")) {
+      if (paragraph.hasAttribute("data-offset-probe")) continue;
       const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
       while (walker.nextNode()) {
         const node = walker.currentNode;
@@ -216,8 +217,83 @@ async function visibleParagraphPoint(page) {
   });
 }
 
+async function offsetProbePoint(page) {
+  return page.evaluate(() => {
+    function inRange(value, start, end) {
+      return value >= start && value <= end;
+    }
+    function isReaderMatchableCodePoint(codePoint) {
+      return inRange(codePoint, 0x30, 0x39) ||
+        inRange(codePoint, 0x41, 0x5a) ||
+        inRange(codePoint, 0x61, 0x7a) ||
+        codePoint === 0x25cb ||
+        codePoint === 0x25ef ||
+        inRange(codePoint, 0x3005, 0x3007) ||
+        codePoint === 0x303b ||
+        inRange(codePoint, 0x3041, 0x3096) ||
+        inRange(codePoint, 0x309d, 0x309e) ||
+        inRange(codePoint, 0x30a1, 0x30fa) ||
+        codePoint === 0x30fc ||
+        inRange(codePoint, 0xff10, 0xff19) ||
+        inRange(codePoint, 0xff21, 0xff3a) ||
+        inRange(codePoint, 0xff41, 0xff5a) ||
+        inRange(codePoint, 0xff66, 0xff9d) ||
+        inRange(codePoint, 0x2e80, 0x2fdf) ||
+        inRange(codePoint, 0x3400, 0x4dbf) ||
+        inRange(codePoint, 0x4e00, 0x9fff) ||
+        inRange(codePoint, 0x20000, 0x2a6df) ||
+        inRange(codePoint, 0x2a700, 0x2b73f) ||
+        inRange(codePoint, 0x2b740, 0x2b81f) ||
+        inRange(codePoint, 0x2b820, 0x2ceaf) ||
+        inRange(codePoint, 0x2ceb0, 0x2ebef) ||
+        inRange(codePoint, 0x30000, 0x3134f) ||
+        inRange(codePoint, 0x31350, 0x323af);
+    }
+    function countChars(text) {
+      let count = 0;
+      for (const ch of text) {
+        if (isReaderMatchableCodePoint(ch.codePointAt(0))) count += 1;
+      }
+      return count;
+    }
+
+    const paragraph = document.querySelector("[data-offset-probe]");
+    const h1 = document.querySelector(".rct h1");
+    if (!(paragraph instanceof HTMLElement) || !(h1 instanceof HTMLElement)) {
+      throw new Error("Offset probe fixture not found.");
+    }
+    const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => node.parentElement?.closest("rt, rp")
+        ? NodeFilter.FILTER_REJECT
+        : NodeFilter.FILTER_ACCEPT,
+    });
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const text = node.textContent ?? "";
+      const index = text.indexOf("後");
+      if (index < 0) continue;
+      const range = document.createRange();
+      range.setStart(node, index);
+      range.setEnd(node, index + "後".length);
+      const rect = range.getBoundingClientRect();
+      range.detach();
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+        expectedOffset: countChars(h1.textContent ?? "") + countChars("始母"),
+        domOffset: Array.from(`${h1.textContent ?? ""}${paragraph.textContent ?? ""}`.split("後")[0]).length,
+      };
+    }
+    throw new Error("Offset probe target was not found.");
+  });
+}
+
 async function probeSelectionText(page) {
   return await page.locator(".probe-state").getAttribute("data-selection") ?? "";
+}
+
+async function probeSelectionChapterOffset(page) {
+  return Number(await page.locator(".probe-state").getAttribute("data-selection-chapter-offset") ?? -1);
 }
 
 async function probeDomSelectionText(page) {
@@ -414,6 +490,24 @@ async function main() {
 
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.reload();
+
+    const rubyOffsetPoint = await offsetProbePoint(page);
+    await page.mouse.click(rubyOffsetPoint.x, rubyOffsetPoint.y);
+    await page.waitForFunction(() => {
+      const value = document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "";
+      return value.length > 0;
+    }, { timeout: 10000 });
+    const rubyOffsetSelection = await probeSelectionText(page);
+    const rubyChapterOffset = await probeSelectionChapterOffset(page);
+    assert(
+      rubyOffsetSelection.startsWith("後") &&
+        rubyChapterOffset === rubyOffsetPoint.expectedOffset &&
+        rubyChapterOffset < rubyOffsetPoint.domOffset,
+      "Reader selection chapterOffset should use Sasayaki/reader character coordinates, not raw DOM text offsets that include ruby text.",
+      { rubyOffsetPoint, rubyOffsetSelection, rubyChapterOffset },
+    );
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => (document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "") === "");
 
     const adjacentPoints = await adjacentReaderCharacterPoints(page);
     const coalescedStartCount = await probeSelectionCount(page);

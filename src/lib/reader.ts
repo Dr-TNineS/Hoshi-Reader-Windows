@@ -122,6 +122,13 @@ export function getCharOffset(node: Node, container: HTMLElement): number {
   return offset;
 }
 
+export function readerCharOffsetForRange(range: Range, container: HTMLElement): number | undefined {
+  if (range.startContainer.nodeType !== Node.TEXT_NODE) return undefined;
+  const textNode = range.startContainer as Text;
+  if (!container.contains(textNode.parentElement)) return undefined;
+  return getCharOffset(textNode, container) + countChars((textNode.textContent ?? "").slice(0, range.startOffset));
+}
+
 export function readerRangeForOffsets(
   container: HTMLElement,
   start: number,

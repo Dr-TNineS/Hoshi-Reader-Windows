@@ -1,6 +1,6 @@
 ﻿<script lang="ts">
   import { untrack } from "svelte";
-  import { countChars, createWalker, getTotalChars, rawOffsetForReaderChars, readerRangeForOffsets, textEndOffsets } from "../reader";
+  import { countChars, createWalker, getTotalChars, rawOffsetForReaderChars, readerCharOffsetForRange, readerRangeForOffsets, textEndOffsets } from "../reader";
   import type { ReaderAppearancePalette } from "../appearance";
   import {
     clearLookupHighlight,
@@ -574,16 +574,7 @@
 
   function chapterOffsetForRange(range: Range): number | undefined {
     if (!contentEl) return undefined;
-    const prefixRange = document.createRange();
-    try {
-      prefixRange.selectNodeContents(contentEl);
-      prefixRange.setEnd(range.startContainer, range.startOffset);
-      return Array.from(prefixRange.toString()).length;
-    } catch {
-      return undefined;
-    } finally {
-      prefixRange.detach();
-    }
+    return readerCharOffsetForRange(range, contentEl);
   }
 
   function clearSasayakiHighlight() {
