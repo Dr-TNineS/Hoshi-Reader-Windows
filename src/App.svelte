@@ -134,7 +134,7 @@
   let sasayakiCueReveal = $state(false);
   let sasayakiCueSignal = $state(0);
   let sasayakiHasPlayedOnce = false;
-  let sasayakiPausedByLookup = false;
+  let sasayakiPausedByLookup = $state(false);
   let sasayakiLookupResumeTimer: ReturnType<typeof setTimeout> | null = null;
   let sasayakiCueNavigationRun = 0;
   let sasayakiLoadedAudioPath: string | null = null;
@@ -989,6 +989,14 @@
 
   async function toggleSasayakiPlayback() {
     replaceWordAudioCoordination();
+    if (sasayakiPausedByLookup) {
+      sasayakiPausedByLookup = false;
+      if (sasayakiLookupResumeTimer) {
+        clearTimeout(sasayakiLookupResumeTimer);
+        sasayakiLookupResumeTimer = null;
+      }
+      return;
+    }
     if (sasayakiPlaying) {
       sasayakiPausedByLookup = false;
       if (sasayakiLookupResumeTimer) {
@@ -2329,7 +2337,7 @@
       onPrepareWordAudio={prepareWordAudio}
       onWordAudioPlaybackStart={beginCoordinatedWordAudioPlayback}
       onWordAudioPlaybackEnd={restoreWordAudioCoordination}
-      sasayakiPlaying={sasayakiPlaying}
+      sasayakiPlaying={sasayakiPlaying || sasayakiPausedByLookup}
       sasayakiAvailable={Boolean(sasayakiPlayback?.configured && sasayakiPlayback.audioAvailable)}
       onSasayakiAction={handlePopupSasayakiAction}
       onAddAnkiNote={addAnkiNote}
@@ -2370,7 +2378,7 @@
       <div id="sasayaki-player">
         <SasayakiPlayerPanel
           session={sasayakiPlayback}
-          playing={sasayakiPlaying}
+          playing={sasayakiPlaying || sasayakiPausedByLookup}
           currentTime={sasayakiCurrentTime}
           duration={sasayakiDuration}
           error={sasayakiPlaybackError}

@@ -94,6 +94,7 @@ async function main() {
     await page.getByRole("button", { name: "Probe open lookup", exact: true }).dispatchEvent("click");
     await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-playing") === "false");
     assert((await presentation(page)).playing === "false", "Auto-Pause should pause active Sasayaki playback when lookup opens.");
+    await panel.getByRole("button", { name: "Pause Sasayaki", exact: true }).waitFor();
     await page.getByRole("button", { name: "Probe close lookup", exact: true }).dispatchEvent("click");
     await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-playing") === "true");
     assert((await presentation(page)).playing === "true", "Closing the lookup should resume only playback paused by lookup.");

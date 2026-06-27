@@ -132,6 +132,11 @@
   }
 
   function togglePlayback() {
+    if (pausedByLookup) {
+      pausedByLookup = false;
+      events = [...events, "lookup-cancel"];
+      return;
+    }
     playing = !playing;
     if (playing) hasPlayedOnce = true;
     else pausedByLookup = false;
@@ -244,7 +249,7 @@
       <audio class="sasayaki-probe-audio" bind:this={audioEl} preload="metadata"></audio>
       <SasayakiPlayerPanel
         {session}
-        {playing}
+        playing={playing || pausedByLookup}
         {currentTime}
         duration={120}
         onClose={() => {
