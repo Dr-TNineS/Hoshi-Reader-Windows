@@ -36,6 +36,12 @@
   let saveWorkerRunning = $state(false);
   let savedPositions = $state<number[]>([]);
   let blockedSaveRelease: (() => void) | null = null;
+  let readerView = $state(true);
+  let lifecycleExitRunning = $state(false);
+  let lifecycleSavedPosition = $state(12);
+  let lifecycleSaveAttempts = $state(0);
+  let lifecycleError = $state("");
+  let lifecycleFailNextSave = false;
   let session = $state<SasayakiPlaybackSession>({
     configured: true,
     audioPath: "C:/Books/audio.wav",
@@ -118,6 +124,34 @@
       saveWorkerRunning = false;
       if (pendingSave !== null) drainProbeSaves();
     })();
+  }
+
+  async function probeExitReader() {
+    if (lifecycleExitRunning) return;
+    lifecycleExitRunning = true;
+    lifecycleError = "";
+    lifecycleSaveAttempts += 1;
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    if (lifecycleFailNextSave) {
+      lifecycleFailNextSave = false;
+      lifecycleError = "save failed";
+      lifecycleExitRunning = false;
+      return;
+    }
+    lifecycleSavedPosition = currentTime;
+    session = { ...session, lastPosition: lifecycleSavedPosition };
+    open = false;
+    playing = false;
+    readerView = false;
+    lifecycleExitRunning = false;
+  }
+
+  function probeReopenBook() {
+    currentTime = lifecycleSavedPosition;
+    session = { ...session, lastPosition: lifecycleSavedPosition };
+    readerView = true;
+    open = true;
+    lifecycleError = "";
   }
 
   function restoreWordAudioCoordination(id = wordAudioCoordination?.id) {
@@ -209,17 +243,53 @@
 <svelte:window onkeydown={handleSasayakiShortcut} />
 
 <main class="probe" data-ui-portal-root>
-  <div class="reader-copy">Reader content remains visible until the Audio panel is opened.</div>
-  <ReaderControls
-    onPrevChapter={() => {}}
-    onNextChapter={() => {}}
-    onToggleToc={() => {}}
-    onBackToShelf={() => events = [...events, "shelf"]}
-    onToggleSasayaki={() => open = !open}
-    sasayakiOpen={open}
-    sasayakiAvailable={session.configured}
-  />
-  {#if open}
+  {#if readerView}
+    <div class="reader-copy">Reader content remains visible until the Audio panel is opened.</div>
+    <ReaderControls
+      onPrevChapter={() => {}}
+      onNextChapter={() => {}}
+      onToggleToc={() => {}}
+      onBackToShelf={() => void probeExitReader()}
+      onToggleSasayaki={() => open = !open}
+      sasayakiOpen={open}
+      sasayakiAvailable={session.configured}
+    />
+  {:else}
+    <button
+      class="probe-action"
+      aria-label="Probe reopen Sasayaki book"
+      onclick={probeReopenBook}
+    >Reopen</button>
+  {/if}
+  <button
+    class="probe-action"
+    aria-label="Probe lifecycle seek"
+    onclick={() => currentTime = 42.75}
+  >Lifecycle seek</button>
+  <button
+    class="probe-action"
+    aria-label="Probe lifecycle exit reader"
+    onclick={() => void probeExitReader()}
+  >Lifecycle exit</button>
+  <button
+    class="probe-action"
+    aria-label="Probe lifecycle failed exit"
+    onclick={() => {
+      currentTime = 55.5;
+      lifecycleFailNextSave = true;
+      void probeExitReader();
+    }}
+  >Lifecycle failed exit</button>
+  <button
+    class="probe-action"
+    aria-label="Probe lifecycle rapid exit"
+    onclick={() => {
+      currentTime = 64.25;
+      void probeExitReader();
+      void probeExitReader();
+    }}
+  >Lifecycle rapid exit</button>
+  {#if readerView && open}
     <div id="sasayaki-player">
       <button
         class="probe-action"
@@ -378,6 +448,12 @@
     data-saved-positions={savedPositions.map((position) => position.toFixed(2)).join(",")}
     data-save-running={saveWorkerRunning}
     data-pending-save={pendingSave ?? ""}
+    data-reader-view={readerView}
+    data-lifecycle-exit-running={lifecycleExitRunning}
+    data-lifecycle-saved-position={lifecycleSavedPosition.toFixed(2)}
+    data-lifecycle-current-time={currentTime.toFixed(2)}
+    data-lifecycle-save-attempts={lifecycleSaveAttempts}
+    data-lifecycle-error={lifecycleError}
   ></div>
 </main>
 

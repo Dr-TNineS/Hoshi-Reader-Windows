@@ -58,6 +58,12 @@ async function presentation(page) {
     savedPositions: await state.getAttribute("data-saved-positions"),
     saveRunning: await state.getAttribute("data-save-running"),
     pendingSave: await state.getAttribute("data-pending-save"),
+    readerView: await state.getAttribute("data-reader-view"),
+    lifecycleExitRunning: await state.getAttribute("data-lifecycle-exit-running"),
+    lifecycleSavedPosition: await state.getAttribute("data-lifecycle-saved-position"),
+    lifecycleCurrentTime: await state.getAttribute("data-lifecycle-current-time"),
+    lifecycleSaveAttempts: await state.getAttribute("data-lifecycle-save-attempts"),
+    lifecycleError: await state.getAttribute("data-lifecycle-error"),
   };
 }
 
@@ -194,6 +200,39 @@ async function main() {
     assert(await audioButton.getAttribute("aria-expanded") === "false", "Closing playback should restore the collapsed state.");
     await page.waitForFunction(() => document.activeElement?.id === "reader-sasayaki-trigger");
     assert(await audioButton.evaluate((element) => element === document.activeElement), "Closing playback should restore focus to the Audio trigger.");
+    await page.getByRole("button", { name: "Probe lifecycle seek", exact: true }).dispatchEvent("click");
+    await page.getByRole("button", { name: "Probe lifecycle exit reader", exact: true }).dispatchEvent("click");
+    await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-reader-view") === "false");
+    let lifecycle = await presentation(page);
+    assert(
+      lifecycle.lifecycleSavedPosition === "42.75" && lifecycle.lifecycleSaveAttempts === "1",
+      "Leaving the reader should wait for Sasayaki playback progress to save before showing the shelf.",
+      lifecycle,
+    );
+    await page.getByRole("button", { name: "Probe reopen Sasayaki book", exact: true }).dispatchEvent("click");
+    await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-lifecycle-current-time") === "42.75");
+    lifecycle = await presentation(page);
+    assert(
+      lifecycle.readerView === "true" && lifecycle.lifecycleCurrentTime === "42.75",
+      "Reopening the book should restore the saved Sasayaki playback position.",
+      lifecycle,
+    );
+    await page.getByRole("button", { name: "Probe lifecycle failed exit", exact: true }).dispatchEvent("click");
+    await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-lifecycle-error") === "save failed");
+    lifecycle = await presentation(page);
+    assert(
+      lifecycle.readerView === "true" && lifecycle.lifecycleSaveAttempts === "2",
+      "A failed Sasayaki progress save should keep the reader open instead of silently returning to the shelf.",
+      lifecycle,
+    );
+    await page.getByRole("button", { name: "Probe lifecycle rapid exit", exact: true }).dispatchEvent("click");
+    await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-reader-view") === "false");
+    lifecycle = await presentation(page);
+    assert(
+      lifecycle.lifecycleSavedPosition === "64.25" && lifecycle.lifecycleSaveAttempts === "3",
+      "Rapid repeated reader exits should coalesce behind one in-flight Sasayaki save.",
+      lifecycle,
+    );
 
     console.log(JSON.stringify({ events: await events(page), wideOverflow, narrowOverflow }, null, 2));
   } finally {

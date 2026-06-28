@@ -131,8 +131,9 @@
   let sasayakiSuppressPauseSave = false;
   let sasayakiSaveWorkerRunning = false;
   let sasayakiPendingSave: SasayakiPlaybackSnapshot | null = null;
-  let sasayakiSaveWaiters: Array<() => void> = [];
+  let sasayakiSaveWaiters: Array<(ok: boolean) => void> = [];
   let sasayakiLastPersistedSecond = -1;
+  let sasayakiExitingReader = false;
   let sasayakiActiveCue = $state<SasayakiPlaybackCue | null>(null);
   let sasayakiCueReveal = $state(false);
   let sasayakiCueSignal = $state(0);
@@ -955,11 +956,11 @@
     }, 250);
   }
 
-  function saveSasayakiPlayback(): Promise<void> {
+  function saveSasayakiPlayback(): Promise<boolean> {
     const snapshot = captureSasayakiPlaybackSnapshot();
-    if (!snapshot) return Promise.resolve();
+    if (!snapshot) return Promise.resolve(true);
     sasayakiPendingSave = snapshot;
-    const saveDone = new Promise<void>((resolve) => {
+    const saveDone = new Promise<boolean>((resolve) => {
       sasayakiSaveWaiters.push(resolve);
     });
     drainSasayakiPlaybackSaves();
@@ -986,11 +987,12 @@
     if (sasayakiSaveWorkerRunning) return;
     sasayakiSaveWorkerRunning = true;
     void (async () => {
+      let ok = true;
       try {
         while (sasayakiPendingSave) {
           const snapshot = sasayakiPendingSave;
           sasayakiPendingSave = null;
-          await persistSasayakiPlaybackSnapshot(snapshot);
+          ok = await persistSasayakiPlaybackSnapshot(snapshot);
         }
       } finally {
         sasayakiSaveWorkerRunning = false;
@@ -1000,12 +1002,12 @@
         }
         const waiters = sasayakiSaveWaiters;
         sasayakiSaveWaiters = [];
-        waiters.forEach((resolve) => resolve());
+        waiters.forEach((resolve) => resolve(ok));
       }
     })();
   }
 
-  async function persistSasayakiPlaybackSnapshot(snapshot: SasayakiPlaybackSnapshot) {
+  async function persistSasayakiPlaybackSnapshot(snapshot: SasayakiPlaybackSnapshot): Promise<boolean> {
     try {
       const saved = await invoke<SasayakiPlaybackSession>("sasayaki_save_playback", {
         bookId: snapshot.bookId,
@@ -1016,15 +1018,19 @@
         autoPause: snapshot.autoPause,
         skipAction: snapshot.skipAction,
       });
-      if (sasayakiPlaybackBookId !== snapshot.bookId) return;
-      sasayakiPlayback = saved;
+      if (sasayakiPlaybackBookId !== snapshot.bookId) return true;
+      sasayakiPlayback = { ...saved, lastPosition: snapshot.lastPosition };
+      if (!sasayakiAudio || sasayakiAudio.paused) sasayakiCurrentTime = snapshot.lastPosition;
       sasayakiLastPersistedSecond = Math.floor(Math.max(0, snapshot.lastPosition));
+      recordSasayakiDiagnostic("save", { time: snapshot.lastPosition });
+      return true;
     } catch (e) {
       if (sasayakiPlaybackBookId === snapshot.bookId) sasayakiPlaybackError = String(e);
+      return false;
     }
   }
 
-  async function stopSasayakiPlayback(save: boolean) {
+  async function stopSasayakiPlayback(save: boolean): Promise<boolean> {
     replaceWordAudioCoordination();
     if (sasayakiLookupResumeTimer) {
       clearTimeout(sasayakiLookupResumeTimer);
@@ -1041,9 +1047,11 @@
       sasayakiAudio.pause();
       sasayakiSuppressPauseSave = false;
     }
-    if (save) await saveSasayakiPlayback();
+    const saved = save ? await saveSasayakiPlayback() : true;
+    if (!saved) return false;
     teardownSasayakiAudio();
     sasayakiPlaybackOpen = false;
+    return true;
   }
 
   async function toggleSasayakiPlayback() {
@@ -1835,10 +1843,17 @@
     }
   }
 
-  function backToShelf() {
+  async function backToShelf() {
+    if (sasayakiExitingReader) return;
+    sasayakiExitingReader = true;
     closeReaderSelection();
-    void stopSasayakiPlayback(true);
-    view = "bookshelf";
+    try {
+      const stopped = await stopSasayakiPlayback(true);
+      if (!stopped) return;
+      view = "bookshelf";
+    } finally {
+      sasayakiExitingReader = false;
+    }
   }
 
   async function storeAnkiSasayakiAudio(
@@ -1875,7 +1890,7 @@
       closeToc();
       return;
     }
-    backToShelf();
+    void backToShelf();
   }
 
   function toggleToc() {
