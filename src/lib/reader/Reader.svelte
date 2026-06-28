@@ -1,12 +1,11 @@
 ﻿<script lang="ts">
   import { untrack } from "svelte";
-  import { countChars, createWalker, getTotalChars, rawOffsetForReaderChars, readerCharOffsetForRange, readerRangeForOffsets, textEndOffsets } from "../reader";
+  import { countChars, createWalker, getTotalChars, isVertical, rawOffsetForReaderChars, readerCharOffsetForRange, readerRangeForOffsets, textEndOffsets } from "../reader";
   import type { ReaderAppearancePalette } from "../appearance";
   import {
     clearLookupHighlight,
     READER_LOOKUP_HIGHLIGHT,
     READER_SASAYAKI_HIGHLIGHT,
-    setLookupHighlightRange,
   } from "../lookup-highlight";
   import type { ReaderProgress, ReaderSelection, ReaderSelectionRect, SasayakiPlaybackCue } from "../types";
 
@@ -55,6 +54,11 @@
     "[": "]",
   };
 
+  type ViewportRect = { x: number; y: number; width: number; height: number };
+  type BoundsRect = ViewportRect & { left: number; top: number; right: number; bottom: number };
+  type RectLike = Partial<ViewportRect & { left: number; top: number; right: number; bottom: number }>;
+  type OverlayRect = { left: number; top: number; width: number; height: number };
+
   let containerEl: HTMLDivElement = $state()!;
   let contentEl: HTMLDivElement = $state()!;
   let charCount = $state(0);
@@ -80,9 +84,9 @@
   let layoutRun = 0;
   let resizeRun = 0;
   let contentMaxScroll = 0;
-  let lookupHighlightRects = $state<{ left: number; top: number; width: number; height: number }[]>([]);
+  let lookupHighlightRects = $state<OverlayRect[]>([]);
   let lookupHighlightText = $state("");
-  let sasayakiHighlightRects = $state<{ left: number; top: number; width: number; height: number }[]>([]);
+  let sasayakiHighlightRects = $state<OverlayRect[]>([]);
   let sasayakiHighlightText = $state("");
 
   let styleVars = $derived(`--page-width:${pageWidth}px;--page-height:${pageHeight}px`);
@@ -618,9 +622,9 @@
     clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
   }
 
-  function lookupPrefixRanges(characterCount: number): Range[] {
+  function lookupCharacterRanges(characterCount: number): Range[] {
     if (characterCount <= 0) return [];
-    const prefixRanges: Range[] = [];
+    const characterRanges: Range[] = [];
     let remaining = characterCount;
 
     for (const sourceRange of activeLookupRanges) {
@@ -633,28 +637,185 @@
       const startOffset = sourceRange.startOffset;
       const endOffset = sourceRange.endOffset;
       let offset = startOffset;
-      while (offset < endOffset) {
+      while (offset < endOffset && remaining > 0) {
         const char = String.fromCodePoint(content.codePointAt(offset) ?? 0);
         const nextOffset = Math.min(endOffset, offset + char.length);
+        const range = document.createRange();
+        range.setStart(node, offset);
+        range.setEnd(node, nextOffset);
+        characterRanges.push(range);
         remaining -= 1;
-        if (remaining === 0) {
-          const range = document.createRange();
-          range.setStart(node, startOffset);
-          range.setEnd(node, nextOffset);
-          prefixRanges.push(range);
-          return prefixRanges;
-        }
         offset = nextOffset;
       }
-
-      const range = document.createRange();
-      range.setStart(node, startOffset);
-      range.setEnd(node, endOffset);
-      prefixRanges.push(range);
     }
 
-    prefixRanges.forEach((range) => range.detach());
+    if (remaining === 0) return characterRanges;
+    characterRanges.forEach((range) => range.detach());
     return [];
+  }
+
+  function readerContentIsVertical(): boolean {
+    return contentEl ? isVertical(contentEl) : false;
+  }
+
+  function rectObject(rect: RectLike): ViewportRect {
+    const x = rect.x ?? rect.left ?? 0;
+    const y = rect.y ?? rect.top ?? 0;
+    const width = rect.width ?? ((rect.right ?? x) - (rect.left ?? x));
+    const height = rect.height ?? ((rect.bottom ?? y) - (rect.top ?? y));
+    return { x, y, width, height };
+  }
+
+  function rectWithBounds(rect: RectLike): BoundsRect {
+    const object = rectObject(rect);
+    const left = rect.left ?? object.x;
+    const top = rect.top ?? object.y;
+    const right = rect.right ?? object.x + object.width;
+    const bottom = rect.bottom ?? object.y + object.height;
+    return { ...object, left, top, right, bottom };
+  }
+
+  function unionBoundsRect(a: BoundsRect, b: BoundsRect): BoundsRect {
+    const left = Math.min(a.left, b.left);
+    const top = Math.min(a.top, b.top);
+    const right = Math.max(a.right, b.right);
+    const bottom = Math.max(a.bottom, b.bottom);
+    return { x: left, y: top, width: right - left, height: bottom - top, left, top, right, bottom };
+  }
+
+  function rangeOverlapAmount(aStart: number, aEnd: number, bStart: number, bEnd: number): number {
+    return Math.min(aEnd, bEnd) - Math.max(aStart, bStart);
+  }
+
+  function rangesSubstantiallyOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
+    const overlap = rangeOverlapAmount(aStart, aEnd, bStart, bEnd);
+    const shorter = Math.min(aEnd - aStart, bEnd - bStart);
+    return shorter > 0 && overlap > shorter / 2;
+  }
+
+  function rubyForNode(node: Node): Element | null {
+    const element = node.nodeType === Node.TEXT_NODE
+      ? (node as Text).parentElement
+      : node instanceof Element ? node : null;
+    return element?.closest("ruby") ?? null;
+  }
+
+  function rubyTextRects(node: Node): DOMRect[] {
+    const ruby = rubyForNode(node);
+    if (!ruby) return [];
+    return Array.from(ruby.querySelectorAll("rt"))
+      .flatMap((rt) => Array.from(rt.getClientRects()))
+      .filter((rect) => rect.width > 0 && rect.height > 0);
+  }
+
+  function rubyRectMatchesBase(baseRect: BoundsRect, rubyRect: DOMRect): boolean {
+    const ruby = rectWithBounds(rubyRect);
+    const minimumOverlap = 1;
+    if (readerContentIsVertical()) {
+      return rangeOverlapAmount(baseRect.top, baseRect.bottom, ruby.top, ruby.bottom) > minimumOverlap;
+    }
+    return rangeOverlapAmount(baseRect.left, baseRect.right, ruby.left, ruby.right) > minimumOverlap;
+  }
+
+  function rubyAwareRect(rect: DOMRect, node: Node): ViewportRect {
+    const rubyRects = rubyTextRects(node);
+    if (rubyRects.length === 0) return rectObject(rect);
+    const base = rectWithBounds(rect);
+    let result = base;
+    for (const rubyRect of rubyRects) {
+      if (rubyRectMatchesBase(base, rubyRect)) {
+        result = unionBoundsRect(result, rectWithBounds(rubyRect));
+      }
+    }
+    return rectObject(result);
+  }
+
+  function lookupRectsForRange(range: Range): ViewportRect[] {
+    let rects = Array.from(range.getClientRects());
+    if (rects.length === 0) {
+      const fallback = range.getBoundingClientRect();
+      if (fallback.width > 0 && fallback.height > 0) rects = [fallback];
+    }
+    return rects
+      .map((rect) => rubyAwareRect(rect, range.startContainer))
+      .filter((rect) => rect.width > 0 && rect.height > 0);
+  }
+
+  function inlineRectsTouch(a: ViewportRect, b: ViewportRect): boolean {
+    const tolerance = 0.5;
+    if (readerContentIsVertical()) {
+      return rangesSubstantiallyOverlap(a.x, a.x + a.width, b.x, b.x + b.width) &&
+        b.y <= a.y + a.height + tolerance &&
+        b.y + b.height >= a.y - tolerance;
+    }
+    return rangesSubstantiallyOverlap(a.y, a.y + a.height, b.y, b.y + b.height) &&
+      b.x <= a.x + a.width + tolerance &&
+      b.x + b.width >= a.x - tolerance;
+  }
+
+  function mergeLookupRects(rects: ViewportRect[]): ViewportRect[] {
+    const merged: ViewportRect[] = [];
+    for (const rect of rects) {
+      const current = { ...rect };
+      const previous = merged.at(-1);
+      if (previous && inlineRectsTouch(previous, current)) {
+        const left = Math.min(previous.x, current.x);
+        const top = Math.min(previous.y, current.y);
+        const right = Math.max(previous.x + previous.width, current.x + current.width);
+        const bottom = Math.max(previous.y + previous.height, current.y + current.height);
+        previous.x = left;
+        previous.y = top;
+        previous.width = right - left;
+        previous.height = bottom - top;
+      } else {
+        merged.push(current);
+      }
+    }
+    return merged;
+  }
+
+  function unifyVerticalColumnRects(rects: ViewportRect[]): ViewportRect[] {
+    if (!readerContentIsVertical() || rects.length === 0) return rects;
+
+    const groups: { left: number; right: number }[] = [];
+    const groupForIndex = new Array<{ left: number; right: number }>(rects.length);
+    rects.forEach((rect, index) => {
+      const left = rect.x;
+      const right = rect.x + rect.width;
+      let group = groups.find((candidate) => rangesSubstantiallyOverlap(left, right, candidate.left, candidate.right));
+      if (group) {
+        group.left = Math.min(group.left, left);
+        group.right = Math.max(group.right, right);
+      } else {
+        group = { left, right };
+        groups.push(group);
+      }
+      groupForIndex[index] = group;
+    });
+
+    return rects.map((rect, index) => {
+      const group = groupForIndex[index];
+      return { x: group.left, y: rect.y, width: group.right - group.left, height: rect.height };
+    });
+  }
+
+  function overlayRectsFromViewportRects(rects: ViewportRect[]): OverlayRect[] {
+    if (!containerEl) return [];
+    const viewportRect = containerEl.getBoundingClientRect();
+    const scrollTop = logicalScrollPos();
+    return rects
+      .filter((rect) => rect.width > 0 && rect.height > 0)
+      .map((rect) => ({
+        left: rect.x - viewportRect.left,
+        top: rect.y - viewportRect.top + scrollTop,
+        width: rect.width,
+        height: rect.height,
+      }));
+  }
+
+  function lookupOverlayRectsForRanges(ranges: Range[]): OverlayRect[] {
+    const rects = ranges.flatMap((range) => lookupRectsForRange(range));
+    return overlayRectsFromViewportRects(unifyVerticalColumnRects(mergeLookupRects(rects)));
   }
 
   function applyLookupHighlightCount(characterCount: number, force = false) {
@@ -667,7 +828,7 @@
       return;
     }
 
-    const ranges = lookupPrefixRanges(characterCount);
+    const ranges = lookupCharacterRanges(characterCount);
     if (ranges.length === 0) {
       lookupHighlightRects = [];
       lookupHighlightText = "";
@@ -677,7 +838,7 @@
     }
 
     clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
-    lookupHighlightRects = overlayRectsForRanges(ranges);
+    lookupHighlightRects = lookupOverlayRectsForRanges(ranges);
     lookupHighlightText = ranges.map((range) => range.toString()).join("").replace(/\s+/g, " ").trim();
     ranges.forEach((range) => range.detach());
     window.getSelection()?.removeAllRanges();
@@ -695,7 +856,7 @@
     sasayakiHighlightText = "";
   }
 
-  function overlayRectsForRanges(ranges: Range[]): { left: number; top: number; width: number; height: number }[] {
+  function overlayRectsForRanges(ranges: Range[]): OverlayRect[] {
     if (!containerEl) return [];
 
     const viewportRect = containerEl.getBoundingClientRect();

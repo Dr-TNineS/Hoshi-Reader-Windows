@@ -258,9 +258,23 @@ async function offsetProbePoint(page) {
       return count;
     }
 
+    const countReaderText = (root) => {
+      if (!root) return 0;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode: (node) => node.parentElement?.closest("rt, rp")
+          ? NodeFilter.FILTER_REJECT
+          : NodeFilter.FILTER_ACCEPT,
+      });
+      let text = "";
+      while (walker.nextNode()) {
+        text += walker.currentNode.textContent ?? "";
+      }
+      return countChars(text);
+    };
+    const rubyProbeParagraph = document.querySelector("[data-ruby-highlight-probe]");
     const paragraph = document.querySelector("[data-offset-probe]");
     const h1 = document.querySelector(".rct h1");
-    const precedingRubyProbeChars = countChars("優しい微笑みを見た");
+    const precedingRubyProbeChars = countReaderText(rubyProbeParagraph);
     if (!(paragraph instanceof HTMLElement) || !(h1 instanceof HTMLElement)) {
       throw new Error("Offset probe fixture not found.");
     }
@@ -284,15 +298,15 @@ async function offsetProbePoint(page) {
         y: rect.top + rect.height / 2,
         rubyProbeChars: precedingRubyProbeChars,
         expectedOffset: countChars(h1.textContent ?? "") + countChars("始母"),
-        domOffset: Array.from(`${h1.textContent ?? ""}${paragraph.textContent ?? ""}`.split("後")[0]).length,
+        domOffset: Array.from(`${h1.textContent ?? ""}${rubyProbeParagraph?.textContent ?? ""}${paragraph.textContent ?? ""}`.split("後")[0]).length,
       };
     }
     throw new Error("Offset probe target was not found.");
   });
 }
 
-async function rubyHighlightProbePoint(page) {
-  return page.evaluate(() => {
+async function rubyHighlightProbePoint(page, targetText = "優") {
+  return page.evaluate((target) => {
     const paragraph = document.querySelector("[data-ruby-highlight-probe]");
     if (!(paragraph instanceof HTMLElement)) {
       throw new Error("Ruby highlight probe fixture not found.");
@@ -305,11 +319,11 @@ async function rubyHighlightProbePoint(page) {
     while (walker.nextNode()) {
       const node = walker.currentNode;
       const text = node.textContent ?? "";
-      const index = text.indexOf("優");
+      const index = text.indexOf(target);
       if (index < 0) continue;
       const range = document.createRange();
       range.setStart(node, index);
-      range.setEnd(node, index + "優".length);
+      range.setEnd(node, index + target.length);
       const rect = range.getBoundingClientRect();
       range.detach();
       return {
@@ -318,7 +332,7 @@ async function rubyHighlightProbePoint(page) {
       };
     }
     throw new Error("Ruby highlight probe target was not found.");
-  });
+  }, targetText);
 }
 
 async function probeSelectionText(page) {
@@ -346,14 +360,77 @@ async function readerLookupHighlightState(page) {
     const cssHighlightSize = CSS.highlights?.get("hsw-reader-lookup-selection")?.size ?? 0;
     const layer = document.querySelector(".lookup-highlight-layer");
     const rects = Array.from(document.querySelectorAll(".lookup-highlight-rect"));
+    const rectObject = (rect) => ({
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      width: rect.width,
+      height: rect.height,
+    });
+    const textNodeRects = (root) => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode: (node) => node.parentElement?.closest("rt, rp")
+          ? NodeFilter.FILTER_REJECT
+          : NodeFilter.FILTER_ACCEPT,
+      });
+      const result = [];
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        const text = node.textContent ?? "";
+        if (!text.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        Array.from(range.getClientRects())
+          .filter((rect) => rect.width > 0 && rect.height > 0)
+          .forEach((rect) => result.push(rectObject(rect)));
+        range.detach();
+      }
+      return result;
+    };
+    const rubySamples = Array.from(document.querySelectorAll("[data-ruby-highlight-probe] ruby"))
+      .map((ruby) => ({
+        baseText: textNodeRects(ruby).length ? Array.from(ruby.childNodes)
+          .filter((node) => node.nodeType === Node.TEXT_NODE)
+          .map((node) => node.textContent ?? "")
+          .join("") : "",
+        baseRects: textNodeRects(ruby),
+        annotationRects: Array.from(ruby.querySelectorAll("rt, rp"))
+          .flatMap((element) => Array.from(element.getClientRects()))
+          .filter((rect) => rect.width > 0 && rect.height > 0)
+          .map(rectObject),
+      }));
 
     return {
       text: layer instanceof HTMLElement ? layer.dataset.highlightText ?? "" : "",
       rectCount: rects.length,
+      rects: rects.map((rect) => rectObject(rect.getBoundingClientRect())),
+      rubySamples,
       cssHighlightSize,
       domSelection: window.getSelection()?.toString().replace(/\s+/g, " ").trim() ?? "",
     };
   });
+}
+
+function rectContainsCenter(outer, inner) {
+  const x = inner.left + inner.width / 2;
+  const y = inner.top + inner.height / 2;
+  return x >= outer.left && x <= outer.right && y >= outer.top && y <= outer.bottom;
+}
+
+function rubyHighlightGeometry(state, rubyText) {
+  const selectedRubySample = state.rubySamples.find((sample) => sample.baseText.includes(rubyText));
+  const rubyCoveredByUnifiedRect = !!selectedRubySample && state.rects.some((rect) => (
+    selectedRubySample.baseRects.some((baseRect) => rectContainsCenter(rect, baseRect)) &&
+    selectedRubySample.annotationRects.some((annotationRect) => rectContainsCenter(rect, annotationRect))
+  ));
+  const allRubyBaseRects = state.rubySamples.flatMap((sample) => sample.baseRects);
+  const allRubyAnnotationRects = state.rubySamples.flatMap((sample) => sample.annotationRects);
+  const annotationOnlyRects = state.rects.filter((rect) => (
+    allRubyAnnotationRects.some((annotationRect) => rectContainsCenter(rect, annotationRect)) &&
+    !allRubyBaseRects.some((baseRect) => rectContainsCenter(rect, baseRect))
+  ));
+  return { selectedRubySample, rubyCoveredByUnifiedRect, annotationOnlyRects };
 }
 
 async function sasayakiHighlightState(page) {
@@ -839,15 +916,45 @@ async function main() {
     }, { timeout: 10000 });
     const rubyLookupSelection = await probeSelectionText(page);
     const rubyHighlightState = await readerLookupHighlightState(page);
+    const rubyGeometry = rubyHighlightGeometry(rubyHighlightState, "微笑");
     assert(
       rubyLookupSelection.startsWith("優しい微笑み") &&
         rubyLookupSelection.length > "優しい微笑み".length &&
         rubyHighlightState.text === "優しい微笑み" &&
-        rubyHighlightState.rectCount > 1 &&
+        rubyHighlightState.rectCount === 1 &&
+        rubyGeometry.rubyCoveredByUnifiedRect &&
+        rubyGeometry.annotationOnlyRects.length === 0 &&
         rubyHighlightState.cssHighlightSize === 0 &&
         rubyHighlightState.domSelection === "",
-      "Ruby lookup highlight should cover base text segments without including furigana.",
-      { rubyHighlightPoint, rubyLookupSelection, rubyHighlightState },
+      "Ruby lookup highlight should render one HSA-style ruby-aware column without annotation-only fragments.",
+      { rubyHighlightPoint, rubyLookupSelection, rubyHighlightState, rubyGeometry },
+    );
+
+    await page.goto(`${url}&lookupHighlightMode=rubyKagami`);
+    await page.locator(".rv.ready").waitFor({ timeout: 10000 });
+    const kagamiRubyPoint = await rubyHighlightProbePoint(page, "不");
+    await page.mouse.click(kagamiRubyPoint.x, kagamiRubyPoint.y);
+    await page.waitForFunction(() => (document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "").length > 0);
+    await page.waitForFunction(() => {
+      const state = document.querySelector(".probe-state");
+      return (state?.getAttribute("data-highlight-text") ?? "") === "不機嫌" &&
+        (state?.getAttribute("data-rendered-highlight-text") ?? "") === "不機嫌" &&
+        (state?.getAttribute("data-dom-selection") ?? "") === "";
+    }, { timeout: 10000 });
+    const kagamiLookupSelection = await probeSelectionText(page);
+    const kagamiHighlightState = await readerLookupHighlightState(page);
+    const kagamiRubyGeometry = rubyHighlightGeometry(kagamiHighlightState, "不機嫌");
+    assert(
+      kagamiLookupSelection.startsWith("不機嫌") &&
+        kagamiLookupSelection.length > "不機嫌".length &&
+        kagamiHighlightState.text === "不機嫌" &&
+        kagamiHighlightState.rectCount === 1 &&
+        kagamiRubyGeometry.rubyCoveredByUnifiedRect &&
+        kagamiRubyGeometry.annotationOnlyRects.length === 0 &&
+        kagamiHighlightState.cssHighlightSize === 0 &&
+        kagamiHighlightState.domSelection === "",
+      "Kagami-style ruby lookup highlight should render one HSA-style ruby-aware column.",
+      { kagamiRubyPoint, kagamiLookupSelection, kagamiHighlightState, kagamiRubyGeometry },
     );
 
     await page.locator(".rv").click();

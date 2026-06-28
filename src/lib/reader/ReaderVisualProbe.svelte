@@ -51,10 +51,10 @@
   function chapterContent(title: string, paragraphs: ReturnType<typeof chapterParagraphs>, includeImage = false) {
     const rubyHighlightProbeHtml = `
       <p data-ruby-highlight-probe>
-        <ruby>優<rt>やさ</rt></ruby>しい<ruby>微笑<rt>ほほえ</rt></ruby>みを見た。
+        <ruby>優<rt>やさ</rt></ruby>しい<ruby>微笑<rt>ほほえ</rt></ruby>みを見た。赤いエプロンを<ruby>不機嫌<rt>ふきげん</rt></ruby>そうに脱ぎ捨てて。
       </p>
     `;
-    const rubyHighlightProbeText = "優しい微笑みを見た。";
+    const rubyHighlightProbeText = "優しい微笑みを見た。赤いエプロンを不機嫌そうに脱ぎ捨てて。";
     const offsetProbeHtml = `
       <p data-offset-probe>
         始<ruby>母<rt>はは</rt><rp>（</rp><rp>）</rp></ruby>後語。選択位置確認。
@@ -133,6 +133,12 @@
       window.setTimeout(() => {
         if (generation !== lookupGeneration) return;
         lookupHighlightText = "優しい微笑み";
+        lookupHighlightSignal += 1;
+      }, 120);
+    } else if (selection && lookupHighlightMode === "rubyKagami") {
+      window.setTimeout(() => {
+        if (generation !== lookupGeneration) return;
+        lookupHighlightText = "不機嫌";
         lookupHighlightSignal += 1;
       }, 120);
     }
