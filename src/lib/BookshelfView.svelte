@@ -340,6 +340,7 @@
         searchState={dictionarySearchState}
         actions={dictionarySearchActions}
         {dictionarySettings}
+        popupSettings={lookupPopupSettings}
         {ankiSettings}
         active={activePanel === "dictionary"}
       />

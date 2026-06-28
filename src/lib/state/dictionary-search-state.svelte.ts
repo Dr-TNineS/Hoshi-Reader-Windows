@@ -61,36 +61,55 @@ export function createDictionarySearchState() {
 
   function beginRootSearch(text: string, requestId: number) {
     lastQuery = text;
-    rootSelection = rootTextSelection(text);
     rootState = "loading";
     rootError = "";
-    rootResults = [];
     rootRequestId = requestId;
-    rootClearSelectionSignal += 1;
-    rootRestoreScrollTop = 0;
-    rootRestoreScrollSignal += 1;
-    rootHistoryBack = [];
-    rootHistoryForward = [];
-    childPopups = [];
   }
 
   function commitRootLookup(state: LookupState, results: DictResult[], error: string) {
     rootState = state;
-    rootResults = results;
     rootError = error;
+    rootHistoryBack = [];
+    rootHistoryForward = [];
+    childPopups = [];
+    rootClearSelectionSignal += 1;
+    rootRestoreScrollTop = 0;
+    rootRestoreScrollSignal += 1;
+    if (state === "ready" && results.length > 0) {
+      rootSelection = rootTextSelection(lastQuery);
+      rootResults = results;
+      return;
+    }
+    rootSelection = null;
+    rootResults = [];
   }
 
-  function pushRootRedirect(text: string, requestId: number, currentScrollTop: number) {
-    if (rootSelection) {
-      rootHistoryBack = [...rootHistoryBack, { query: lastQuery, results: rootResults, scrollTop: currentScrollTop }];
-    }
+  function beginRootRedirect(text: string, requestId: number) {
     lastQuery = text;
     query = text;
-    rootSelection = rootTextSelection(text);
     rootState = "loading";
     rootError = "";
-    rootResults = [];
     rootRequestId = requestId;
+  }
+
+  function commitRootRedirect(state: LookupState, results: DictResult[], error: string, previous: DictionarySearchHistoryEntry | null) {
+    if (state !== "ready" || results.length === 0) {
+      if (previous) {
+        lastQuery = previous.query;
+        query = previous.query;
+        rootState = previous.results.length > 0 ? "ready" : state;
+        rootError = previous.results.length > 0 ? "" : error;
+      } else {
+        rootState = state;
+        rootError = error;
+      }
+      return;
+    }
+    rootState = state;
+    rootError = error;
+    if (previous) rootHistoryBack = [...rootHistoryBack, previous];
+    rootSelection = rootTextSelection(lastQuery);
+    rootResults = results;
     rootHistoryForward = [];
     rootClearSelectionSignal += 1;
     rootRestoreScrollTop = 0;
@@ -127,6 +146,10 @@ export function createDictionarySearchState() {
     focusSignal += 1;
   }
 
+  function clearRootSelection() {
+    rootClearSelectionSignal += 1;
+  }
+
   return {
     get query() { return query; },
     set query(value: string) { query = value; },
@@ -150,9 +173,11 @@ export function createDictionarySearchState() {
     clearForBlankSubmit,
     beginRootSearch,
     commitRootLookup,
-    pushRootRedirect,
+    beginRootRedirect,
+    commitRootRedirect,
     restoreRootHistory,
     requestFocus,
+    clearRootSelection,
     rootTextSelection,
   };
 }

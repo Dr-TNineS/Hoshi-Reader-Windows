@@ -723,6 +723,7 @@
   style={`--popup-scale:${scale}`}
   bind:this={contentRoot}
 >
+  {#if presentation === "popup"}
   <div class="lookup-head">
     <span>Lookup</span>
     {#if canControlSasayaki}
@@ -735,11 +736,10 @@
     <div class="lookup-head-actions">
       <button aria-label="Back" title="Back" disabled={!canNavigateBack} onclick={() => onNavigateHistory(popupId, "back")}>&lt;</button>
       <button aria-label="Forward" title="Forward" disabled={!canNavigateForward} onclick={() => onNavigateHistory(popupId, "forward")}>&gt;</button>
-      {#if presentation === "popup"}
-        <button aria-label="Close lookup" onclick={() => onClose(popupId)}>Close</button>
-      {/if}
+      <button aria-label="Close lookup" onclick={() => onClose(popupId)}>Close</button>
     </div>
   </div>
+  {/if}
   {#if lookupState === "loading"}
     <p class="lookup-state">Looking up...</p>
   {:else if lookupState === "noDictionaries"}
@@ -917,7 +917,6 @@
   .word-audio-status.error { color: var(--app-error, #ffb4ab); }
   .lookup-content { display: flex; flex: 1 1 auto; flex-direction: column; gap: 8px; width: 100%; height: 100%; min-width: 0; min-height: 0; font-family: var(--reader-body-font, "Yu Mincho", "Hiragino Mincho Pro", "MS Mincho", serif); }
   .lookup-content.page-presentation { gap: 0; }
-  .lookup-content.page-presentation .lookup-head { flex: 0 0 auto; padding: 10px 0; border-bottom: 1px solid var(--app-border, #333333); }
   .lookup-content.page-presentation .lookup-results { padding: 0 4px 24px 0; }
   .lookup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--app-muted, #999999); font-size: 11px; text-transform: uppercase; }
   .lookup-head-actions { display: flex; align-items: center; gap: 4px; }

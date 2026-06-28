@@ -13,6 +13,7 @@
   let lookupMode = $state<"ready" | "empty" | "error" | "slow">("ready");
   let lookupEvents = $state<string[]>([]);
   let importClicks = $state(0);
+  let lookupPopupSettings = $state({ width: 320, height: 250, scale: 1.15 });
 
   function resultFor(text: string): DictResult {
     return {
@@ -70,7 +71,7 @@
     readerAppearance={{ ...defaultReaderAppearance, theme: "dark" }}
     readerThemeLabels={{ light: "Light", dark: "Dark", sepia: "Sepia", custom: "Custom" }}
     advancedSettings={{ reopenLastBookOnStartup: true }}
-    lookupPopupSettings={{ width: 320, height: 250, scale: 1 }}
+    {lookupPopupSettings}
     {dictionarySettings}
     {dictionarySearchState}
     {dictionarySearchActions}
@@ -82,9 +83,9 @@
     onSetReaderInterface={() => {}}
     onSetReaderAppearanceColor={() => {}}
     onSetReopenLastBookOnStartup={() => {}}
-    onSetLookupPopupWidth={() => {}}
-    onSetLookupPopupHeight={() => {}}
-    onSetLookupPopupScale={() => {}}
+    onSetLookupPopupWidth={(width) => lookupPopupSettings = { ...lookupPopupSettings, width }}
+    onSetLookupPopupHeight={(height) => lookupPopupSettings = { ...lookupPopupSettings, height }}
+    onSetLookupPopupScale={(scale) => lookupPopupSettings = { ...lookupPopupSettings, scale }}
     onDictionarySettingsChange={() => {}}
     onRefreshDictionaries={() => {}}
     onImportDictionary={() => importClicks += 1}

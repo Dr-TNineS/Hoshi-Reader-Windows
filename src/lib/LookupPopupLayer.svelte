@@ -46,6 +46,7 @@
   };
 
   let {
+    rootPopup = null,
     popups = [],
     ankiSettings = null,
     popupSettings = defaultLookupPopupSettings,
@@ -72,6 +73,7 @@
     onAddAnkiNote,
     bounds = null,
   }: {
+    rootPopup?: LookupPopupItem | null;
     popups?: LookupPopupItem[];
     ankiSettings?: AnkiSettings | null;
     popupSettings?: LookupPopupSettings;
@@ -138,6 +140,50 @@
 
 <svelte:window onresize={syncViewport} />
 
+{#if rootPopup}
+  <section class="lookup-root-frame" data-popup-id={rootPopup.id}>
+    <LookupPopupContent
+      popupId={rootPopup.id}
+      requestId={rootPopup.requestId}
+      selection={rootPopup.selection}
+      state={rootPopup.state}
+      error={rootPopup.error}
+      results={rootPopup.results}
+      clearSelectionSignal={rootPopup.clearSelectionSignal}
+      selectionHighlightCount={rootPopup.selectionHighlightCount}
+      selectionHighlightSignal={rootPopup.selectionHighlightSignal}
+      onClose={onClose}
+      onImportDictionary={onImportDictionary}
+      onNestedLookup={onNestedLookup}
+      onRedirectLookup={onRedirectLookup}
+      onScrolled={onScrolled}
+      onNavigateHistory={onNavigateHistory}
+      canNavigateBack={rootPopup.historyBack.length > 0}
+      canNavigateForward={rootPopup.historyForward.length > 0}
+      restoreScrollTop={rootPopup.restoreScrollTop}
+      restoreScrollSignal={rootPopup.restoreScrollSignal}
+      {dictionarySettings}
+      ankiTitle={(result, resultIndex) => ankiTitle(rootPopup.selection, result, resultIndex)}
+      {ankiSettings}
+      buildAnkiPayload={(result, resultIndex) => buildAnkiPayload(rootPopup.selection, result, resultIndex)}
+      onStoreAnkiMedia={onStoreAnkiMedia}
+      onStoreAnkiBookCover={onStoreAnkiBookCover}
+      onStoreAnkiWordAudio={onStoreAnkiWordAudio}
+      onStoreAnkiSasayakiAudio={onStoreAnkiSasayakiAudio}
+      onPrepareWordAudio={onPrepareWordAudio}
+      onWordAudioPlaybackStart={onWordAudioPlaybackStart}
+      onWordAudioPlaybackEnd={onWordAudioPlaybackEnd}
+      sasayakiCue={rootPopup.sasayakiCue ?? null}
+      {sasayakiPlaying}
+      sasayakiAvailable={false}
+      onSasayakiAction={onSasayakiAction}
+      onAddAnkiNote={onAddAnkiNote}
+      presentation="page"
+      scale={popupSettings.scale}
+    />
+  </section>
+{/if}
+
 {#each popups as popup, popupIndex (popup.id)}
   <aside
     class="lookup-pop"
@@ -187,5 +233,6 @@
 {/each}
 
 <style>
+  .lookup-root-frame { min-width: 0; min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; overflow: hidden; }
   .lookup-pop { position: fixed; z-index: var(--popup-z); display: flex; flex-direction: column; gap: 8px; padding: 10px 12px; background: var(--app-surface); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 6px; box-shadow: 0 14px 38px var(--app-shadow); overflow: hidden; }
 </style>

@@ -50,11 +50,13 @@ async function metrics(page) {
     const root = document.querySelector('[data-popup-id="dictionary-search-root"]');
     const rootContent = document.querySelector('[data-popup-id="dictionary-search-root"] .lookup-content');
     const rootExpression = document.querySelector('[data-popup-id="dictionary-search-root"] .lookup-expression');
+    const childPopup = document.querySelector('.lookup-pop:not([data-popup-id="dictionary-search-root"])');
     const childContent = document.querySelector('.lookup-pop:not([data-popup-id="dictionary-search-root"]) .lookup-content');
     const childExpression = document.querySelector('.lookup-pop:not([data-popup-id="dictionary-search-root"]) .lookup-expression');
     const rootRect = root instanceof HTMLElement ? root.getBoundingClientRect() : null;
     const panelRect = panel instanceof HTMLElement ? panel.getBoundingClientRect() : null;
     const resultRect = result instanceof HTMLElement ? result.getBoundingClientRect() : null;
+    const childRect = childPopup instanceof HTMLElement ? childPopup.getBoundingClientRect() : null;
     return {
       text: document.body.textContent ?? "",
       navLabels: Array.from(document.querySelectorAll(".side-nav button .nav-copy span")).map((node) => node.textContent ?? ""),
@@ -69,22 +71,21 @@ async function metrics(page) {
       childCount: Number(state?.getAttribute("data-child-count") ?? 0),
       activeElementLabel: document.activeElement?.getAttribute("aria-label") ?? "",
       selectedText: search instanceof HTMLInputElement ? search.value.slice(search.selectionStart ?? 0, search.selectionEnd ?? 0) : "",
+      searchDisabled: search instanceof HTMLInputElement ? search.disabled : false,
       horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
       viewport: { width: window.innerWidth, height: window.innerHeight },
       panel: panelRect ? { left: panelRect.left, top: panelRect.top, right: panelRect.right, bottom: panelRect.bottom } : null,
       result: resultRect ? { left: resultRect.left, top: resultRect.top, right: resultRect.right, bottom: resultRect.bottom } : null,
       root: rootRect ? { left: rootRect.left, top: rootRect.top, right: rootRect.right, bottom: rootRect.bottom } : null,
+      child: childRect ? { width: childRect.width, height: childRect.height } : null,
       closeButtons: document.querySelectorAll('[data-popup-id="dictionary-search-root"] button[aria-label="Close lookup"]').length,
       sasayakiButtons: document.querySelectorAll('[data-popup-id="dictionary-search-root"] .lookup-sasayaki-controls button').length,
+      rootHistoryButtons: document.querySelectorAll('[data-popup-id="dictionary-search-root"] button[aria-label="Back"], [data-popup-id="dictionary-search-root"] button[aria-label="Forward"]').length,
       popupScaleControls: document.querySelectorAll('[aria-label="Popup scale"]').length,
       rootScale: rootContent instanceof HTMLElement ? getComputedStyle(rootContent).getPropertyValue("--popup-scale").trim() : "",
       rootExpressionFontSize: rootExpression instanceof HTMLElement ? Number.parseFloat(getComputedStyle(rootExpression).fontSize) : 0,
       childScale: childContent instanceof HTMLElement ? getComputedStyle(childContent).getPropertyValue("--popup-scale").trim() : "",
       childExpressionFontSize: childExpression instanceof HTMLElement ? Number.parseFloat(getComputedStyle(childExpression).fontSize) : 0,
-      rootScroller: (() => {
-        const scroller = document.querySelector('[data-popup-id="dictionary-search-root"] .lookup-results');
-        return scroller instanceof HTMLElement ? { scrollTop: scroller.scrollTop, scrollHeight: scroller.scrollHeight, clientHeight: scroller.clientHeight } : null;
-      })(),
     };
   });
 }
@@ -122,24 +123,21 @@ async function main() {
 
     await openProbe(page);
     let state = await metrics(page);
-    assert(
-      state.navLabels.slice(0, 3).join(" -> ") === "Library -> Dictionary -> Dictionaries",
-      "Sidebar should place Dictionary before Dictionaries.",
-      state,
-    );
+    assert(state.navLabels.slice(0, 3).join(" -> ") === "Library -> Dictionary -> Dictionaries", "Sidebar should place Dictionary before Dictionaries.", state);
 
     await activateDictionary(page);
     state = await metrics(page);
     assert(state.activeElementLabel === "Dictionary search", "Dictionary panel should focus the search input.", state);
 
-    await search(page, "学校");
+    await search(page, "school");
     await page.locator(".lookup-result").waitFor();
     state = await metrics(page);
-    assert(state.lookupEvents.includes("学校:"), "Enter should invoke lookup for the typed query.", state);
+    assert(state.lookupEvents.includes("school:"), "Enter should invoke lookup for the typed query.", state);
     assert(state.lookupEvents.includes(":7:13"), "Lookup should receive dictionary maxResults and scanLength.", state);
     assert(state.rootState === "ready" && state.rootResults === 1, "Ready search should render root results.", state);
-    assert(state.closeButtons === 0 && state.sasayakiButtons === 0, "Page presentation should hide close and Sasayaki controls.", state);
-    assert(state.rootScale === "1.2" && Math.abs(state.rootExpressionFontSize - 31.2) < 0.2, "Dictionary root results should use the fixed 1.20 lookup scale.", state);
+    assert(state.closeButtons === 0 && state.sasayakiButtons === 0, "Root frame should hide close and Sasayaki controls.", state);
+    assert(state.rootHistoryButtons === 0, "Root frame should not expose a popup action bar.", state);
+    assert(state.rootScale === "1.15" && Math.abs(state.rootExpressionFontSize - 29.9) < 0.2, "Root frame should use shared lookup popup scale.", state);
     assert(state.popupScaleControls === 0, "Dictionary Search should not expose a scale control.", state);
 
     await page.getByRole("button", { name: "Clear search" }).click();
@@ -152,38 +150,38 @@ async function main() {
     assert(state.lookupEvents === eventsAfterClear, "Blank Enter should not call lookup.", state);
 
     await page.getByRole("button", { name: "status none" }).click();
-    await search(page, "辞書");
+    await search(page, "none");
     state = await metrics(page);
-    assert(state.rootState === "noDictionaries" && state.text.includes("No probe dictionaries."), "No-dictionary status should render a clear state.", state);
+    assert(state.rootState === "noDictionaries" && state.text.includes("No probe dictionaries."), "No-dictionary status should render a page-level state.", state);
     await page.getByRole("button", { name: "Import Dictionary" }).click();
     state = await metrics(page);
     assert(state.importClicks === 1, "No-dictionary import action should be wired.", state);
 
     await page.getByRole("button", { name: "status engine" }).click();
-    await search(page, "エンジン");
+    await search(page, "engine");
     state = await metrics(page);
     assert(state.rootState === "engineUnavailable" && state.text.includes("Probe engine unavailable."), "Engine unavailable should render distinctly.", state);
 
     await page.getByRole("button", { name: "status ready" }).click();
     await page.getByRole("button", { name: "lookup error" }).click();
-    await search(page, "失敗");
+    await search(page, "failure");
     state = await metrics(page);
     assert(state.rootState === "error" && state.text.includes("Probe lookup failed."), "Lookup errors should render distinctly.", state);
 
     await page.getByRole("button", { name: "lookup empty" }).click();
-    await search(page, "空");
+    await search(page, "empty");
     state = await metrics(page);
-    assert(state.rootState === "empty" && state.text.includes("No dictionary results"), "Empty lookup should render an empty state.", state);
+    assert(state.rootState === "empty" && state.rootResults === 0 && !state.text.includes("No dictionary results"), "Empty lookup should leave the result area blank.", state);
 
     await page.getByRole("button", { name: "lookup ready" }).click();
-    await search(page, "学校");
+    await search(page, "school");
     await page.locator('a[data-lookup-redirect="redirected"]').click();
     await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-last-query") === "redirected");
     state = await metrics(page);
     assert(state.lastQuery === "redirected" && state.backCount === 1, "Root redirect should replace results and add back history.", state);
-    await page.getByRole("button", { name: "Back" }).click();
+    await page.keyboard.press("Alt+ArrowLeft");
     state = await metrics(page);
-    assert(state.lastQuery === "学校" && state.forwardCount === 1, "Root Back should restore the previous result session.", state);
+    assert(state.lastQuery === "school" && state.forwardCount === 1, "Alt+Left should restore the previous root result session.", state);
 
     const glossary = page.locator('[data-popup-id="dictionary-search-root"] .lookup-glossary-content').first();
     const box = await glossary.boundingBox();
@@ -194,19 +192,32 @@ async function main() {
     await page.waitForFunction(() => Number(document.querySelector(".probe-state")?.getAttribute("data-child-count") ?? 0) > 0);
     state = await metrics(page);
     assert(state.childCount > 0, "Selecting glossary text should open a child popup.", state);
-    assert(state.childScale === "1.2" && Math.abs(state.childExpressionFontSize - 31.2) < 0.2, "Dictionary child popups should use the fixed 1.20 lookup scale.", state);
+    assert(state.childScale === "1.15" && Math.abs(state.childExpressionFontSize - 29.9) < 0.2, "Child popups should use shared lookup popup scale.", state);
+    assert(state.child && Math.abs(state.child.width - 320) < 30 && Math.abs(state.child.height - 250) < 30, "Child popups should use shared lookup popup dimensions.", state);
 
-    await search(page, "新語");
-    await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-last-query") === "新語");
+    await page.getByRole("button", { name: /Appearance Reader theme/ }).click();
+    await page.locator('input[aria-label="Popup scale"]').evaluate((node) => {
+      node.value = "1.3";
+      node.dispatchEvent(new Event("input", { bubbles: true }));
+    });
+    await page.getByRole("button", { name: /Dictionary Search terms/ }).click();
     state = await metrics(page);
-    assert(state.backCount === 0 && state.forwardCount === 0 && state.childCount === 0, "New searches should clear history and child popups.", state);
+    assert(state.rootScale === "1.3" && state.childScale === "1.3", "Dictionary root and child should follow Appearance popup scale.", state);
+
+    await page.getByRole("button", { name: "lookup slow" }).click();
+    await search(page, "slow-new");
+    state = await metrics(page);
+    assert(state.rootState === "loading" && state.rootResults === 1 && state.searchDisabled, "New searches should keep prior results visible while loading and disable input.", state);
+    await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-last-query") === "slow-new" && document.querySelector(".probe-state")?.getAttribute("data-root-state") === "ready");
+    state = await metrics(page);
+    assert(state.backCount === 0 && state.forwardCount === 0 && state.childCount === 0, "Completed new searches should clear history and child popups.", state);
 
     await page.getByRole("button", { name: /Library Recent EPUBs/ }).click();
     await page.getByRole("button", { name: /Dictionary Search terms/ }).click();
     await page.waitForFunction(() => document.activeElement?.getAttribute("aria-label") === "Dictionary search");
     state = await metrics(page);
-    assert(state.lastQuery === "新語" && state.rootResults === 1, "Dictionary search state should survive sidebar switching.", state);
-    assert(state.selectedText === "新語", "Reactivating Dictionary should select the current query.", state);
+    assert(state.lastQuery === "slow-new" && state.rootResults === 1, "Dictionary search state should survive sidebar switching.", state);
+    assert(state.selectedText === "slow-new", "Reactivating Dictionary should select the current query.", state);
 
     await page.setViewportSize({ width: 460, height: 720 });
     await activateDictionary(page);

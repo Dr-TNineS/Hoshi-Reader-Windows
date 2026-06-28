@@ -1,11 +1,11 @@
 ﻿<script lang="ts">
-  import LookupPopupContent from "./LookupPopupContent.svelte";
   import LookupPopupLayer, { type LookupPopupItem } from "./LookupPopupLayer.svelte";
   import { buildDictionarySearchAnkiPayload } from "./dictionary-search-anki";
   import { defaultDictionarySettings, type DictionarySettings } from "./dictionary-settings";
   import { runDictionaryLookup } from "./dictionary-lookup-executor";
   import type { LookupResultCache } from "./lookup-result-cache";
   import type { LookupState } from "./lookup-popup";
+  import { defaultLookupPopupSettings, type LookupPopupSettings } from "./lookup-popup-settings";
   import type { DictionarySearchState } from "./state/dictionary-search-state.svelte";
   import type {
     AnkiAddNoteResult,
@@ -41,18 +41,19 @@
     searchState,
     actions,
     dictionarySettings = defaultDictionarySettings,
+    popupSettings = defaultLookupPopupSettings,
     ankiSettings = null,
     active = true,
   }: {
     searchState: DictionarySearchState;
     actions: DictionarySearchActions;
     dictionarySettings?: DictionarySettings;
+    popupSettings?: LookupPopupSettings;
     ankiSettings?: AnkiSettings | null;
     active?: boolean;
   } = $props();
 
   const rootPopupId = "dictionary-search-root";
-  const DICTIONARY_SEARCH_SCALE = 1.2;
   let searchInput: HTMLInputElement | null = null;
   let pageShell: HTMLElement | null = null;
   let bounds = $state<{ left: number; top: number; right: number; bottom: number } | null>(null);
@@ -152,6 +153,26 @@
     };
   }
 
+  function rootPopup(): LookupPopupItem | null {
+    if (!searchState.rootSelection || searchState.rootResults.length === 0) return null;
+    return {
+      id: rootPopupId,
+      selection: searchState.rootSelection,
+      state: "ready",
+      error: "",
+      results: searchState.rootResults,
+      requestId: searchState.rootRequestId,
+      clearSelectionSignal: searchState.rootClearSelectionSignal,
+      selectionHighlightCount: 0,
+      selectionHighlightSignal: 0,
+      historyBack: searchState.rootHistoryBack.map((entry) => ({ selection: searchState.rootTextSelection(entry.query), scrollTop: entry.scrollTop })),
+      historyForward: searchState.rootHistoryForward.map((entry) => ({ selection: searchState.rootTextSelection(entry.query), scrollTop: entry.scrollTop })),
+      restoreScrollTop: searchState.rootRestoreScrollTop,
+      restoreScrollSignal: searchState.rootRestoreScrollSignal,
+      sasayakiCue: null,
+    };
+  }
+
   async function lookupChild(popupId: string, selection: ReaderSelection, requestId: number, highlightOwnerId: string | null = null) {
     const isCurrent = () => searchState.childPopups.some((popup) => popup.id === popupId && popup.requestId === requestId);
     const lookup = await executeLookup(selection.text, requestId, isCurrent);
@@ -212,6 +233,7 @@
   function clearPopupChildren(parentId: string, clearParentSelection = true) {
     if (parentId === rootPopupId) {
       searchState.childPopups = [];
+      if (clearParentSelection) searchState.clearRootSelection();
       return;
     }
     const index = popupIndex(parentId);
@@ -229,10 +251,13 @@
     const text = selection.text.trim();
     if (!text) return;
     const requestId = searchState.nextRequestId();
-    searchState.pushRootRedirect(text, requestId, rootResultsScrollTop());
+    const previous = searchState.rootSelection
+      ? { query: searchState.lastQuery, results: searchState.rootResults, scrollTop: rootResultsScrollTop() }
+      : null;
+    searchState.beginRootRedirect(text, requestId);
     const lookup = await executeLookup(text, requestId, () => searchState.rootRequestId === requestId);
     if (!lookup || searchState.rootRequestId !== requestId) return;
-    searchState.commitRootLookup(lookup.state, lookup.results, lookup.error);
+    searchState.commitRootRedirect(lookup.state, lookup.results, lookup.error, previous);
   }
 
   function redirectChild(popupId: string, selection: ReaderSelection) {
@@ -323,12 +348,12 @@
     clearPopupChildren(popupId, true);
   }
 
-  function ankiTitle(result: DictResult, resultIndex: number): string {
-    return `Payload prepared for ${buildDictionarySearchAnkiPayload(searchState.lastQuery || searchState.query, result, resultIndex).sourceBook.title}`;
+  function ankiTitleFor(query: string, result: DictResult, resultIndex: number): string {
+    return `Payload prepared for ${buildDictionarySearchAnkiPayload(query, result, resultIndex).sourceBook.title}`;
   }
 
-  function buildAnkiPayload(result: DictResult, resultIndex: number): LookupAnkiPayload {
-    return buildDictionarySearchAnkiPayload(searchState.lastQuery || searchState.query, result, resultIndex);
+  function buildAnkiPayloadFor(query: string, result: DictResult, resultIndex: number): LookupAnkiPayload {
+    return buildDictionarySearchAnkiPayload(query, result, resultIndex);
   }
 
   function observeBounds(node: HTMLElement) {
@@ -343,7 +368,19 @@
   }
 </script>
 
-<svelte:window onresize={syncBounds} />
+<svelte:window
+  onresize={syncBounds}
+  onkeydown={(event) => {
+    if (!active || !event.altKey) return;
+    if (event.key === "ArrowLeft" && searchState.rootHistoryBack.length > 0) {
+      event.preventDefault();
+      navigateRootHistory("back");
+    } else if (event.key === "ArrowRight" && searchState.rootHistoryForward.length > 0) {
+      event.preventDefault();
+      navigateRootHistory("forward");
+    }
+  }}
+/>
 
 <section class="dictionary-search" class:active bind:this={pageShell} data-dictionary-search onintrostart={syncBounds}>
   <header class="dictionary-search-head">
@@ -365,68 +402,45 @@
     </form>
   </header>
 
-  <section class="dictionary-search-results" data-popup-id={rootPopupId} aria-label="Dictionary results" use:observeBounds>
-    {#if searchState.rootSelection}
-      <LookupPopupContent
-        popupId={rootPopupId}
-        requestId={searchState.rootRequestId}
-        selection={searchState.rootSelection}
-        state={searchState.rootState}
-        error={searchState.rootError}
-        results={searchState.rootResults}
-        clearSelectionSignal={searchState.rootClearSelectionSignal}
-        restoreScrollTop={searchState.rootRestoreScrollTop}
-        restoreScrollSignal={searchState.rootRestoreScrollSignal}
-        onClose={() => {}}
-        onImportDictionary={actions.onImportDictionary}
-        onNestedLookup={openChildLookup}
-        onRedirectLookup={handleRedirectLookup}
-        onScrolled={handleScrolled}
-        onNavigateHistory={handleNavigateHistory}
-        canNavigateBack={searchState.rootHistoryBack.length > 0}
-        canNavigateForward={searchState.rootHistoryForward.length > 0}
-        {dictionarySettings}
-        {ankiSettings}
-        {ankiTitle}
-        {buildAnkiPayload}
-        onStoreAnkiMedia={actions.onStoreAnkiMedia}
-        onStoreAnkiBookCover={actions.onStoreAnkiBookCover}
-        onStoreAnkiWordAudio={actions.onStoreAnkiWordAudio}
-        onPrepareWordAudio={actions.onPrepareWordAudio}
-        onAddAnkiNote={actions.onAddAnkiNote}
-        presentation="page"
-        scale={DICTIONARY_SEARCH_SCALE}
-      />
-    {:else}
-      <div class="dictionary-search-idle" aria-hidden="true"></div>
+  <section class="dictionary-search-results" aria-label="Dictionary results" use:observeBounds>
+    {#if searchState.rootState === "loading" && searchState.rootResults.length === 0}
+      <p class="dictionary-search-message">Looking up...</p>
+    {:else if searchState.rootState === "noDictionaries"}
+      <div class="dictionary-search-message-block">
+        <p class="dictionary-search-message">{searchState.rootError}</p>
+        <button class="dictionary-search-action" onclick={actions.onImportDictionary}>Import Dictionary</button>
+      </div>
+    {:else if searchState.rootState === "engineUnavailable" || searchState.rootState === "error"}
+      <p class="dictionary-search-message">{searchState.rootError}</p>
     {/if}
-  </section>
 
-  <LookupPopupLayer
-    popups={searchState.childPopups}
-    popupSettings={{ width: 360, height: 320, scale: DICTIONARY_SEARCH_SCALE }}
-    {dictionarySettings}
-    {ankiSettings}
-    onClose={closePopup}
-    onImportDictionary={actions.onImportDictionary}
-    onNestedLookup={openChildLookup}
-    onRedirectLookup={handleRedirectLookup}
-    onScrolled={handleScrolled}
-    onNavigateHistory={handleNavigateHistory}
-    onPopupPointerDown={(popupId) => clearPopupChildren(popupId)}
-    ankiTitle={(_selection, result, resultIndex) => ankiTitle(result, resultIndex)}
-    buildAnkiPayload={(_selection, result, resultIndex) => buildAnkiPayload(result, resultIndex)}
-    onStoreAnkiMedia={actions.onStoreAnkiMedia ?? (async () => ({ stored: [], warnings: [] }))}
-    onStoreAnkiBookCover={actions.onStoreAnkiBookCover ?? (async () => ({ filename: null, warnings: [] }))}
-    onStoreAnkiWordAudio={actions.onStoreAnkiWordAudio ?? (async () => ({ filename: null, warnings: [] }))}
-    onStoreAnkiSasayakiAudio={async () => ({ filename: null, warnings: ["Sasayaki audio is not available from Dictionary Search."] })}
-    onPrepareWordAudio={actions.onPrepareWordAudio ?? (async () => ({ cachePath: null, mimeType: null, sourceName: null, warnings: [] }))}
-    sasayakiPlaying={false}
-    sasayakiAvailable={false}
-    onSasayakiAction={() => {}}
-    onAddAnkiNote={actions.onAddAnkiNote ?? (async () => ({ status: "error", noteId: null, message: "Anki is not configured.", warnings: [] }))}
-    {bounds}
-  />
+    <LookupPopupLayer
+      rootPopup={rootPopup()}
+      popups={searchState.childPopups}
+      {popupSettings}
+      {dictionarySettings}
+      {ankiSettings}
+      onClose={closePopup}
+      onImportDictionary={actions.onImportDictionary}
+      onNestedLookup={openChildLookup}
+      onRedirectLookup={handleRedirectLookup}
+      onScrolled={handleScrolled}
+      onNavigateHistory={handleNavigateHistory}
+      onPopupPointerDown={(popupId) => clearPopupChildren(popupId)}
+      ankiTitle={(selection, result, resultIndex) => ankiTitleFor(selection.text, result, resultIndex)}
+      buildAnkiPayload={(selection, result, resultIndex) => buildAnkiPayloadFor(selection.text, result, resultIndex)}
+      onStoreAnkiMedia={actions.onStoreAnkiMedia ?? (async () => ({ stored: [], warnings: [] }))}
+      onStoreAnkiBookCover={actions.onStoreAnkiBookCover ?? (async () => ({ filename: null, warnings: [] }))}
+      onStoreAnkiWordAudio={actions.onStoreAnkiWordAudio ?? (async () => ({ filename: null, warnings: [] }))}
+      onStoreAnkiSasayakiAudio={async () => ({ filename: null, warnings: ["Sasayaki audio is not available from Dictionary Search."] })}
+      onPrepareWordAudio={actions.onPrepareWordAudio ?? (async () => ({ cachePath: null, mimeType: null, sourceName: null, warnings: [] }))}
+      sasayakiPlaying={false}
+      sasayakiAvailable={false}
+      onSasayakiAction={() => {}}
+      onAddAnkiNote={actions.onAddAnkiNote ?? (async () => ({ status: "error", noteId: null, message: "Anki is not configured.", warnings: [] }))}
+      {bounds}
+    />
+  </section>
 </section>
 
 <style>
@@ -440,7 +454,10 @@
   .clear-search { width: 32px; height: 32px; display: inline-flex; align-items: center; justify-content: center; background: transparent; color: var(--app-muted); border: 0; border-radius: 6px; cursor: pointer; font-size: 24px; line-height: 1; }
   .clear-search:hover { background: var(--app-control); color: var(--app-text); }
   .dictionary-search-results { min-width: 0; min-height: 0; flex: 1 1 auto; display: flex; flex-direction: column; padding-top: 10px; overflow: hidden; }
-  .dictionary-search-idle { flex: 1 1 auto; }
+  .dictionary-search-message-block { display: flex; flex-direction: column; align-items: flex-start; gap: 10px; padding: 4px 0; }
+  .dictionary-search-message { margin: 0; color: var(--app-muted); font-size: 13px; line-height: 1.4; overflow-wrap: anywhere; }
+  .dictionary-search-action { padding: 6px 11px; background: var(--app-primary); color: var(--app-bg); border: 0; border-radius: 4px; cursor: pointer; font-size: 12px; }
+  .dictionary-search-action:hover { background: var(--app-primary-hover); }
   @media (max-width: 640px) {
     .dictionary-search-head { padding-top: 2px; }
     .dictionary-search-bar { height: 50px; border-radius: 10px; }
