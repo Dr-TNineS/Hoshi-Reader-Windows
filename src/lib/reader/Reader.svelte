@@ -1523,7 +1523,7 @@
     overflow-x: visible;
     overflow-wrap: anywhere;
     word-break: normal;
-    font-family: "Yu Mincho", "Hiragino Mincho Pro", "MS Mincho", serif;
+    font-family: var(--reader-body-font, "Yu Mincho", "Hiragino Mincho Pro", "MS Mincho", serif);
     font-size: var(--font-size);
     line-height: var(--line-height);
     text-indent: 0;

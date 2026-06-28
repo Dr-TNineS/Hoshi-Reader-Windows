@@ -27,6 +27,7 @@ export type ReaderAppearancePalette = {
 };
 
 const APPEARANCE_KEY = "hoshi_reader_appearance";
+export const readerBodyFont = "\"Yu Mincho\", \"Hiragino Mincho Pro\", \"MS Mincho\", serif";
 
 export const defaultReaderAppearance: ReaderAppearance = {
   theme: "light",
@@ -106,6 +107,7 @@ export function readerAppearancePalette(appearance: ReaderAppearance): ReaderApp
 export function readerAppearanceCssVars(palette: ReaderAppearancePalette): string {
   return [
     `--reader-bg:${palette.readerBackground}`,
+    `--reader-body-font:${readerBodyFont}`,
     `--reader-text:${palette.readerText}`,
     `--reader-info:${palette.readerInfo}`,
     `--lookup-highlight-color:${palette.lookupHighlight}`,

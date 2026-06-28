@@ -912,7 +912,7 @@
 <style>
   .word-audio-status { margin: calc(2px * var(--popup-scale, 1)) 0 0; color: var(--app-status, #cce8d5); font-size: calc(11px * var(--popup-scale, 1)); line-height: 1.35; }
   .word-audio-status.error { color: var(--app-error, #ffb4ab); }
-  .lookup-content { display: flex; flex: 1 1 auto; flex-direction: column; gap: 8px; width: 100%; height: 100%; min-width: 0; min-height: 0; font-family: "Yu Gothic UI", "Meiryo", "Segoe UI", sans-serif; }
+  .lookup-content { display: flex; flex: 1 1 auto; flex-direction: column; gap: 8px; width: 100%; height: 100%; min-width: 0; min-height: 0; font-family: var(--reader-body-font, "Yu Mincho", "Hiragino Mincho Pro", "MS Mincho", serif); }
   .lookup-content.page-presentation { --popup-scale: 1; gap: 0; }
   .lookup-content.page-presentation .lookup-head { flex: 0 0 auto; padding: 10px 0; border-bottom: 1px solid var(--app-border, #333333); }
   .lookup-content.page-presentation .lookup-results { padding: 0 4px 24px 0; }
@@ -984,6 +984,8 @@
   .lookup-glossary-list { margin: 0; padding-left: 1.25em; }
   .lookup-glossary-list > li { margin: calc(4px * var(--popup-scale, 1)) 0; }
   .lookup-glossary-content { min-width: 0; font-size: calc(15px * var(--popup-scale, 1)); line-height: 1.4; }
+  .lookup-glossary-content,
+  .lookup-glossary-content :global(*) { font-family: var(--reader-body-font, "Yu Mincho", "Hiragino Mincho Pro", "MS Mincho", serif) !important; }
   .compact-glossaries .lookup-glossary { gap: calc(1px * var(--popup-scale, 1)); line-height: 1.28; }
   .compact-glossaries .lookup-glossary-list > li { margin: calc(2px * var(--popup-scale, 1)) 0; }
   .compact-glossaries .lookup-glossary-content { font-size: calc(14px * var(--popup-scale, 1)); line-height: 1.32; }

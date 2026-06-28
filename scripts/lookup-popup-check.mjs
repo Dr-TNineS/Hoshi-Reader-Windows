@@ -433,7 +433,7 @@ async function main() {
     const ready = await popupMetrics(page);
     assert(Math.abs(ready.popup.width - 320) <= 1 && Math.abs(ready.popup.height - 250) <= 1, "Default popup outer frame should be 320 x 250.", ready);
     assert(ready.text.includes("school"), "Ready popup should render expression.", ready);
-    assert(ready.contentFontFamily.includes("Yu Gothic UI"), "Popup content should use the Windows Japanese sans-serif stack.", ready);
+    assert(ready.contentFontFamily.includes("Yu Mincho"), "Popup content should use the reader body font stack.", ready);
     assert(ready.expressionFontSize === "26px" && ready.readingFontSize === "13px", "Scale 1 should use upstream expression and reading sizes.", ready);
     assert(ready.glossaryFontSize === "14px" && ready.glossaryItemFontSize === "14px" && ready.glossaryDictionaryFontSize === "10px", "Scale 1 should apply compact glossary defaults while preserving the type hierarchy.", ready);
     assert(Math.abs(parseFloat(ready.glossaryLineHeight) - 18.48) < 0.1 && ready.pitchFontSize === "12px", "Scale 1 should apply HSA compact glossary and pitch defaults.", ready);
