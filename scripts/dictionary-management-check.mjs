@@ -61,6 +61,7 @@ async function panelMetrics(page) {
       enabledLabels: Array.from(document.querySelectorAll(".dictionary-toggle > span")).map((item) => item.textContent ?? ""),
       refreshClicks: Number(state?.getAttribute("data-refresh-clicks") ?? 0),
       importClicks: Number(state?.getAttribute("data-import-clicks") ?? 0),
+      updateClicks: Number(state?.getAttribute("data-update-clicks") ?? 0),
       enableEvents: state?.getAttribute("data-enable-events") ?? "",
       moveEvents: state?.getAttribute("data-move-events") ?? "",
       removeEvents: state?.getAttribute("data-remove-events") ?? "",
@@ -114,6 +115,7 @@ async function main() {
     assert(metrics.text.includes("Lookup") && metrics.text.includes("Import") && metrics.text.includes("Collapse Dictionaries") && metrics.text.includes("Behaviour"), "Ready panel should expose HSA-style dictionary settings sections.", metrics);
     assert(metrics.text.includes("Jitendex.org [probe]"), "Ready panel should show dictionary titles.", metrics);
     assert(metrics.text.includes("432643 terms"), "Term panel should show term counts.", metrics);
+    assert(metrics.text.includes("Rev 2026-06-28") && metrics.text.includes("Updatable"), "Ready panel should show update metadata for updatable dictionaries.", metrics);
     assert(metrics.text.includes("dictionaries/imported/jitendex"), "Ready panel should show internal path.", metrics);
     assert(metrics.enabledLabels.join("|") === "Enabled|Disabled", "Ready panel should show enabled labels.", metrics);
 
@@ -134,9 +136,10 @@ async function main() {
     await page.getByRole("tab", { name: "Term" }).click();
 
     await page.getByRole("button", { name: "Refresh" }).click();
+    await page.getByRole("button", { name: "Update" }).click();
     await page.getByRole("button", { name: "Import Files", exact: true }).click();
     metrics = await panelMetrics(page);
-    assert(metrics.refreshClicks === 1 && metrics.importClicks === 1, "Refresh and import actions should be wired.", metrics);
+    assert(metrics.refreshClicks === 1 && metrics.updateClicks === 1 && metrics.importClicks === 1, "Refresh, update, and import actions should be wired.", metrics);
 
     await page.getByLabel("Max results").evaluate((input) => {
       input.value = "99";

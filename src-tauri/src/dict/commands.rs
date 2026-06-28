@@ -5,7 +5,7 @@ use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Component, Path, PathBuf};
 use std::sync::Mutex;
-use std::time::{Instant, SystemTime, UNIX_EPOCH};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
 
 #[cfg(hoshi_dicts_linked)]
@@ -14,9 +14,7 @@ use crate::dict::ffi;
 use std::ffi::{c_void, CStr, CString};
 #[cfg(any(hoshi_dicts_linked, test))]
 use std::fs::File;
-use std::io::Read;
-#[cfg(any(hoshi_dicts_linked, test))]
-use std::io::Write;
+use std::io::{Read, Write};
 
 #[cfg(hoshi_dicts_linked)]
 const DEFAULT_MAX_LOOKUP_RESULTS: i32 = 16;
@@ -32,6 +30,8 @@ const MIN_SCAN_LENGTH: i32 = 1;
 const MAX_SCAN_LENGTH: i32 = 64;
 #[cfg(hoshi_dicts_linked)]
 const DICTIONARY_IMPORT_WORKER_STACK: usize = 64 * 1024 * 1024;
+const DICTIONARY_UPDATE_TIMEOUT_SECS: u64 = 60;
+const DICTIONARY_UPDATE_MAX_DOWNLOAD_BYTES: u64 = 512 * 1024 * 1024;
 
 #[derive(Debug, Clone, Serialize)]
 pub struct DictResult {
@@ -106,6 +106,30 @@ pub struct DictImportBatchSummary {
 
 #[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
+pub struct DictionaryUpdateFailure {
+    pub title: String,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictionaryUpdateRename {
+    pub old_title: String,
+    pub new_title: String,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DictionaryUpdateSummary {
+    pub checked_count: usize,
+    pub successful_count: usize,
+    pub updated_count: usize,
+    pub renamed_dictionaries: Vec<DictionaryUpdateRename>,
+    pub failures: Vec<DictionaryUpdateFailure>,
+}
+
+#[derive(Debug, Clone, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct DictionaryStatus {
     pub status: DictionaryStatusKind,
     pub message: String,
@@ -142,6 +166,14 @@ pub struct DictionaryManifestEntry {
     pub pitch_count: usize,
     pub media_count: usize,
     pub last_imported: u64,
+    #[serde(default)]
+    pub revision: String,
+    #[serde(default)]
+    pub is_updatable: bool,
+    #[serde(default)]
+    pub index_url: String,
+    #[serde(default)]
+    pub download_url: String,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -331,6 +363,19 @@ pub fn dictionary_remove_import(
     Ok(entries)
 }
 
+#[tauri::command]
+pub async fn dictionary_update_updatable(
+    low_ram: Option<bool>,
+    app: AppHandle,
+) -> Result<DictionaryUpdateSummary, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        let state = app.state::<DictState>();
+        update_updatable_dictionaries(&app, state.inner(), low_ram.unwrap_or(false))
+    })
+    .await
+    .map_err(|e| format!("Dictionary update worker failed: {e}"))?
+}
+
 fn runtime_status(runtime: &DictRuntime) -> DictionaryStatus {
     if let Some(error) = &runtime.manifest_error {
         return DictionaryStatus {
@@ -497,6 +542,205 @@ fn import_yomitan_zip_batch(
         failures,
         skipped_count,
     })
+}
+
+#[derive(Debug, Clone)]
+struct DictionaryUpdateCandidate {
+    import_id: String,
+    title: String,
+    revision: String,
+    index_url: String,
+}
+
+fn update_updatable_dictionaries(
+    app: &AppHandle,
+    state: &DictState,
+    low_ram: bool,
+) -> Result<DictionaryUpdateSummary, String> {
+    let manifest_path = dictionary_manifest_path(app)?;
+    let imported_root = imported_dictionary_root(app)?;
+    let manifest = read_dictionary_manifest(&manifest_path)?;
+    let candidates = updatable_dictionary_candidates(&manifest);
+    let checked_count = candidates.len();
+    let mut summary = DictionaryUpdateSummary {
+        checked_count,
+        successful_count: 0,
+        updated_count: 0,
+        renamed_dictionaries: Vec::new(),
+        failures: Vec::new(),
+    };
+
+    if candidates.is_empty() {
+        return Ok(summary);
+    }
+
+    let client = reqwest::blocking::Client::builder()
+        .timeout(Duration::from_secs(DICTIONARY_UPDATE_TIMEOUT_SECS))
+        .build()
+        .map_err(|e| format!("Cannot create dictionary update client: {e}"))?;
+
+    for candidate in candidates {
+        match update_one_dictionary(
+            &client,
+            &candidate,
+            app,
+            state,
+            low_ram,
+            &manifest_path,
+            &imported_root,
+        ) {
+            Ok(Some(rename)) => {
+                summary.successful_count += 1;
+                summary.updated_count += 1;
+                summary.renamed_dictionaries.push(rename);
+            }
+            Ok(None) => {
+                summary.successful_count += 1;
+            }
+            Err(message) => summary.failures.push(DictionaryUpdateFailure {
+                title: candidate.title,
+                message,
+            }),
+        }
+    }
+
+    if summary.updated_count > 0 {
+        state.initialize(app);
+    }
+
+    Ok(summary)
+}
+
+fn updatable_dictionary_candidates(
+    manifest: &DictionaryManifest,
+) -> Vec<DictionaryUpdateCandidate> {
+    let mut seen = HashSet::new();
+    let mut candidates = Vec::new();
+    for entry in &manifest.dictionaries {
+        if !entry.is_updatable
+            || entry.index_url.trim().is_empty()
+            || !seen.insert(entry.import_id.clone())
+        {
+            continue;
+        }
+        candidates.push(DictionaryUpdateCandidate {
+            import_id: entry.import_id.clone(),
+            title: entry.title.clone(),
+            revision: entry.revision.clone(),
+            index_url: entry.index_url.clone(),
+        });
+    }
+    candidates
+}
+
+fn update_one_dictionary(
+    client: &reqwest::blocking::Client,
+    candidate: &DictionaryUpdateCandidate,
+    app: &AppHandle,
+    state: &DictState,
+    low_ram: bool,
+    manifest_path: &Path,
+    imported_root: &Path,
+) -> Result<Option<DictionaryUpdateRename>, String> {
+    let remote_index = fetch_dictionary_index(client, &candidate.index_url)?;
+    let remote = DictionaryImportMetadata::from_index(remote_index, &candidate.title);
+    if remote.revision == candidate.revision {
+        return Ok(None);
+    }
+    if remote.download_url.trim().is_empty() {
+        return Err("Remote dictionary index does not include a download URL.".into());
+    }
+
+    let download_path = imported_root.join(format!(".updating-{}.zip", candidate.import_id));
+    download_dictionary_zip(client, &remote.download_url, &download_path)?;
+    let import_result = import_yomitan_zip(
+        &download_path.to_string_lossy(),
+        app,
+        state,
+        ReloadDictionaryRuntime::Deferred,
+        low_ram,
+    );
+    let _ = fs::remove_file(&download_path);
+    let imported = import_result?;
+    let new_import_id = import_id_from_role_dict_id(&imported.dict_id);
+    let rename = replace_updated_dictionary_import(
+        manifest_path,
+        imported_root,
+        &candidate.import_id,
+        &new_import_id,
+    )?;
+    Ok(rename)
+}
+
+fn fetch_dictionary_index(
+    client: &reqwest::blocking::Client,
+    url: &str,
+) -> Result<ImportedDictionaryIndex, String> {
+    let url = validate_dictionary_update_url(url)?;
+    let response = client
+        .get(url)
+        .send()
+        .map_err(|e| format!("Cannot fetch dictionary update index: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("Dictionary update index request failed: {e}"))?;
+    let text = response
+        .text()
+        .map_err(|e| format!("Cannot read dictionary update index: {e}"))?;
+    serde_json::from_str::<ImportedDictionaryIndex>(text.trim_start_matches('\u{feff}'))
+        .map_err(|e| format!("Cannot parse dictionary update index: {e}"))
+}
+
+fn download_dictionary_zip(
+    client: &reqwest::blocking::Client,
+    url: &str,
+    destination: &Path,
+) -> Result<(), String> {
+    let url = validate_dictionary_update_url(url)?;
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)
+            .map_err(|e| format!("Cannot create dictionary update dir: {e}"))?;
+    }
+    let mut response = client
+        .get(url)
+        .send()
+        .map_err(|e| format!("Cannot download dictionary update: {e}"))?
+        .error_for_status()
+        .map_err(|e| format!("Dictionary update download failed: {e}"))?;
+    if response
+        .content_length()
+        .is_some_and(|length| length > DICTIONARY_UPDATE_MAX_DOWNLOAD_BYTES)
+    {
+        return Err("Dictionary update download is too large.".into());
+    }
+
+    let mut file =
+        fs::File::create(destination).map_err(|e| format!("Cannot create update zip: {e}"))?;
+    let mut total = 0u64;
+    let mut buffer = [0u8; 1024 * 1024];
+    loop {
+        let read = response
+            .read(&mut buffer)
+            .map_err(|e| format!("Cannot read dictionary update download: {e}"))?;
+        if read == 0 {
+            break;
+        }
+        total += read as u64;
+        if total > DICTIONARY_UPDATE_MAX_DOWNLOAD_BYTES {
+            return Err("Dictionary update download is too large.".into());
+        }
+        file.write_all(&buffer[..read])
+            .map_err(|e| format!("Cannot write update zip: {e}"))?;
+    }
+    Ok(())
+}
+
+fn validate_dictionary_update_url(url: &str) -> Result<reqwest::Url, String> {
+    let parsed = reqwest::Url::parse(url.trim())
+        .map_err(|e| format!("Dictionary update URL is invalid: {e}"))?;
+    match parsed.scheme() {
+        "http" | "https" => Ok(parsed),
+        _ => Err("Dictionary update URL must use http or https.".into()),
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -894,10 +1138,26 @@ fn dictionary_entries_for_import(
     counts: (usize, usize, usize, usize, usize),
     last_imported: u64,
 ) -> Vec<DictionaryManifestEntry> {
+    dictionary_entries_for_import_with_metadata(
+        import_id,
+        DictionaryImportMetadata::from_title(title),
+        internal_path,
+        counts,
+        last_imported,
+    )
+}
+
+fn dictionary_entries_for_import_with_metadata(
+    import_id: &str,
+    metadata: DictionaryImportMetadata,
+    internal_path: String,
+    counts: (usize, usize, usize, usize, usize),
+    last_imported: u64,
+) -> Vec<DictionaryManifestEntry> {
     let template = DictionaryManifestEntry {
         dict_id: import_id.into(),
         import_id: import_id.into(),
-        title,
+        title: metadata.title,
         kind: "term".into(),
         role: String::new(),
         enabled: true,
@@ -909,6 +1169,10 @@ fn dictionary_entries_for_import(
         pitch_count: counts.3,
         media_count: counts.4,
         last_imported,
+        revision: metadata.revision,
+        is_updatable: metadata.is_updatable,
+        index_url: metadata.index_url,
+        download_url: metadata.download_url,
     };
     let roles = dictionary_roles_from_counts(&template);
     if roles.is_empty() {
@@ -926,6 +1190,37 @@ fn dictionary_entries_for_import(
         .collect()
 }
 
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+struct DictionaryImportMetadata {
+    title: String,
+    revision: String,
+    is_updatable: bool,
+    index_url: String,
+    download_url: String,
+}
+
+impl DictionaryImportMetadata {
+    fn from_title(title: String) -> Self {
+        Self {
+            title,
+            ..Self::default()
+        }
+    }
+
+    fn from_index(index: ImportedDictionaryIndex, fallback_title: &str) -> Self {
+        Self {
+            title: index
+                .title
+                .filter(|title| !title.trim().is_empty())
+                .unwrap_or_else(|| fallback_title.into()),
+            revision: index.revision,
+            is_updatable: index.is_updatable,
+            index_url: index.index_url,
+            download_url: index.download_url,
+        }
+    }
+}
+
 fn detected_dictionary_entries_for_import(
     import_id: &str,
     title: String,
@@ -935,6 +1230,27 @@ fn detected_dictionary_entries_for_import(
 ) -> Result<Vec<DictionaryManifestEntry>, String> {
     let entries =
         dictionary_entries_for_import(import_id, title, internal_path, counts, last_imported);
+    if entries.is_empty() {
+        return Err("Failed to detect dictionary type.".into());
+    }
+    Ok(entries)
+}
+
+#[cfg_attr(not(hoshi_dicts_linked), allow(dead_code))]
+fn detected_dictionary_entries_for_import_with_metadata(
+    import_id: &str,
+    metadata: DictionaryImportMetadata,
+    internal_path: String,
+    counts: (usize, usize, usize, usize, usize),
+    last_imported: u64,
+) -> Result<Vec<DictionaryManifestEntry>, String> {
+    let entries = dictionary_entries_for_import_with_metadata(
+        import_id,
+        metadata,
+        internal_path,
+        counts,
+        last_imported,
+    );
     if entries.is_empty() {
         return Err("Failed to detect dictionary type.".into());
     }
@@ -1115,6 +1431,83 @@ fn remove_dictionary_import(
     }
 
     Ok(manifest.dictionaries)
+}
+
+fn replace_updated_dictionary_import(
+    manifest_path: &Path,
+    imported_root: &Path,
+    old_import_id: &str,
+    new_import_id: &str,
+) -> Result<Option<DictionaryUpdateRename>, String> {
+    let mut manifest = read_dictionary_manifest(manifest_path)?;
+    let old_entries = manifest
+        .dictionaries
+        .iter()
+        .filter(|entry| entry.import_id == old_import_id)
+        .cloned()
+        .collect::<Vec<_>>();
+    let new_entries = manifest
+        .dictionaries
+        .iter()
+        .filter(|entry| entry.import_id == new_import_id)
+        .cloned()
+        .collect::<Vec<_>>();
+    if old_entries.is_empty() {
+        return Err(format!("Dictionary import not found: {old_import_id}"));
+    }
+    if new_entries.is_empty() {
+        return Err("Updated dictionary import created no manifest entries.".into());
+    }
+
+    let old_by_role = old_entries
+        .iter()
+        .map(|entry| (entry.role.clone(), entry.clone()))
+        .collect::<HashMap<_, _>>();
+    let old_title = old_entries
+        .first()
+        .map(|entry| entry.title.clone())
+        .unwrap_or_default();
+    let new_title = new_entries
+        .first()
+        .map(|entry| entry.title.clone())
+        .unwrap_or_default();
+
+    let mut next_entries = Vec::new();
+    for mut entry in new_entries {
+        if let Some(old) = old_by_role.get(&entry.role) {
+            entry.enabled = old.enabled;
+            entry.order = old.order;
+        } else {
+            entry.order = next_dictionary_role_order(&manifest, &entry.role);
+        }
+        next_entries.push(entry);
+    }
+
+    manifest
+        .dictionaries
+        .retain(|entry| entry.import_id != old_import_id && entry.import_id != new_import_id);
+    manifest.dictionaries.extend(next_entries);
+    sort_dictionary_manifest_entries(&mut manifest.dictionaries);
+    write_dictionary_manifest(manifest_path, &manifest)?;
+
+    if old_import_id != new_import_id {
+        if let Some(old_path) = old_entries.first().map(|entry| entry.internal_path.clone()) {
+            let remove_path = safe_imported_dictionary_remove_path(imported_root, &old_path)?;
+            if remove_path.exists() {
+                fs::remove_dir_all(&remove_path)
+                    .map_err(|e| format!("Cannot remove replaced dictionary: {e}"))?;
+            }
+        }
+    }
+
+    Ok(
+        (!old_title.is_empty() && !new_title.is_empty() && old_title != new_title).then_some(
+            DictionaryUpdateRename {
+                old_title,
+                new_title,
+            },
+        ),
+    )
 }
 
 fn safe_imported_dictionary_remove_path(
@@ -1607,14 +2000,28 @@ fn parse_pitch_entries(json: &str) -> Vec<PitchEntry> {
 }
 
 #[derive(serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
 struct ImportedDictionaryIndex {
     title: Option<String>,
+    #[serde(default)]
+    revision: String,
+    #[serde(default)]
+    is_updatable: bool,
+    #[serde(default)]
+    index_url: String,
+    #[serde(default)]
+    download_url: String,
+}
+
+fn read_imported_dictionary_index(path: &Path) -> Option<ImportedDictionaryIndex> {
+    let content = fs::read_to_string(path.join("index.json")).ok()?;
+    serde_json::from_str::<ImportedDictionaryIndex>(content.trim_start_matches('\u{feff}')).ok()
 }
 
 fn read_imported_dictionary_title(path: &Path) -> Option<String> {
-    let content = fs::read_to_string(path.join("index.json")).ok()?;
-    let index = serde_json::from_str::<ImportedDictionaryIndex>(&content).ok()?;
-    index.title.filter(|title| !title.trim().is_empty())
+    read_imported_dictionary_index(path)?
+        .title
+        .filter(|title| !title.trim().is_empty())
 }
 
 #[cfg(hoshi_dicts_linked)]
@@ -1733,11 +2140,14 @@ fn import_yomitan_zip_linked(
         } else {
             attempt.title
         };
+        let metadata = read_imported_dictionary_index(final_dir)
+            .map(|index| DictionaryImportMetadata::from_index(index, &title))
+            .unwrap_or_else(|| DictionaryImportMetadata::from_title(title.clone()));
         let entries = upsert_dictionary_manifest_entries(
             manifest_path,
-            detected_dictionary_entries_for_import(
+            detected_dictionary_entries_for_import_with_metadata(
                 dict_id,
-                title,
+                metadata,
                 final_dir.to_string_lossy().into_owned(),
                 attempt.counts,
                 current_unix_time(),
@@ -2320,6 +2730,10 @@ mod tests {
             pitch_count: 3,
             media_count: 4,
             last_imported: 123,
+            revision: String::new(),
+            is_updatable: false,
+            index_url: String::new(),
+            download_url: String::new(),
         }
     }
 
@@ -3284,6 +3698,156 @@ mod tests {
 
         assert_eq!(terms, vec![("a:term", 0), ("b:term", 1)]);
         assert_eq!(frequencies, vec![("b:frequency", 0), ("a:frequency", 1)]);
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dictionary_entries_preserve_update_metadata_from_index() {
+        let entries = dictionary_entries_for_import_with_metadata(
+            "jitendex",
+            DictionaryImportMetadata {
+                title: "Jitendex".into(),
+                revision: "2026-06-28".into(),
+                is_updatable: true,
+                index_url: "https://example.test/index.json".into(),
+                download_url: "https://example.test/jitendex.zip".into(),
+            },
+            "dictionaries/imported/jitendex".into(),
+            (10, 0, 2, 0, 1),
+            123,
+        );
+
+        assert_eq!(entries.len(), 2);
+        assert!(entries.iter().all(|entry| entry.title == "Jitendex"));
+        assert!(entries.iter().all(|entry| entry.revision == "2026-06-28"));
+        assert!(entries.iter().all(|entry| entry.is_updatable));
+        assert!(entries
+            .iter()
+            .all(|entry| entry.index_url == "https://example.test/index.json"));
+        assert_eq!(
+            entries
+                .iter()
+                .map(|entry| entry.role.as_str())
+                .collect::<Vec<_>>(),
+            vec!["term", "frequency"]
+        );
+    }
+
+    #[test]
+    fn updatable_dictionary_candidates_are_grouped_by_import() {
+        let manifest = DictionaryManifest {
+            dictionaries: vec![
+                DictionaryManifestEntry {
+                    revision: "1".into(),
+                    is_updatable: true,
+                    index_url: "https://example.test/a/index.json".into(),
+                    ..manifest_entry("a", 0)
+                },
+                DictionaryManifestEntry {
+                    dict_id: "a:frequency".into(),
+                    kind: "frequency".into(),
+                    role: "frequency".into(),
+                    revision: "1".into(),
+                    is_updatable: true,
+                    index_url: "https://example.test/a/index.json".into(),
+                    ..manifest_entry("a", 1)
+                },
+                DictionaryManifestEntry {
+                    is_updatable: true,
+                    index_url: String::new(),
+                    ..manifest_entry("missing_url", 2)
+                },
+                DictionaryManifestEntry {
+                    is_updatable: false,
+                    index_url: "https://example.test/off/index.json".into(),
+                    ..manifest_entry("off", 3)
+                },
+            ],
+        };
+
+        let candidates = updatable_dictionary_candidates(&manifest);
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(candidates[0].import_id, "a");
+        assert_eq!(candidates[0].revision, "1");
+    }
+
+    #[test]
+    fn replace_updated_dictionary_import_preserves_role_state_and_removes_old_dir() {
+        let root = temp_path("replace_update");
+        let imported_root = root.join("imported");
+        let old_dir = create_valid_dictionary_dir(&imported_root, "old");
+        let new_dir = create_valid_dictionary_dir(&imported_root, "new");
+        let path = root.join("manifest.json");
+        write_dictionary_manifest(
+            &path,
+            &DictionaryManifest {
+                dictionaries: vec![
+                    DictionaryManifestEntry {
+                        internal_path: old_dir.to_string_lossy().into_owned(),
+                        enabled: false,
+                        order: 7,
+                        title: "Old Title".into(),
+                        ..manifest_entry("old", 7)
+                    },
+                    DictionaryManifestEntry {
+                        dict_id: "old:frequency".into(),
+                        import_id: "old".into(),
+                        kind: "frequency".into(),
+                        role: "frequency".into(),
+                        internal_path: old_dir.to_string_lossy().into_owned(),
+                        enabled: true,
+                        order: 3,
+                        title: "Old Title".into(),
+                        freq_count: 10,
+                        ..manifest_entry("old", 3)
+                    },
+                    DictionaryManifestEntry {
+                        internal_path: new_dir.to_string_lossy().into_owned(),
+                        title: "New Title".into(),
+                        revision: "2".into(),
+                        is_updatable: true,
+                        ..manifest_entry("new", 0)
+                    },
+                    DictionaryManifestEntry {
+                        dict_id: "new:frequency".into(),
+                        import_id: "new".into(),
+                        kind: "frequency".into(),
+                        role: "frequency".into(),
+                        internal_path: new_dir.to_string_lossy().into_owned(),
+                        title: "New Title".into(),
+                        freq_count: 10,
+                        revision: "2".into(),
+                        is_updatable: true,
+                        ..manifest_entry("new", 1)
+                    },
+                ],
+            },
+        )
+        .unwrap();
+
+        let rename = replace_updated_dictionary_import(&path, &imported_root, "old", "new")
+            .unwrap()
+            .unwrap();
+        let entries = read_dictionary_manifest(&path).unwrap().dictionaries;
+        let term = entries
+            .iter()
+            .find(|entry| entry.dict_id == "new:term")
+            .unwrap();
+        let freq = entries
+            .iter()
+            .find(|entry| entry.dict_id == "new:frequency")
+            .unwrap();
+
+        assert_eq!(rename.old_title, "Old Title");
+        assert_eq!(rename.new_title, "New Title");
+        assert!(!old_dir.exists());
+        assert!(new_dir.exists());
+        assert!(!term.enabled);
+        assert_eq!(term.order, 7);
+        assert!(freq.enabled);
+        assert_eq!(freq.order, 3);
+        assert!(entries.iter().all(|entry| entry.import_id != "old"));
 
         let _ = fs::remove_dir_all(root);
     }

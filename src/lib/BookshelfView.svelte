@@ -51,6 +51,7 @@
     onRefreshDictionaries,
     onImportDictionary,
     onImportDictionaryFolder,
+    onUpdateDictionaries = () => {},
     onSetDictionaryEnabled,
     onMoveDictionary,
     onRemoveDictionaryImport,
@@ -117,6 +118,7 @@
     onRefreshDictionaries: () => void;
     onImportDictionary: () => void;
     onImportDictionaryFolder: () => void;
+    onUpdateDictionaries?: () => void;
     onSetDictionaryEnabled: (dictionary: DictionaryManifestEntry, enabled: boolean) => void;
     onMoveDictionary: (dictionary: DictionaryManifestEntry, direction: -1 | 1) => void;
     onRemoveDictionaryImport: (dictionary: DictionaryManifestEntry) => void;
@@ -346,6 +348,7 @@
         onRefresh={onRefreshDictionaries}
         onImport={onImportDictionary}
         onImportFolder={onImportDictionaryFolder}
+        onUpdate={onUpdateDictionaries}
         onSetEnabled={onSetDictionaryEnabled}
         onMove={onMoveDictionary}
         onRemove={onRemoveDictionaryImport}

@@ -36,6 +36,7 @@ pub fn run() {
             dict::commands::dictionary_import_yomitan_zip,
             dict::commands::dictionary_import_yomitan_zips,
             dict::commands::dictionary_import_yomitan_folder,
+            dict::commands::dictionary_update_updatable,
             dict::commands::dictionary_list,
             dict::commands::dictionary_media,
             dict::commands::dictionary_styles,

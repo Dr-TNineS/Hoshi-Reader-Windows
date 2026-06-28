@@ -87,8 +87,14 @@ async function openProbe(page, state, options = {}) {
   if (options.harmonicFrequency) params.set("harmonicFrequency", "enabled");
   if (options.deduplicatePitchAccents) params.set("deduplicatePitchAccents", "enabled");
   if (options.compactPitchAccents === false) params.set("compactPitchAccents", "disabled");
-  await page.goto(`${origin}/?${params}`);
-  await page.locator(".lookup-pop").waitFor({ timeout: 10000 });
+  const url = `${origin}/?${params}`;
+  await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+  try {
+    await page.locator(".lookup-pop").waitFor({ timeout: 30000 });
+  } catch (error) {
+    await page.goto(url, { waitUntil: "domcontentloaded", timeout: 60000 });
+    await page.locator(".lookup-pop").waitFor({ timeout: 30000 });
+  }
 }
 
 async function popupMetrics(page) {

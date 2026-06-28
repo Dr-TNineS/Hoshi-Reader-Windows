@@ -12,6 +12,7 @@
   import { beginLookupPerformance, discardLookupPerformance, markLookupPerformance } from "./lib/lookup-performance";
   import { LookupResultCache } from "./lib/lookup-result-cache";
   import { dictionaryBatchStatusLabel } from "./lib/dictionary-import-status";
+  import { dictionaryUpdateStatusLabel } from "./lib/dictionary-update-status";
   import { resolveChapterAssets } from "./lib/epub-assets";
   import LookupPopupLayer, { type LookupPopupItem } from "./lib/LookupPopupLayer.svelte";
   import { resultDictionaryLabel } from "./lib/lookup-popup";
@@ -65,6 +66,7 @@
     DictResult,
     DictionaryManifestEntry,
     DictionaryStatus,
+    DictionaryUpdateSummary,
     EpubMeta,
     LookupAnkiPayload,
     LocalAudioStatus,
@@ -2014,6 +2016,30 @@
     }
   }
 
+  async function updateDictionaries() {
+    if (dictionaryBusy) return;
+    try {
+      if (!isTauriRuntime()) {
+        dictionaryStatus = "Dictionary update requires Tauri runtime.";
+        return;
+      }
+
+      invalidateDictionaryLookupCaches();
+      dictionaryBusy = true;
+      dictionaryStatus = "Checking dictionary updates...";
+      const summary = await invoke<DictionaryUpdateSummary>("dictionary_update_updatable", {
+        lowRam: settings.dictionarySettings.lowRamDictionaryImport,
+      });
+      dictionaryStatus = dictionaryUpdateStatusLabel(summary);
+      await refreshDictionaries();
+      reloadLookupPopups();
+    } catch (e) {
+      dictionaryStatus = String(e);
+    } finally {
+      dictionaryBusy = false;
+    }
+  }
+
   function lookupAnkiTitle(selection: ReaderSelection, result: DictResult, resultIndex: number): string {
     return `Payload prepared for ${buildAnkiPayload(selection, result, resultIndex).sourceBook.title ?? "current book"}`;
   }
@@ -2607,6 +2633,7 @@
       onRefreshDictionaries={refreshDictionaries}
       onImportDictionary={importDictionary}
       onImportDictionaryFolder={importDictionaryFolder}
+      onUpdateDictionaries={updateDictionaries}
       onSetDictionaryEnabled={setDictionaryEnabled}
       onMoveDictionary={moveDictionary}
       onRemoveDictionaryImport={removeDictionaryImport}

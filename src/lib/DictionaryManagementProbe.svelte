@@ -22,6 +22,10 @@
       pitchCount: 80,
       mediaCount: 0,
       lastImported: 1780000000,
+      revision: "2026-06-28",
+      isUpdatable: true,
+      indexUrl: "https://example.test/jitendex/index.json",
+      downloadUrl: "https://example.test/jitendex.zip",
     },
     {
       dictId: "mk3:term",
@@ -38,6 +42,10 @@
       pitchCount: 0,
       mediaCount: 0,
       lastImported: 1780000500,
+      revision: "",
+      isUpdatable: false,
+      indexUrl: "",
+      downloadUrl: "",
     },
     {
       dictId: "jitendex:frequency",
@@ -54,6 +62,10 @@
       pitchCount: 80,
       mediaCount: 0,
       lastImported: 1780000000,
+      revision: "2026-06-28",
+      isUpdatable: true,
+      indexUrl: "https://example.test/jitendex/index.json",
+      downloadUrl: "https://example.test/jitendex.zip",
     },
     {
       dictId: "jitendex:pitch",
@@ -70,12 +82,17 @@
       pitchCount: 80,
       mediaCount: 0,
       lastImported: 1780000000,
+      revision: "2026-06-28",
+      isUpdatable: true,
+      indexUrl: "https://example.test/jitendex/index.json",
+      downloadUrl: "https://example.test/jitendex.zip",
     },
   ];
 
   let dictionaries = $state<DictionaryManifestEntry[]>(mode === "empty" || mode === "loading" ? [] : baseDictionaries);
   let refreshClicks = $state(0);
   let importClicks = $state(0);
+  let updateClicks = $state(0);
   let enableEvents = $state<string[]>([]);
   let moveEvents = $state<string[]>([]);
   let removeEvents = $state<string[]>([]);
@@ -126,6 +143,7 @@
     busy={mode === "loading"}
     onRefresh={() => refreshClicks += 1}
     onImport={() => importClicks += 1}
+    onUpdate={() => updateClicks += 1}
     onSetEnabled={setEnabled}
     onMove={moveDictionary}
     onRemove={removeDictionary}
@@ -136,6 +154,7 @@
     class="probe-state"
     data-refresh-clicks={refreshClicks}
     data-import-clicks={importClicks}
+    data-update-clicks={updateClicks}
     data-enable-events={enableEvents.join(",")}
     data-move-events={moveEvents.join(",")}
     data-remove-events={removeEvents.join(",")}

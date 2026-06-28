@@ -28,6 +28,7 @@
     onRefresh = () => {},
     onImport = () => {},
     onImportFolder = () => {},
+    onUpdate = () => {},
     onSetEnabled = (_dictionary: DictionaryManifestEntry, _enabled: boolean) => {},
     onMove = (_dictionary: DictionaryManifestEntry, _direction: -1 | 1) => {},
     onRemove = (_dictionary: DictionaryManifestEntry) => {},
@@ -41,6 +42,7 @@
     onRefresh?: () => void;
     onImport?: () => void;
     onImportFolder?: () => void;
+    onUpdate?: () => void;
     onSetEnabled?: (dictionary: DictionaryManifestEntry, enabled: boolean) => void;
     onMove?: (dictionary: DictionaryManifestEntry, direction: -1 | 1) => void;
     onRemove?: (dictionary: DictionaryManifestEntry) => void;
@@ -71,6 +73,12 @@
     else next.delete(dictionary);
     onSettingsChange({ collapsedDictionaries: [...next].sort() });
   }
+
+  function updateMetadataLabel(dictionary: DictionaryManifestEntry): string {
+    if (!dictionary.isUpdatable && !dictionary.revision) return "";
+    const revision = dictionary.revision ? `Rev ${dictionary.revision}` : "Revision unknown";
+    return dictionary.isUpdatable ? `${revision} | Updatable` : revision;
+  }
 </script>
 
 <section class="dictionary-panel">
@@ -83,6 +91,7 @@
     </div>
     <div class="dictionary-actions">
       <button class="compact-action" disabled={busy} onclick={onRefresh}>Refresh</button>
+      <button class="compact-action" disabled={busy} onclick={onUpdate}>Update</button>
       <button class="compact-action" disabled={busy} onclick={onImport}>Import Files</button>
       <button class="compact-action" disabled={busy} onclick={onImportFolder}>Import Folder</button>
     </div>
@@ -126,6 +135,9 @@
                     <p class="dictionary-meta">
                       {dictionaryRoleLabels[dictionaryRole(dictionary)]} | {dictionaryCountsLabel(dictionary)} | {importedLabel(dictionary.lastImported)}
                     </p>
+                    {#if updateMetadataLabel(dictionary)}
+                      <p class="dictionary-meta">{updateMetadataLabel(dictionary)}</p>
+                    {/if}
                     <p class="dictionary-path">{dictionary.internalPath}</p>
                   </div>
                   <div class="dictionary-row-actions">

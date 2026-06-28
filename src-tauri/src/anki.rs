@@ -2483,6 +2483,10 @@ mod tests {
                 pitch_count: 0,
                 media_count: 1,
                 last_imported: 1,
+                revision: String::new(),
+                is_updatable: false,
+                index_url: String::new(),
+                download_url: String::new(),
             }],
         }
     }

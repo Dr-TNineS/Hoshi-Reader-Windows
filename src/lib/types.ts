@@ -178,6 +178,24 @@ export interface DictImportSummary {
   reused: boolean;
 }
 
+export interface DictionaryUpdateFailure {
+  title: string;
+  message: string;
+}
+
+export interface DictionaryUpdateRename {
+  oldTitle: string;
+  newTitle: string;
+}
+
+export interface DictionaryUpdateSummary {
+  checkedCount: number;
+  successfulCount: number;
+  updatedCount: number;
+  renamedDictionaries: DictionaryUpdateRename[];
+  failures: DictionaryUpdateFailure[];
+}
+
 export interface AnkiRemoteAudioRequest {
   sourceName: string;
   urlTemplate: string;
@@ -330,6 +348,10 @@ export interface DictionaryManifestEntry {
   pitchCount: number;
   mediaCount: number;
   lastImported: number;
+  revision: string;
+  isUpdatable: boolean;
+  indexUrl: string;
+  downloadUrl: string;
 }
 
 export type DictionaryRole = "term" | "frequency" | "pitch";
