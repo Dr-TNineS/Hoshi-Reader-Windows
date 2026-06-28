@@ -7,6 +7,7 @@ Tracked submodules:
 
 - `Hoshi-Reader-Android`: primary reference for HSA user-visible behavior.
 - `hoshi-reader-mac`: supplemental reference for HSM user-visible behavior.
+- `ttu/ebook-reader`: supplemental reference for TTU reader behavior.
 
 Initialize them after a fresh clone with:
 

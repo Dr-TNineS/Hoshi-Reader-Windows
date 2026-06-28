@@ -7,3 +7,6 @@
 [submodule "reference/hoshi-reader-mac"]
 	path = reference/hoshi-reader-mac
 	url = https://github.com/W1ght/Hoshi-Reader-Mac.git
+[submodule "reference/ttu/ebook-reader"]
+	path = reference/ttu/ebook-reader
+	url = https://github.com/ttu-ttu/ebook-reader.git
