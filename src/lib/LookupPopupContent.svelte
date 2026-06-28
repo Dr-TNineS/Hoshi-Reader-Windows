@@ -1,6 +1,6 @@
 <script lang="ts">
   import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
-  import { ankiDictionaryMediaRefs, buildAnkiNoteRequest, isAnkiPreviewConfigured, payloadWithStoredBookCover, payloadWithStoredDictionaryMedia, payloadWithStoredRemoteAudio, renderAnkiFieldPreview } from "./anki-field-renderer";
+  import { ankiDictionaryMediaRefs, buildAnkiNoteRequest, isAnkiPreviewConfigured, payloadWithStoredBookCover, payloadWithStoredDictionaryMedia, payloadWithStoredRemoteAudio, payloadWithStoredSasayakiAudio, renderAnkiFieldPreview } from "./anki-field-renderer";
   import { defaultDictionarySettings, type DictionarySettings } from "./dictionary-settings";
   import { loadCachedDictionaryStyles, type DictionaryStyleResource } from "./dictionary-style-cache";
   import { scopeDictionaryCss, type LookupPitchGroup, type LookupState } from "./lookup-popup";
@@ -8,7 +8,9 @@
   import { clearLookupHighlight, POPUP_LOOKUP_HIGHLIGHT, setLookupHighlightRange } from "./lookup-highlight";
   import { markLookupPerformance } from "./lookup-performance";
   import { popupSelectionPrefixRange, popupTextHitAtPoint, selectPopupTextFromHit, selectPopupTextFromPoint, type PopupTextHit, type PopupTextSelection } from "./popup-selection";
-  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, AnkiStoreBookCoverResult, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, DictResult, LookupAnkiPayload, ReaderSelection, WordAudioPlaybackResult, WordAudioResolveRequest } from "./types";
+  import type { AnkiAddNoteResult, AnkiDictionaryMediaRef, AnkiFieldPreview, AnkiNoteRequest, AnkiSettings, AnkiStoreBookCoverResult, AnkiStoreMediaResult, AnkiStoreRemoteAudioResult, AnkiStoreSasayakiAudioResult, DictResult, LookupAnkiPayload, ReaderSelection, SasayakiPlaybackCue, WordAudioPlaybackResult, WordAudioResolveRequest } from "./types";
+
+  type SasayakiPopupAction = "replayCue" | "togglePlayback" | "playForward";
 
   let {
     popupId,
@@ -39,7 +41,14 @@
     onStoreAnkiMedia,
     onStoreAnkiBookCover,
     onStoreAnkiWordAudio,
+    onStoreAnkiSasayakiAudio,
     onPrepareWordAudio,
+    onWordAudioPlaybackStart,
+    onWordAudioPlaybackEnd,
+    sasayakiCue = null,
+    sasayakiPlaying = false,
+    sasayakiAvailable = false,
+    onSasayakiAction,
     onAddAnkiNote,
   }: {
     popupId: string;
@@ -70,7 +79,14 @@
     onStoreAnkiMedia?: (media: AnkiDictionaryMediaRef[]) => Promise<AnkiStoreMediaResult>;
     onStoreAnkiBookCover?: (bookId: string) => Promise<AnkiStoreBookCoverResult>;
     onStoreAnkiWordAudio?: (request: WordAudioResolveRequest) => Promise<AnkiStoreRemoteAudioResult>;
+    onStoreAnkiSasayakiAudio?: (bookId: string, cueId: string, sentence: string) => Promise<AnkiStoreSasayakiAudioResult>;
     onPrepareWordAudio?: (request: WordAudioResolveRequest) => Promise<WordAudioPlaybackResult>;
+    onWordAudioPlaybackStart?: () => number | void;
+    onWordAudioPlaybackEnd?: (coordinationId: number | void) => void;
+    sasayakiCue?: SasayakiPlaybackCue | null;
+    sasayakiPlaying?: boolean;
+    sasayakiAvailable?: boolean;
+    onSasayakiAction?: (popupId: string, action: SasayakiPopupAction) => void;
     onAddAnkiNote?: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
   } = $props();
 
@@ -95,6 +111,7 @@
   let wordAudioMessage = $state("");
   let wordAudioElement: HTMLAudioElement | null = null;
   let wordAudioRequestGeneration = 0;
+  let wordAudioCoordinationId: number | void = undefined;
   let lastAutoplayKey = "";
   let styleRequestId = 0;
   let firstPaintRequestId = 0;
@@ -108,6 +125,7 @@
     harmonicFrequency: dictionarySettings.harmonicFrequency,
     deduplicatePitchAccents: dictionarySettings.deduplicatePitchAccents,
   }));
+  const canControlSasayaki = $derived(popupId === "root" && sasayakiAvailable && Boolean(sasayakiCue) && Boolean(onSasayakiAction));
 
   interface DictionaryMediaResource {
     mimeType: string;
@@ -440,6 +458,13 @@
         ankiMediaWarnings = [...ankiMediaWarnings, ...audioResult.warnings];
         notePreviewFields = renderAnkiFieldPreview(notePayload, ankiSettings);
       }
+      const sasayakiResult = await storeAnkiSasayakiAudioForPayload(notePayload, notePreviewFields);
+      if (ankiActionKey !== key) return;
+      if (sasayakiResult) {
+        notePayload = payloadWithStoredSasayakiAudio(notePayload, sasayakiResult.filename);
+        ankiMediaWarnings = [...ankiMediaWarnings, ...sasayakiResult.warnings];
+        notePreviewFields = renderAnkiFieldPreview(notePayload, ankiSettings);
+      }
       ankiAudioHint = audioResult?.warnings.length
         ? "Word audio was not stored; this note will be added without audio."
         : audioBoundaryHint(notePayload, notePreviewFields);
@@ -486,6 +511,23 @@
     return onStoreAnkiWordAudio(wordAudioResolveRequest(payload.expression, payload.reading));
   }
 
+  async function storeAnkiSasayakiAudioForPayload(
+    payload: LookupAnkiPayload,
+    fields: AnkiFieldPreview[],
+  ): Promise<AnkiStoreSasayakiAudioResult | null> {
+    if (!fields.some((field) => field.template.toLowerCase().includes("{sasayaki-audio}"))) return null;
+    const bookId = payload.sourceBook.bookId?.trim();
+    const cueId = payload.sasayakiCueId?.trim();
+    if (!bookId) {
+      return { filename: null, warnings: ["Sasayaki sentence audio requires an app-owned book."] };
+    }
+    if (!cueId) {
+      return { filename: null, warnings: ["No matched Sasayaki cue is active for this lookup."] };
+    }
+    if (!onStoreAnkiSasayakiAudio) return null;
+    return onStoreAnkiSasayakiAudio(bookId, cueId, payload.sentence);
+  }
+
   function wordAudioResolveRequest(expression: string, reading: string): WordAudioResolveRequest {
     return {
       expression,
@@ -503,12 +545,15 @@
 
   function stopWordAudio(message = "") {
     wordAudioRequestGeneration += 1;
+    const coordinationId = wordAudioCoordinationId;
+    wordAudioCoordinationId = undefined;
     if (wordAudioElement) {
       wordAudioElement.pause();
       wordAudioElement.src = "";
       wordAudioElement.load();
       wordAudioElement = null;
     }
+    onWordAudioPlaybackEnd?.(coordinationId);
     wordAudioKey = "";
     wordAudioState = "idle";
     wordAudioMessage = message;
@@ -542,6 +587,9 @@
       audio.onended = () => {
         if (wordAudioElement !== audio) return;
         wordAudioElement = null;
+        const coordinationId = wordAudioCoordinationId;
+        wordAudioCoordinationId = undefined;
+        onWordAudioPlaybackEnd?.(coordinationId);
         wordAudioKey = "";
         wordAudioState = "idle";
         wordAudioMessage = warningText || `Played word audio${resolved.sourceName ? ` from ${resolved.sourceName}` : ""}.`;
@@ -549,21 +597,43 @@
       audio.onerror = () => {
         if (wordAudioElement !== audio) return;
         wordAudioElement = null;
+        const coordinationId = wordAudioCoordinationId;
+        wordAudioCoordinationId = undefined;
+        onWordAudioPlaybackEnd?.(coordinationId);
         wordAudioState = "error";
         wordAudioMessage = "Word audio could not be played.";
       };
+      wordAudioCoordinationId = onWordAudioPlaybackStart?.();
       await audio.play();
       if (generation !== wordAudioRequestGeneration || wordAudioElement !== audio) {
         audio.pause();
+        const coordinationId = wordAudioCoordinationId;
+        wordAudioCoordinationId = undefined;
+        onWordAudioPlaybackEnd?.(coordinationId);
         return;
       }
       wordAudioState = "playing";
       wordAudioMessage = warningText || `Playing word audio${resolved.sourceName ? ` from ${resolved.sourceName}` : ""}.`;
     } catch (error) {
       if (generation !== wordAudioRequestGeneration) return;
+      const coordinationId = wordAudioCoordinationId;
+      wordAudioCoordinationId = undefined;
+      onWordAudioPlaybackEnd?.(coordinationId);
       wordAudioState = "error";
       wordAudioMessage = String(error);
     }
+  }
+
+  function protectSasayakiControlPointer(event: PointerEvent) {
+    event.preventDefault();
+    event.stopPropagation();
+  }
+
+  function runSasayakiAction(action: SasayakiPopupAction, event?: MouseEvent) {
+    event?.stopPropagation();
+    if (!canControlSasayaki || !onSasayakiAction) return;
+    stopWordAudio();
+    onSasayakiAction(popupId, action);
   }
 
   $effect(() => {
@@ -649,6 +719,13 @@
 >
   <div class="lookup-head">
     <span>Lookup</span>
+    {#if canControlSasayaki}
+      <div class="lookup-sasayaki-controls" aria-label="Sasayaki controls">
+        <button aria-label="Replay Sasayaki cue" title="Replay Sasayaki cue" onpointerdown={protectSasayakiControlPointer} onclick={(event) => runSasayakiAction("replayCue", event)}>↻</button>
+        <button aria-label={sasayakiPlaying ? "Pause Sasayaki" : "Play Sasayaki"} title={sasayakiPlaying ? "Pause Sasayaki" : "Play Sasayaki"} onpointerdown={protectSasayakiControlPointer} onclick={(event) => runSasayakiAction("togglePlayback", event)}>{sasayakiPlaying ? "■" : "▶"}</button>
+        <button aria-label="Play Sasayaki from this cue" title="Play Sasayaki from this cue" onpointerdown={protectSasayakiControlPointer} onclick={(event) => runSasayakiAction("playForward", event)}>▶|</button>
+      </div>
+    {/if}
     <div class="lookup-head-actions">
       <button aria-label="Back" title="Back" disabled={!canNavigateBack} onclick={() => onNavigateHistory(popupId, "back")}>&lt;</button>
       <button aria-label="Forward" title="Forward" disabled={!canNavigateForward} onclick={() => onNavigateHistory(popupId, "forward")}>&gt;</button>
@@ -833,6 +910,7 @@
   .lookup-content { display: flex; flex: 1 1 auto; flex-direction: column; gap: 8px; width: 100%; height: 100%; min-width: 0; min-height: 0; font-family: "Yu Gothic UI", "Meiryo", "Segoe UI", sans-serif; }
   .lookup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--app-muted, #999999); font-size: 11px; text-transform: uppercase; }
   .lookup-head-actions { display: flex; align-items: center; gap: 4px; }
+  .lookup-sasayaki-controls { display: flex; flex: 1 1 auto; justify-content: center; gap: 4px; min-width: 0; }
   .lookup-head button { flex-shrink: 0; min-width: 24px; padding: 3px 7px; background: var(--app-control, #1b1b1b); color: var(--app-text, #fff); border: 1px solid var(--app-border, #333333); border-radius: 3px; cursor: pointer; font-size: 11px; text-transform: none; }
   .lookup-head button:disabled { color: var(--app-muted, #999999); cursor: not-allowed; opacity: 0.62; }
   .lookup-state-block { display: flex; flex-direction: column; align-items: flex-start; gap: 8px; }

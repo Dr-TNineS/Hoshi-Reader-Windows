@@ -60,4 +60,28 @@ export const shortcutGroups: readonly ShortcutGroup[] = [
       },
     ],
   },
+  {
+    id: "sasayaki",
+    label: "Sasayaki",
+    actions: [
+      {
+        id: "sasayaki-toggle-playback",
+        label: "Toggle playback",
+        detail: "When Sasayaki audio is available in the reader.",
+        bindings: [{ tokens: ["P"] }],
+      },
+      {
+        id: "sasayaki-previous-skip-action",
+        label: "Skip backward",
+        detail: "Uses the current Sasayaki skip action.",
+        bindings: [{ tokens: ["["] }],
+      },
+      {
+        id: "sasayaki-next-skip-action",
+        label: "Skip forward",
+        detail: "Uses the current Sasayaki skip action.",
+        bindings: [{ tokens: ["]"] }],
+      },
+    ],
+  },
 ];

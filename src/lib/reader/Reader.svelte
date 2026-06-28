@@ -1,8 +1,13 @@
 ﻿<script lang="ts">
-  import { countChars, createWalker, getTotalChars, rawOffsetForReaderChars, textEndOffsets } from "../reader";
+  import { untrack } from "svelte";
+  import { countChars, createWalker, getTotalChars, isVertical, rawOffsetForReaderChars, readerCharOffsetForRange, readerRangeForOffsets, textEndOffsets } from "../reader";
   import type { ReaderAppearancePalette } from "../appearance";
-  import { clearLookupHighlight, READER_LOOKUP_HIGHLIGHT, setLookupHighlightRange } from "../lookup-highlight";
-  import type { ReaderProgress, ReaderSelection, ReaderSelectionRect } from "../types";
+  import {
+    clearLookupHighlight,
+    READER_LOOKUP_HIGHLIGHT,
+    READER_SASAYAKI_HIGHLIGHT,
+  } from "../lookup-highlight";
+  import type { ReaderProgress, ReaderSelection, ReaderSelectionRect, SasayakiPlaybackCue } from "../types";
 
   let {
     content = "",
@@ -19,6 +24,9 @@
     appearancePalette = undefined as ReaderAppearancePalette | undefined,
     lookupHighlightCount = 0,
     lookupHighlightSignal = 0,
+    sasayakiCue = null as SasayakiPlaybackCue | null,
+    sasayakiReveal = false,
+    sasayakiCueSignal = 0,
     scanLength = 16,
     scanNonJapaneseText = true,
     onProgressChange = (_progress: ReaderProgress) => {},
@@ -29,6 +37,27 @@
   const MAX_SELECTION_TEXT = 80;
   const MAX_SENTENCE_CONTEXT_TEXT = 1200;
   const SCAN_BOUNDARY_PATTERN = /[\s\u3000\u3001\u3002\uff01\uff1f\uff08\uff09\u300c\u300d\u300e\u300f\u3010\u3011\u2014\u2026.,!?;:()[\]{}"'<>/\\|]/u;
+  const SENTENCE_DELIMITERS = "。！？.!?\n\r";
+  const TRAILING_SENTENCE_CHARS = "。、！？…‥」』）)】〉》〕｝}］]";
+  const SENTENCE_BRACKETS: Record<string, string> = {
+    "「": "」",
+    "『": "』",
+    "（": "）",
+    "(": ")",
+    "【": "】",
+    "〈": "〉",
+    "《": "》",
+    "〔": "〕",
+    "｛": "｝",
+    "{": "}",
+    "［": "］",
+    "[": "]",
+  };
+
+  type ViewportRect = { x: number; y: number; width: number; height: number };
+  type BoundsRect = ViewportRect & { left: number; top: number; right: number; bottom: number };
+  type RectLike = Partial<ViewportRect & { left: number; top: number; right: number; bottom: number }>;
+  type OverlayRect = { left: number; top: number; width: number; height: number };
 
   let containerEl: HTMLDivElement = $state()!;
   let contentEl: HTMLDivElement = $state()!;
@@ -50,15 +79,19 @@
   let pointerDownPoint: { x: number; y: number } | null = null;
   let lastShiftHoverHit: { node: Text; offset: number } | null = null;
   let lastAppliedLookupHighlightCount = -1;
-  let activeLookupRange: Range | null = null;
+  let activeLookupRanges: Range[] = [];
   let shiftHoverFrame: number | null = null;
   let layoutRun = 0;
   let resizeRun = 0;
   let contentMaxScroll = 0;
+  let lookupHighlightRects = $state<OverlayRect[]>([]);
+  let lookupHighlightText = $state("");
+  let sasayakiHighlightRects = $state<OverlayRect[]>([]);
+  let sasayakiHighlightText = $state("");
 
   let styleVars = $derived(`--page-width:${pageWidth}px;--page-height:${pageHeight}px`);
   let themeVars = $derived(appearancePalette
-    ? `--reader-bg:${appearancePalette.readerBackground};--reader-text:${appearancePalette.readerText};--reader-info:${appearancePalette.readerInfo};--lookup-highlight-color:${appearancePalette.lookupHighlight};--app-border:${appearancePalette.appBorder}`
+    ? `--reader-bg:${appearancePalette.readerBackground};--reader-text:${appearancePalette.readerText};--reader-info:${appearancePalette.readerInfo};--lookup-highlight-color:${appearancePalette.lookupHighlight};--sasayaki-highlight-text:${appearancePalette.sasayakiHighlightText};--sasayaki-highlight-background:${appearancePalette.sasayakiHighlightBackground};--app-border:${appearancePalette.appBorder}`
     : "");
 
   function readerDebugEnabled(): boolean {
@@ -460,105 +493,386 @@
     return element?.closest("p, li, blockquote, div, section, article") ?? contentEl;
   }
 
-  function normalizedSentenceText(text: string): string {
-    return text.replace(/\s+/g, " ");
+  function trimSentenceContext(rawSentence: string, rawSelectedOffset: number): { sentence: string; sentenceOffset?: number } {
+    const leadingTrim = rawSentence.length - rawSentence.trimStart().length;
+    let selectedOffset = Math.max(0, rawSelectedOffset - leadingTrim);
+    const sentence = rawSentence.trim().slice(0, MAX_SENTENCE_CONTEXT_TEXT);
+
+    const closeBrackets = new Set(Object.values(SENTENCE_BRACKETS));
+    const openBrackets = new Set(Object.keys(SENTENCE_BRACKETS));
+    const stack: string[] = [];
+    const unmatchedClose: string[] = [];
+
+    for (const ch of sentence) {
+      if (openBrackets.has(ch)) {
+        stack.push(ch);
+      } else if (closeBrackets.has(ch)) {
+        if (stack.length > 0 && SENTENCE_BRACKETS[stack[stack.length - 1]] === ch) {
+          stack.pop();
+        } else {
+          unmatchedClose.push(ch);
+        }
+      }
+    }
+
+    let startSlice = 0;
+    while (stack.length > 0 && startSlice < sentence.length - 1) {
+      if (stack[0] === sentence[startSlice]) {
+        stack.shift();
+      } else {
+        break;
+      }
+      startSlice += 1;
+    }
+
+    let endSlice = sentence.length - 1;
+    let endIdx = sentence.length - 1;
+    while (unmatchedClose.length > 0 && endIdx > startSlice) {
+      if (unmatchedClose[unmatchedClose.length - 1] === sentence[endIdx]) {
+        unmatchedClose.pop();
+        endSlice = endIdx - 1;
+      } else if (!SENTENCE_DELIMITERS.includes(sentence[endIdx])) {
+        break;
+      }
+      endIdx -= 1;
+    }
+
+    const sliced = sentence.slice(startSlice, endSlice + 1);
+    const slicedLeadingTrim = sliced.length - sliced.trimStart().length;
+    selectedOffset = Math.max(0, selectedOffset - startSlice - slicedLeadingTrim);
+    const trimmed = sliced.trim();
+    return {
+      sentence: trimmed,
+      ...(selectedOffset >= 0 && selectedOffset < trimmed.length ? { sentenceOffset: selectedOffset } : {}),
+    };
   }
 
   function sentenceContext(root: Node, range: Range): { sentence: string; sentenceOffset?: number } {
-    const raw = root.textContent ?? "";
-    const normalized = normalizedSentenceText(raw);
-    const leadingTrim = normalized.length - normalized.trimStart().length;
-    const sentence = normalized.trim().slice(0, MAX_SENTENCE_CONTEXT_TEXT);
-
-    const prefixRange = document.createRange();
-    try {
-      prefixRange.selectNodeContents(root);
-      prefixRange.setEnd(range.startContainer, range.startOffset);
-      const before = normalizedSentenceText(prefixRange.toString());
-      const sentenceOffset = before.length - leadingTrim;
-      return {
-        sentence,
-        ...(sentenceOffset >= 0 && sentenceOffset < sentence.length ? { sentenceOffset } : {}),
-      };
-    } catch {
-      return { sentence };
-    } finally {
-      prefixRange.detach();
+    const startNode = range.startContainer;
+    if (startNode.nodeType !== Node.TEXT_NODE) {
+      return { sentence: selectionText(root.textContent ?? "") };
     }
+
+    const walker = createWalker(root);
+    walker.currentNode = startNode;
+    const partsBefore: string[] = [];
+    let node: Node | null = startNode;
+    let limit = range.startOffset;
+
+    while (node) {
+      const text = node.textContent ?? "";
+      let foundStart = false;
+      for (let i = limit - 1; i >= 0; i -= 1) {
+        if (SENTENCE_DELIMITERS.includes(text[i])) {
+          partsBefore.push(text.slice(i + 1, limit));
+          foundStart = true;
+          break;
+        }
+      }
+
+      if (foundStart) break;
+
+      partsBefore.push(text.slice(0, limit));
+      node = walker.previousNode();
+      if (node) limit = node.textContent?.length ?? 0;
+    }
+
+    walker.currentNode = startNode;
+    const partsAfter: string[] = [];
+    node = startNode;
+    let start = range.startOffset;
+
+    while (node) {
+      const text = node.textContent ?? "";
+      let foundEnd = false;
+
+      for (let i = start; i < text.length; i += 1) {
+        if (SENTENCE_DELIMITERS.includes(text[i])) {
+          let end = i + 1;
+          while (end < text.length) {
+            if (!TRAILING_SENTENCE_CHARS.includes(text[end])) break;
+            end += 1;
+          }
+          partsAfter.push(text.slice(start, end));
+          foundEnd = true;
+          break;
+        }
+      }
+
+      if (foundEnd) break;
+
+      partsAfter.push(text.slice(start));
+      node = walker.nextNode();
+      start = 0;
+    }
+
+    const beforeText = partsBefore.reverse().join("");
+    const rawSentence = beforeText + partsAfter.join("");
+    const context = trimSentenceContext(rawSentence, beforeText.length);
+    if (context.sentence) return context;
+    return { sentence: selectionText(root.textContent ?? "") };
   }
 
   function detachActiveLookupRange() {
-    activeLookupRange?.detach();
-    activeLookupRange = null;
+    activeLookupRanges.forEach((range) => range.detach());
+    activeLookupRanges = [];
     lastAppliedLookupHighlightCount = -1;
+    lookupHighlightRects = [];
+    lookupHighlightText = "";
     clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
   }
 
-  function rangePrefixEnd(range: Range, characterCount: number): { node: Text; offset: number } | null {
-    if (characterCount <= 0 || !range.startContainer.parentElement?.isConnected) return null;
-
-    const commonRoot = range.commonAncestorContainer;
-    const walkerRoot = commonRoot.nodeType === Node.TEXT_NODE
-      ? commonRoot.parentElement
-      : commonRoot;
-    if (!walkerRoot) return null;
-
-    const walker = createWalker(walkerRoot);
-    if (range.startContainer.nodeType === Node.TEXT_NODE) walker.currentNode = range.startContainer;
-
-    let node: Text | null = range.startContainer.nodeType === Node.TEXT_NODE
-      ? range.startContainer as Text
-      : walker.nextNode() as Text | null;
+  function lookupCharacterRanges(characterCount: number): Range[] {
+    if (characterCount <= 0) return [];
+    const characterRanges: Range[] = [];
     let remaining = characterCount;
 
-    while (node) {
-      if (!range.intersectsNode(node)) {
-        const next = walker.nextNode();
-        node = next?.nodeType === Node.TEXT_NODE ? next as Text : null;
-        continue;
-      }
+    for (const sourceRange of activeLookupRanges) {
+      if (remaining <= 0) break;
+      if (!sourceRange.startContainer.parentElement?.isConnected) continue;
+      if (sourceRange.startContainer.nodeType !== Node.TEXT_NODE || sourceRange.endContainer.nodeType !== Node.TEXT_NODE) continue;
 
+      const node = sourceRange.startContainer as Text;
       const content = node.textContent ?? "";
-      const startOffset = node === range.startContainer ? range.startOffset : 0;
-      const endOffset = node === range.endContainer ? range.endOffset : content.length;
+      const startOffset = sourceRange.startOffset;
+      const endOffset = sourceRange.endOffset;
       let offset = startOffset;
-      while (offset < endOffset) {
+      while (offset < endOffset && remaining > 0) {
         const char = String.fromCodePoint(content.codePointAt(offset) ?? 0);
         const nextOffset = Math.min(endOffset, offset + char.length);
+        const range = document.createRange();
+        range.setStart(node, offset);
+        range.setEnd(node, nextOffset);
+        characterRanges.push(range);
         remaining -= 1;
-        if (remaining === 0) return { node, offset: nextOffset };
         offset = nextOffset;
       }
-
-      if (node === range.endContainer) break;
-      const next = walker.nextNode();
-      node = next?.nodeType === Node.TEXT_NODE ? next as Text : null;
     }
 
-    return null;
+    if (remaining === 0) return characterRanges;
+    characterRanges.forEach((range) => range.detach());
+    return [];
   }
 
-  function applyLookupHighlightCount(characterCount: number) {
-    if (!activeLookupRange || characterCount === lastAppliedLookupHighlightCount) return;
+  function readerContentIsVertical(): boolean {
+    return contentEl ? isVertical(contentEl) : false;
+  }
+
+  function rectObject(rect: RectLike): ViewportRect {
+    const x = rect.x ?? rect.left ?? 0;
+    const y = rect.y ?? rect.top ?? 0;
+    const width = rect.width ?? ((rect.right ?? x) - (rect.left ?? x));
+    const height = rect.height ?? ((rect.bottom ?? y) - (rect.top ?? y));
+    return { x, y, width, height };
+  }
+
+  function rectWithBounds(rect: RectLike): BoundsRect {
+    const object = rectObject(rect);
+    const left = rect.left ?? object.x;
+    const top = rect.top ?? object.y;
+    const right = rect.right ?? object.x + object.width;
+    const bottom = rect.bottom ?? object.y + object.height;
+    return { ...object, left, top, right, bottom };
+  }
+
+  function unionBoundsRect(a: BoundsRect, b: BoundsRect): BoundsRect {
+    const left = Math.min(a.left, b.left);
+    const top = Math.min(a.top, b.top);
+    const right = Math.max(a.right, b.right);
+    const bottom = Math.max(a.bottom, b.bottom);
+    return { x: left, y: top, width: right - left, height: bottom - top, left, top, right, bottom };
+  }
+
+  function rangeOverlapAmount(aStart: number, aEnd: number, bStart: number, bEnd: number): number {
+    return Math.min(aEnd, bEnd) - Math.max(aStart, bStart);
+  }
+
+  function rangesSubstantiallyOverlap(aStart: number, aEnd: number, bStart: number, bEnd: number): boolean {
+    const overlap = rangeOverlapAmount(aStart, aEnd, bStart, bEnd);
+    const shorter = Math.min(aEnd - aStart, bEnd - bStart);
+    return shorter > 0 && overlap > shorter / 2;
+  }
+
+  function rubyForNode(node: Node): Element | null {
+    const element = node.nodeType === Node.TEXT_NODE
+      ? (node as Text).parentElement
+      : node instanceof Element ? node : null;
+    return element?.closest("ruby") ?? null;
+  }
+
+  function rubyTextRects(node: Node): DOMRect[] {
+    const ruby = rubyForNode(node);
+    if (!ruby) return [];
+    return Array.from(ruby.querySelectorAll("rt"))
+      .flatMap((rt) => Array.from(rt.getClientRects()))
+      .filter((rect) => rect.width > 0 && rect.height > 0);
+  }
+
+  function rubyRectMatchesBase(baseRect: BoundsRect, rubyRect: DOMRect): boolean {
+    const ruby = rectWithBounds(rubyRect);
+    const minimumOverlap = 1;
+    if (readerContentIsVertical()) {
+      return rangeOverlapAmount(baseRect.top, baseRect.bottom, ruby.top, ruby.bottom) > minimumOverlap;
+    }
+    return rangeOverlapAmount(baseRect.left, baseRect.right, ruby.left, ruby.right) > minimumOverlap;
+  }
+
+  function rubyAwareRect(rect: DOMRect, node: Node): ViewportRect {
+    const rubyRects = rubyTextRects(node);
+    if (rubyRects.length === 0) return rectObject(rect);
+    const base = rectWithBounds(rect);
+    let result = base;
+    for (const rubyRect of rubyRects) {
+      if (rubyRectMatchesBase(base, rubyRect)) {
+        result = unionBoundsRect(result, rectWithBounds(rubyRect));
+      }
+    }
+    return rectObject(result);
+  }
+
+  function lookupRectsForRange(range: Range): ViewportRect[] {
+    let rects = Array.from(range.getClientRects());
+    if (rects.length === 0) {
+      const fallback = range.getBoundingClientRect();
+      if (fallback.width > 0 && fallback.height > 0) rects = [fallback];
+    }
+    return rects
+      .map((rect) => rubyAwareRect(rect, range.startContainer))
+      .filter((rect) => rect.width > 0 && rect.height > 0);
+  }
+
+  function inlineRectsTouch(a: ViewportRect, b: ViewportRect): boolean {
+    const tolerance = 0.5;
+    if (readerContentIsVertical()) {
+      return rangesSubstantiallyOverlap(a.x, a.x + a.width, b.x, b.x + b.width) &&
+        b.y <= a.y + a.height + tolerance &&
+        b.y + b.height >= a.y - tolerance;
+    }
+    return rangesSubstantiallyOverlap(a.y, a.y + a.height, b.y, b.y + b.height) &&
+      b.x <= a.x + a.width + tolerance &&
+      b.x + b.width >= a.x - tolerance;
+  }
+
+  function mergeLookupRects(rects: ViewportRect[]): ViewportRect[] {
+    const merged: ViewportRect[] = [];
+    for (const rect of rects) {
+      const current = { ...rect };
+      const previous = merged.at(-1);
+      if (previous && inlineRectsTouch(previous, current)) {
+        const left = Math.min(previous.x, current.x);
+        const top = Math.min(previous.y, current.y);
+        const right = Math.max(previous.x + previous.width, current.x + current.width);
+        const bottom = Math.max(previous.y + previous.height, current.y + current.height);
+        previous.x = left;
+        previous.y = top;
+        previous.width = right - left;
+        previous.height = bottom - top;
+      } else {
+        merged.push(current);
+      }
+    }
+    return merged;
+  }
+
+  function unifyVerticalColumnRects(rects: ViewportRect[]): ViewportRect[] {
+    if (!readerContentIsVertical() || rects.length === 0) return rects;
+
+    const groups: { left: number; right: number }[] = [];
+    const groupForIndex = new Array<{ left: number; right: number }>(rects.length);
+    rects.forEach((rect, index) => {
+      const left = rect.x;
+      const right = rect.x + rect.width;
+      let group = groups.find((candidate) => rangesSubstantiallyOverlap(left, right, candidate.left, candidate.right));
+      if (group) {
+        group.left = Math.min(group.left, left);
+        group.right = Math.max(group.right, right);
+      } else {
+        group = { left, right };
+        groups.push(group);
+      }
+      groupForIndex[index] = group;
+    });
+
+    return rects.map((rect, index) => {
+      const group = groupForIndex[index];
+      return { x: group.left, y: rect.y, width: group.right - group.left, height: rect.height };
+    });
+  }
+
+  function overlayRectsFromViewportRects(rects: ViewportRect[]): OverlayRect[] {
+    if (!containerEl) return [];
+    const viewportRect = containerEl.getBoundingClientRect();
+    const scrollTop = logicalScrollPos();
+    return rects
+      .filter((rect) => rect.width > 0 && rect.height > 0)
+      .map((rect) => ({
+        left: rect.x - viewportRect.left,
+        top: rect.y - viewportRect.top + scrollTop,
+        width: rect.width,
+        height: rect.height,
+      }));
+  }
+
+  function lookupOverlayRectsForRanges(ranges: Range[]): OverlayRect[] {
+    const rects = ranges.flatMap((range) => lookupRectsForRange(range));
+    return overlayRectsFromViewportRects(unifyVerticalColumnRects(mergeLookupRects(rects)));
+  }
+
+  function applyLookupHighlightCount(characterCount: number, force = false) {
+    if (activeLookupRanges.length === 0 || (!force && characterCount === lastAppliedLookupHighlightCount)) return;
     if (characterCount <= 0) {
+      lookupHighlightRects = [];
+      lookupHighlightText = "";
       clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
       lastAppliedLookupHighlightCount = 0;
       return;
     }
 
-    const end = rangePrefixEnd(activeLookupRange, characterCount);
-    if (!end) {
+    const ranges = lookupCharacterRanges(characterCount);
+    if (ranges.length === 0) {
+      lookupHighlightRects = [];
+      lookupHighlightText = "";
       clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
       lastAppliedLookupHighlightCount = characterCount;
       return;
     }
 
-    const visibleRange = document.createRange();
-    visibleRange.setStart(activeLookupRange.startContainer, activeLookupRange.startOffset);
-    visibleRange.setEnd(end.node, end.offset);
-    setLookupHighlightRange(READER_LOOKUP_HIGHLIGHT, visibleRange);
-    visibleRange.detach();
+    clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
+    lookupHighlightRects = lookupOverlayRectsForRanges(ranges);
+    lookupHighlightText = ranges.map((range) => range.toString()).join("").replace(/\s+/g, " ").trim();
+    ranges.forEach((range) => range.detach());
+    window.getSelection()?.removeAllRanges();
     lastAppliedLookupHighlightCount = characterCount;
+  }
+
+  function chapterOffsetForRange(range: Range): number | undefined {
+    if (!contentEl) return undefined;
+    return readerCharOffsetForRange(range, contentEl);
+  }
+
+  function clearSasayakiHighlight() {
+    clearLookupHighlight(READER_SASAYAKI_HIGHLIGHT);
+    sasayakiHighlightRects = [];
+    sasayakiHighlightText = "";
+  }
+
+  function overlayRectsForRanges(ranges: Range[]): OverlayRect[] {
+    if (!containerEl) return [];
+
+    const viewportRect = containerEl.getBoundingClientRect();
+    const scrollTop = logicalScrollPos();
+    return ranges.flatMap((range) => Array.from(range.getClientRects()))
+      .filter((rect) => rect.width > 0 && rect.height > 0)
+      .map((rect) => ({
+        left: rect.left - viewportRect.left,
+        top: rect.top - viewportRect.top + scrollTop,
+        width: rect.width,
+        height: rect.height,
+      }));
+  }
+
+  function sasayakiOverlayRectsFor(range: Range): { left: number; top: number; width: number; height: number }[] {
+    return overlayRectsForRanges([range]);
   }
 
   function selectTextFromPoint(
@@ -623,8 +937,10 @@
     const lastRange = ranges[ranges.length - 1];
     visibleRange.setEnd(lastRange.endContainer, lastRange.endOffset);
     detachActiveLookupRange();
-    activeLookupRange = visibleRange.cloneRange();
+    activeLookupRanges = ranges.map((range) => range.cloneRange());
     lastAppliedLookupHighlightCount = 0;
+    lookupHighlightRects = [];
+    lookupHighlightText = "";
     clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
     window.getSelection()?.removeAllRanges();
 
@@ -637,7 +953,8 @@
 
     const anchorRect = hit.rect;
     const context = sentenceContext(root, visibleRange);
-    const selection = { text, ...context, rect, anchorRect, chapterIndex };
+    const chapterOffset = chapterOffsetForRange(visibleRange);
+    const selection = { text, ...context, ...(chapterOffset !== undefined ? { chapterOffset } : {}), rect, anchorRect, chapterIndex };
     hasActiveSelection = true;
     onSelectionChange(selection);
     return selection;
@@ -779,6 +1096,25 @@
     scheduleProgressEmit();
   }
 
+  function applySasayakiCue() {
+    clearSasayakiHighlight();
+    if (!layoutReady || !contentEl || !sasayakiCue || sasayakiCue.chapterIndex !== chapterIndex) return;
+
+    const range = readerRangeForOffsets(contentEl, sasayakiCue.start, sasayakiCue.length);
+    if (!range) return;
+    const rects = sasayakiOverlayRectsFor(range);
+    sasayakiHighlightRects = rects;
+    sasayakiHighlightText = range.toString().replace(/\s+/g, " ").trim();
+
+    if (sasayakiReveal && containerEl) {
+      if (rects.length > 0) {
+        const logicalTop = Math.min(...rects.map((rect) => rect.top));
+        goPage(Math.floor(Math.max(0, logicalTop + PAGE_EPSILON) / pageSize()));
+      }
+    }
+    range.detach();
+  }
+
   async function realignAfterResize() {
     if (!containerEl || !contentEl) return;
 
@@ -811,6 +1147,8 @@
     if (run !== resizeRun || activeRun !== layoutRun || !containerEl) return;
     initializing = false;
     logReaderGeometry("resize-realign");
+    applySasayakiCue();
+    applyLookupHighlightCount(lookupHighlightCount, true);
     scheduleProgressEmit();
   }
 
@@ -957,6 +1295,7 @@
       initializing = true;
       scrollTailTop = 0;
       clearSelection();
+      clearSasayakiHighlight();
       lastPointer = null;
       resetShiftHoverState();
       layoutRun += 1;
@@ -967,6 +1306,16 @@
     lookupHighlightSignal;
     applyLookupHighlightCount(lookupHighlightCount);
   });
+
+  $effect(() => {
+    sasayakiCueSignal;
+    sasayakiCue;
+    sasayakiReveal;
+    layoutReady;
+    untrack(() => applySasayakiCue());
+  });
+
+  $effect(() => () => clearSasayakiHighlight());
 
   $effect(() => {
     const el = containerEl;
@@ -1055,6 +1404,26 @@
     {#if scrollTailTop > 0}
       <div class="scroll-tail" style={`top:${scrollTailTop}px`} aria-hidden="true"></div>
     {/if}
+    {#if lookupHighlightRects.length > 0}
+      <div class="lookup-highlight-layer" data-highlight-text={lookupHighlightText} aria-hidden="true">
+        {#each lookupHighlightRects as rect}
+          <span
+            class="lookup-highlight-rect"
+            style={`left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px`}
+          ></span>
+        {/each}
+      </div>
+    {/if}
+    {#if sasayakiHighlightRects.length > 0}
+      <div class="sasayaki-highlight-layer" data-highlight-text={sasayakiHighlightText} aria-hidden="true">
+        {#each sasayakiHighlightRects as rect}
+          <span
+            class="sasayaki-highlight-rect"
+            style={`left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px`}
+          ></span>
+        {/each}
+      </div>
+    {/if}
   </div>
 </div>
 
@@ -1102,6 +1471,31 @@
     margin: 0;
     padding: 0;
     pointer-events: none;
+  }
+
+  .lookup-highlight-layer,
+  .sasayaki-highlight-layer {
+    position: absolute;
+    inset: 0;
+    z-index: 1;
+    overflow: visible;
+    pointer-events: none;
+  }
+
+  .lookup-highlight-rect,
+  .sasayaki-highlight-rect {
+    position: absolute;
+    display: block;
+    border-radius: 2px;
+    pointer-events: none;
+  }
+
+  .lookup-highlight-rect {
+    background: var(--lookup-highlight-color, rgba(160, 160, 160, 0.32));
+  }
+
+  .sasayaki-highlight-rect {
+    background: var(--sasayaki-highlight-background, rgba(135, 206, 235, 0.4));
   }
 
   .rct {

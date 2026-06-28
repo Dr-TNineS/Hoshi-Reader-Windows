@@ -1,11 +1,25 @@
 # HSW Reference Projects
 
-This directory is for local read-only reference projects used while developing Hoshi Reader Windows.
+This directory contains read-only upstream reference projects used while
+developing Hoshi Reader Windows.
 
-Expected local entries include:
+Tracked submodules:
 
-- `Hoshi-Reader-Android`
-- `hoshi-reader-mac`
-- `hoshi-reader-original`
+- `Hoshi-Reader-Android`: primary reference for HSA user-visible behavior.
+- `hoshi-reader-mac`: supplemental reference for HSM user-visible behavior.
 
-These projects are not part of the HSW source tree and should not be committed from this repository. Treat them as read-only references unless a separate task explicitly targets that project.
+Initialize them after a fresh clone with:
+
+```text
+git submodule update --init --recursive
+```
+
+Existing worktrees can run the same command from the HSW root to populate
+missing reference projects. To update the pinned upstream commits, fetch inside
+the relevant submodule, check out the intended commit, then commit the changed
+gitlink and `.gitmodules` change in HSW if needed.
+
+Treat these submodules as read-only behavior references. Do not modify reference
+project code, commit their local build outputs, or add other reference projects
+unless a task explicitly expands the long-term reference scope. Ad hoc local
+reference checkouts under `reference/` remain ignored by HSW.

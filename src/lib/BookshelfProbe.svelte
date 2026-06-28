@@ -25,6 +25,7 @@
   ];
 
   let forgetEvents = $state<string[]>([]);
+  let sasayakiEvents = $state<string[]>([]);
 </script>
 
 <main class="probe" data-ui-portal-root>
@@ -38,6 +39,67 @@
     onOpenBook={() => {}}
     onContinueBook={() => {}}
     onForgetBook={(book) => forgetEvents = [...forgetEvents, book.bookId ?? book.path ?? "unknown"]}
+    sasayakiBookId="owned-book"
+    sasayakiStatus={{
+      configured: true,
+      audioStorage: "external",
+      audioFileName: "星の音.wav",
+      audioExtension: "wav",
+      audioSizeBytes: 8192,
+      audioAvailable: true,
+      subtitleFileName: "星の音.srt",
+      subtitleSizeBytes: 1024,
+      cueCount: 3,
+      matchedCount: 2,
+      unmatchedCount: 1,
+      correctedCount: 1,
+      matchRate: 66.6667,
+      lastPosition: 0,
+      delay: 0,
+      rate: 1,
+    }}
+    sasayakiCues={[
+      {
+        id: "1",
+        startTime: 0,
+        endTime: 1.25,
+        text: "学校です。",
+        matched: true,
+        corrected: false,
+        chapterIndex: 1,
+        start: 0,
+        length: 4,
+      },
+      {
+        id: "2",
+        startTime: 1.25,
+        endTime: 2.5,
+        text: "見つからない字幕",
+        matched: false,
+        corrected: false,
+        chapterIndex: null,
+        start: null,
+        length: null,
+      },
+      {
+        id: "3",
+        startTime: 2.5,
+        endTime: 4,
+        text: "手動で直した字幕",
+        matched: true,
+        corrected: true,
+        chapterIndex: 2,
+        start: 8,
+        length: 7,
+      },
+    ]}
+    sasayakiMessage="Sasayaki audio and subtitles are ready to match."
+    onLoadSasayaki={(book) => sasayakiEvents = [...sasayakiEvents, `load:${book.bookId}`]}
+    onImportSasayaki={(book, copyAudio) => sasayakiEvents = [...sasayakiEvents, `${copyAudio ? "copy" : "link"}:${book.bookId}`]}
+    onRemoveSasayaki={(book) => sasayakiEvents = [...sasayakiEvents, `remove:${book.bookId}`]}
+    onRematchSasayaki={(book, window) => sasayakiEvents = [...sasayakiEvents, `match:${book.bookId}:${window}`]}
+    onCorrectSasayakiCue={(book, cueId, chapter, start, length) => sasayakiEvents = [...sasayakiEvents, `correct:${book.bookId}:${cueId}:${chapter}:${start}:${length}`]}
+    onClearSasayakiCorrection={(book, cueId) => sasayakiEvents = [...sasayakiEvents, `clear:${book.bookId}:${cueId}`]}
     onSetReaderTheme={() => {}}
     onSetReopenLastBookOnStartup={() => {}}
     onSetLookupPopupWidth={() => {}}
@@ -59,7 +121,12 @@
     onSetAnkiFieldTemplate={() => {}}
     onSetAnkiAudioConfig={() => {}}
   />
-  <div class="probe-state" data-forget-events={forgetEvents.join(",")} aria-hidden="true"></div>
+  <div
+    class="probe-state"
+    data-forget-events={forgetEvents.join(",")}
+    data-sasayaki-events={sasayakiEvents.join(",")}
+    aria-hidden="true"
+  ></div>
 </main>
 
 <style>

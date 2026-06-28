@@ -20,6 +20,7 @@ declare global {
 
 export const READER_LOOKUP_HIGHLIGHT = "hsw-reader-lookup-selection";
 export const POPUP_LOOKUP_HIGHLIGHT = "hsw-popup-lookup-selection";
+export const READER_SASAYAKI_HIGHLIGHT = "hsw-reader-sasayaki-cue";
 
 export function setLookupHighlightRange(name: string, range: Range): void {
   setLookupHighlightRanges(name, [range]);
@@ -75,6 +76,11 @@ function ensureLookupHighlightStyles(): void {
 ::highlight(${POPUP_LOOKUP_HIGHLIGHT}) {
   background-color: var(--lookup-highlight-color, rgba(160, 160, 160, 0.32));
   color: inherit;
+}
+
+::highlight(${READER_SASAYAKI_HIGHLIGHT}) {
+  background-color: var(--sasayaki-highlight-background, rgba(135, 206, 235, 0.4));
+  color: var(--sasayaki-highlight-text, inherit);
 }
 `;
   document.head.appendChild(style);

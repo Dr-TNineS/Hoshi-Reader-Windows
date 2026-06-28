@@ -1,8 +1,10 @@
 mod anki;
+mod audio_clip;
 mod dict;
 mod epub;
 mod library;
 mod local_audio;
+mod sasayaki;
 mod storage;
 
 use dict::commands::DictState;
@@ -52,12 +54,23 @@ pub fn run() {
             anki::anki_store_remote_audio,
             anki::anki_store_book_cover,
             anki::anki_store_word_audio,
+            anki::anki_store_sasayaki_audio,
             anki::word_audio_prepare_playback,
             local_audio::anki_local_audio_status,
             local_audio::anki_import_local_audio,
             local_audio::anki_remove_local_audio,
             local_audio::anki_set_local_audio_source_order,
             local_audio::anki_store_local_audio,
+            sasayaki::sasayaki_status,
+            sasayaki::sasayaki_import,
+            sasayaki::sasayaki_remove,
+            sasayaki::sasayaki_rematch,
+            sasayaki::sasayaki_list_cues,
+            sasayaki::sasayaki_correct_cue,
+            sasayaki::sasayaki_clear_correction,
+            sasayaki::sasayaki_prepare_playback,
+            sasayaki::sasayaki_save_playback,
+            sasayaki::sasayaki_relink_audio,
         ])
         .setup(|app| {
             app.state::<DictState>().initialize(app.handle());

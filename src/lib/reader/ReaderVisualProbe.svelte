@@ -2,11 +2,11 @@
   import Reader from "./Reader.svelte";
   import { countChars } from "../reader";
   import { readerAppearancePalette } from "../appearance";
-  import { lookupHighlightText as renderedLookupHighlightTextFor, READER_LOOKUP_HIGHLIGHT } from "../lookup-highlight";
-  import type { ReaderProgress, ReaderSelection } from "../types";
+  import type { ReaderProgress, ReaderSelection, SasayakiPlaybackCue } from "../types";
 
   const params = new URLSearchParams(window.location.search);
   const lookupHighlightMode = params.get("lookupHighlightMode") ?? "";
+  const sasayakiMode = params.get("sasayakiMode") ?? "";
   const appearancePalette = readerAppearancePalette({ theme: params.get("theme") === "light" ? "light" : "dark" });
 
   const imageSvg = encodeURIComponent(`
@@ -49,6 +49,18 @@
   }
 
   function chapterContent(title: string, paragraphs: ReturnType<typeof chapterParagraphs>, includeImage = false) {
+    const rubyHighlightProbeHtml = `
+      <p data-ruby-highlight-probe>
+        <ruby>優<rt>やさ</rt></ruby>しい<ruby>微笑<rt>ほほえ</rt></ruby>みを見た。赤いエプロンを<ruby>不機嫌<rt>ふきげん</rt></ruby>そうに脱ぎ捨てて。
+      </p>
+    `;
+    const rubyHighlightProbeText = "優しい微笑みを見た。赤いエプロンを不機嫌そうに脱ぎ捨てて。";
+    const offsetProbeHtml = `
+      <p data-offset-probe>
+        始<ruby>母<rt>はは</rt><rp>（</rp><rp>）</rp></ruby>後語。選択位置確認。
+      </p>
+    `;
+    const offsetProbeText = "始母後語。選択位置確認。";
     const html = `
     <section class="main">
       <h1>${title}</h1>
@@ -57,12 +69,14 @@
           <img src="data:image/svg+xml,${imageSvg}" alt="Reader visual probe cover" />
         </p>
       ` : ""}
+      ${rubyHighlightProbeHtml}
+      ${offsetProbeHtml}
       ${paragraphs.html}
     </section>
   `;
     return {
       html,
-      charCount: countChars(`${title}${paragraphs.text}`),
+      charCount: countChars(`${title}${rubyHighlightProbeText}${offsetProbeText}${paragraphs.text}`),
     };
   }
 
@@ -85,8 +99,19 @@
   let lookupHighlightSignal = $state(0);
   let visibleSelectionText = $state("");
   let renderedLookupHighlightText = $state("");
+  let renderedSasayakiHighlightText = $state("");
   let selectionCount = $state(0);
   let lookupGeneration = 0;
+  const sasayakiCue: SasayakiPlaybackCue | null = sasayakiMode
+    ? {
+        id: "probe-cue",
+        startTime: 10,
+        endTime: 15,
+        chapterIndex: 0,
+        start: sasayakiMode === "reveal" ? Math.floor(chapters[0].charCount * 0.72) : 8,
+        length: 8,
+      }
+    : null;
 
   function recordProgress(progress: ReaderProgress) {
     lastProgress = progress;
@@ -102,6 +127,18 @@
       window.setTimeout(() => {
         if (generation !== lookupGeneration) return;
         lookupHighlightText = Array.from(selection.text).slice(0, 2).join("");
+        lookupHighlightSignal += 1;
+      }, 120);
+    } else if (selection && lookupHighlightMode === "rubyFull") {
+      window.setTimeout(() => {
+        if (generation !== lookupGeneration) return;
+        lookupHighlightText = "優しい微笑み";
+        lookupHighlightSignal += 1;
+      }, 120);
+    } else if (selection && lookupHighlightMode === "rubyKagami") {
+      window.setTimeout(() => {
+        if (generation !== lookupGeneration) return;
+        lookupHighlightText = "不機嫌";
         lookupHighlightSignal += 1;
       }, 120);
     }
@@ -131,7 +168,10 @@
     let secondFrame = 0;
     const syncSelection = () => {
       visibleSelectionText = window.getSelection()?.toString().replace(/\s+/g, " ").trim() ?? "";
-      renderedLookupHighlightText = renderedLookupHighlightTextFor(READER_LOOKUP_HIGHLIGHT);
+      const lookupLayer = document.querySelector<HTMLElement>(".lookup-highlight-layer");
+      renderedLookupHighlightText = lookupLayer?.dataset.highlightText ?? "";
+      const sasayakiLayer = document.querySelector<HTMLElement>(".sasayaki-highlight-layer");
+      renderedSasayakiHighlightText = sasayakiLayer?.dataset.highlightText ?? "";
     };
     const firstFrame = requestAnimationFrame(() => {
       if (waitForHighlight) {
@@ -161,6 +201,9 @@
   onSelectionChange={recordSelection}
   lookupHighlightCount={Array.from(lookupHighlightText).length}
   {lookupHighlightSignal}
+  {sasayakiCue}
+  sasayakiReveal={sasayakiMode === "reveal"}
+  sasayakiCueSignal={sasayakiMode ? 1 : 0}
 />
 
 <div
@@ -174,10 +217,13 @@
   data-fixture-chapter-start={chapters[chapterIndex].startChars}
   data-fixture-chapter-count={chapters[chapterIndex].charCount}
   data-selection={lastSelection?.text ?? ""}
+  data-selection-chapter-offset={lastSelection?.chapterOffset ?? -1}
   data-dom-selection={visibleSelectionText}
   data-highlight-text={lookupHighlightText}
   data-rendered-highlight-text={renderedLookupHighlightText}
+  data-sasayaki-highlight={renderedSasayakiHighlightText}
   data-sentence={lastSelection?.sentence ?? ""}
+  data-sentence-offset={lastSelection?.sentenceOffset ?? -1}
   data-selection-count={selectionCount}
   data-anchor-x={lastSelection?.anchorRect?.x ?? lastSelection?.rect.x ?? -1}
   data-anchor-y={lastSelection?.anchorRect?.y ?? lastSelection?.rect.y ?? -1}

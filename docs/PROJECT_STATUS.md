@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Project Status
 
-Last updated: 2026-06-23
+Last updated: 2026-06-27
 
 This file records current implementation facts for `hoshi-reader-windows`. It is not an agent rule file, product roadmap, or substitute for checking the current code.
 
@@ -135,6 +135,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Configured lookup popup results expose a HSA-style compact Anki add button; note creation still renders fields from the current `LookupAnkiPayload`.
   - Configured lookup popup results can call Rust `anki_add_note`; Rust performs `canAddNotesWithErrorDetail` before `addNote` and returns added/duplicate/error states.
   - Real desktop Anki runtime validation passed on 2026-06-18 with AnkiConnect v6 on `127.0.0.1:8765`: the ignored Rust validation test created a throwaway deck/model, added one note through HSW `anki_add_note`, verified duplicate handling on the second add, and attempted cleanup.
+  - Real desktop Anki runtime validation was repeated on 2026-06-27 with AnkiConnect v6 on `127.0.0.1:8765`; `validates_real_ankiconnect_add_note_and_duplicate_check` passed.
   - Rust/Tauri stores Anki settings in app data `anki/settings.json` and restricts AnkiConnect endpoints to localhost/127.0.0.1 HTTP.
   - `npm run check:anki-connect` covers Anki panel empty/error/connected/ready states, action wiring, pointer/keyboard selections, field template edits, HSA-aligned Lapis defaults, exact-name preset matching, token menu choices including `{furigana-plain}`, and Select/Menu viewport boundaries without narrow-window overflow.
   - `npm run check:lookup-popup` covers configured compact Anki add action, bolded sentence-context rendering, dictionary-specific glossary handlebars, unknown handlebars rendering empty, added/duplicate/error UI states, rendered note shape including furigana and pitch-position fields, and the unconfigured disabled Anki boundary.
@@ -142,29 +143,45 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Rust `anki_store_dictionary_media` stores imported dictionary image media through AnkiConnect `storeMediaFile`; missing media returns warnings, while unsafe paths and unsupported types are blocked.
   - `npm run check:lookup-popup` covers Anki media store success, missing-media warnings with text-card creation, and hard media-store failure without note creation.
   - Real AnkiConnect store-media runtime validation passed on 2026-06-18 with a throwaway SVG media file.
+  - Real AnkiConnect store-media runtime validation was repeated on 2026-06-27 with a throwaway SVG media file; `validates_real_ankiconnect_store_dictionary_media` passed.
   - Anki word-audio settings store an enable flag, ordered remote sources, timeout, autoplay, and the future Interrupt/Duck/Mix coordination mode.
   - Remote word audio resolves `{term}` and `{reading}` against enabled public HTTP/HTTPS sources in saved order, enforces redirect/address/timeout/format/size boundaries, stores successful audio through AnkiConnect, and renders `[sound:filename]` through `{audio}`.
   - Ordinary remote-audio failures show warnings and preserve text-note creation; unsafe targets and oversized responses block the current add operation.
   - `npm run check:lookup-popup` covers remote-audio success, missing/unsupported warnings, security failure, no-audio-field and missing-expression behavior.
-  - Sasayaki audio and sync remain planned in `docs/ANKI_AUDIO_SYNC_PLAN.md`.
+  - The Anki/audio route through Sasayaki export and playback coordination is tracked in `docs/ANKI_AUDIO_SYNC_PLAN.md` and is complete through Slice 5O at the documented validation level.
   - HSA-compatible local audio database import is implemented under app data `audio/android.db`, with staged replacement, SQLite/schema validation, app-owned storage, source ordering, reading-first matching, and blob-only MP3/Opus/OGG loading.
   - Local audio is attempted before remote audio for Anki fields; local misses and ordinary read warnings fall back to the configured remote source without blocking text-note creation.
   - Local audio import/removal, enable state, source ordering, matching, fallback, and narrow-window UI are covered by Rust and frontend probes.
   - Anki settings include a default-off post-add sync option. A successful note remains `added` when AnkiConnect sync fails, with the failure returned and displayed as a secondary warning; duplicate and failed note creation do not sync.
   - Anki settings v2 includes editable whitespace-separated tags, allow-duplicates, Collection/Deck/Deck Root duplicate scope, and all-note-type checking. Rust maps these to AnkiConnect note options and skips the blocking preflight when duplicates are allowed.
   - Anki settings include default-off compact glossary card CSS. `{book-cover}` resolves only an app-owned `bookId` through the Rust library manifest, validates containment/signature/size, stores deterministic cover media, and renders the stored image filename.
-  - The media pipeline stores dictionary images, then book cover, then word audio before rendering and addNote. Duplicate notes may leave shared content-hash media; HSW does not automatically delete it.
+  - The media pipeline stores dictionary images, then book cover, word audio, and Sasayaki sentence audio before rendering and addNote. Duplicate notes may leave shared content-hash media; HSW does not automatically delete it.
   - Remote word-audio sources have stable ids and support add/remove/edit/enable/reorder. Export tries local audio first, then every enabled remote source in saved order; ordinary warnings fall through and security errors stop immediately.
   - Anki export and popup playback now share the Rust local-first/ordered-remote word-audio resolver. Popup audio supports play, stop, logical request cancellation, lookup cleanup, and optional autoplay through a content-hash cache bounded to 20 files and 50 MiB.
+  - Popup word-audio playback coordinates with HSW-owned Sasayaki reader audio according to the persisted playback mode: Interrupt pauses and conditionally resumes Sasayaki, Duck temporarily lowers and restores Sasayaki volume, and Mix leaves Sasayaki playing. Rapid word-audio replacements keep coordinator state on the latest request, and failures/manual Sasayaki controls/navigation/shutdown clear the coordinator without claiming Windows-wide audio focus.
+  - A pure-Rust audio clipping capability decodes M4B/AAC-LC, MP3, and WAV and emits deterministic 16-bit PCM cue WAV bytes. It enforces a 60-second clip limit, a 64 MiB output limit, bounded channel/sample-rate shapes, and clear corrupt/out-of-range errors; fixtures cover exact timing, long sources, Unicode paths, and deterministic M4B clipping.
+  - Per-book Sasayaki data lives under `library/books/<bookId>/Sasayaki`. The versioned sidecar initializes cue/match/playback state, SRT is normalized and copied as UTF-8, and verified M4B/MP3/WAV audio is either linked externally or copied into app storage.
+  - Sasayaki import validates the manifest-owned book directory, audio codec, SRT extension/UTF-8/timing marker/size, stages the complete replacement, and restores old data if installation fails. Removal and bookshelf Forget delete only app-owned Sasayaki data; linked external audio is never deleted.
+  - Sasayaki SRT import now strictly validates positive increasing cue numbers, timing ranges/order, and non-empty text. Matching uses the reader-visible HSA-compatible character filter, skips navigation/non-linear/guide-TOC spine items, searches cues forward within a bounded persisted window, rejects chapter-crossing matches, and stores stable `chapterIndex + start + length` results.
+  - Manual cue corrections are book-owned sidecar records, validated against matchable chapter bounds, reapplied during rematch, and removable without discarding automatic results. Sidecar rewrites stage and roll back the previous JSON on installation failure.
+  - The bookshelf Sasayaki panel shows match coverage, unmatched/matched/corrected cues, the first 100 cue records, bounded rematch controls, and manual correction coordinates. Playback and cue presentation remain reader-owned features. The bookshelf probe covers action wiring, correction coordinates, and external-file protection; wide and 520px checks passed without horizontal overflow.
+  - Reader Sasayaki playback restores the sidecar source, position, rate, delay, and matched cue timeline. Rust authorizes only the current validated audio file in Tauri's runtime asset scope; copied audio remains contained and missing/changed external audio exposes an audio-only relink path.
+  - The reader Audio panel provides play/pause, progress seek, +/-10 seconds, configurable sentence or 5/10/15/30-second skip actions, 0.5-2.0 speed, and -2 to 2 second cue delay. Position/settings persist on periodic ticks, pause, seek, shelf/book change, session restore, and window close.
+  - Active matched Sasayaki cues are mapped from Rust-owned chapter/start/length coordinates to reader DOM ranges with the shared matchable-character filter and rendered through CSS Highlight without EPUB DOM wrapping or pagination reflow. Auto-Scroll follows aligned vertical pages and chapters after playback/seek; Auto-Pause on Lookup resumes only playback paused by lookup. Both default on and persist per book with legacy-compatible defaults.
+  - Sasayaki cue colors follow HSA-visible defaults: black text over translucent sky blue in light mode and white text over translucent sky blue in dark mode.
+  - `{sasayaki-audio}` exports only the active matched cue associated with the lookup chapter. The frontend passes `bookId + cueId`; Rust resolves the app-owned sidecar, validates copied/external audio and the persisted cue range, clips deterministic PCM WAV, stores `hsw_sasayaki_<hash>.wav`, and renders `[sound:filename]`.
+  - Missing/no-active cues, unavailable linked audio, and ordinary decode failures preserve text-note creation with warnings. Wrong-book/tampered sidecars, copied path escape, changed external sources, invalid or overlong ranges, oversized output, and unsafe Anki endpoints block the add operation.
+  - Real M4B backend validation passed on 2026-06-24 with `汝、星のごとく`: a 368,936,202-byte, 12:22:43 AAC-LC M4B with chapters, cover, and an auxiliary data track decoded and clipped; its matching EPUB/SRT pipeline imported 11,798 cues and matched 11,792 with 6 unmatched. Development/release clipping, the portable package build, and a five-second packaged launch smoke also passed.
+  - Slice 5O runtime closure on 2026-06-27 passed common automated checks, all focused frontend probes, `cargo test --lib`, `cargo check`, `npm run package`, and a five-second launch smoke of `src-tauri/target/release/hoshi-reader-windows.exe`. The ordinary shell used for this validation did not have `cmake` in `PATH`, so linked hoshidicts checks were not rerun in this session.
 
 ## Not Implemented Or Not Verified
 
 - No durable database; app-owned library metadata and reading state are still JSON.
-- Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; real remote-audio-plus-AnkiConnect, real HSA local-audio database, real popup word-audio playback, and real post-add sync runtime validation are also not verified.
+- Anki combined add-note-plus-media runtime validation with a real media-bearing dictionary is not verified; real remote-audio-plus-AnkiConnect, real HSA local-audio database, real popup word-audio playback, real word/Sasayaki playback coordination in Tauri, real Sasayaki sentence-clip playback from Anki, real Tauri Sasayaki audio output, real post-add sync runtime validation, and full HSA status-text/default comparison beyond automated probes are also not verified. Generic M4A/raw AAC and OGG/Opus clipping are not verified.
 - No full settings surface; Appearance, Advanced startup behavior, dictionary popup sizing/scale, and core HSA dictionary settings are implemented. HSA profile-scoped settings, recommended dictionary downloads, automatic updates, dictionary default tab, and custom CSS are not implemented.
 - No verified app-owned cover thumbnail cache.
 - Runtime validation with a normal media-bearing Yomitan dictionary is not verified; on 2026-06-16, `HSW_MEDIA_YOMITAN_ZIP` was unset, `OALDPE10.zip` had `mediaCount=0`, and `MK3Fix0213.zip` remained unsuitable because compatibility import intentionally skipped media. Packed-media command tests now cover `media.idx`/`media.bin` reads, but full popup runtime validation with a media-preserving import is still not verified.
-- No verified release packaging flow.
+- Portable package build and five-second executable launch smoke validation passed on 2026-06-24; installer and broader release validation are not verified.
 
 ## Known Issues
 

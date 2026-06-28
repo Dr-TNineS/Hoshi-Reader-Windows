@@ -9,6 +9,8 @@ export type ReaderAppearancePalette = {
   readerText: string;
   readerInfo: string;
   lookupHighlight: string;
+  sasayakiHighlightText: string;
+  sasayakiHighlightBackground: string;
   appBackground: string;
   appText: string;
   appMuted: string;
@@ -27,7 +29,7 @@ export type ReaderAppearancePalette = {
 const APPEARANCE_KEY = "hoshi_reader_appearance";
 
 export const defaultReaderAppearance: ReaderAppearance = {
-  theme: "dark",
+  theme: "light",
 };
 
 export const readerThemeLabels: Record<ReaderTheme, string> = {
@@ -60,6 +62,8 @@ export function readerAppearancePalette(appearance: ReaderAppearance): ReaderApp
       readerText: "#000",
       readerInfo: "#999999",
       lookupHighlight: "rgba(160, 160, 160, 0.32)",
+      sasayakiHighlightText: "#000000",
+      sasayakiHighlightBackground: "rgba(135, 206, 235, 0.4)",
       appBackground: "#fff",
       appText: "#000",
       appMuted: "#666666",
@@ -81,6 +85,8 @@ export function readerAppearancePalette(appearance: ReaderAppearance): ReaderApp
     readerText: "#fff",
     readerInfo: "#999999",
     lookupHighlight: "rgba(255, 255, 255, 0.32)",
+    sasayakiHighlightText: "#ffffff",
+    sasayakiHighlightBackground: "rgba(135, 206, 235, 0.4)",
     appBackground: "#000",
     appText: "#fff",
     appMuted: "#999999",
@@ -103,6 +109,8 @@ export function readerAppearanceCssVars(palette: ReaderAppearancePalette): strin
     `--reader-text:${palette.readerText}`,
     `--reader-info:${palette.readerInfo}`,
     `--lookup-highlight-color:${palette.lookupHighlight}`,
+    `--sasayaki-highlight-text:${palette.sasayakiHighlightText}`,
+    `--sasayaki-highlight-background:${palette.sasayakiHighlightBackground}`,
     `--app-bg:${palette.appBackground}`,
     `--app-text:${palette.appText}`,
     `--app-muted:${palette.appMuted}`,

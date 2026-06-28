@@ -67,6 +67,11 @@ async function openProbe(page, state, options = {}) {
   if (options.localAudio) params.set("localAudio", "enabled");
   if (options.audioEnabled === false) params.set("audioEnabled", "disabled");
   if (options.audioField === false) params.set("audioField", "disabled");
+  if (options.sasayakiField) params.set("sasayakiField", "enabled");
+  if (options.sasayakiControls) params.set("sasayakiControls", "enabled");
+  if (options.sasayakiPlaying) params.set("sasayakiPlaying", "enabled");
+  if (options.sasayakiStoreMode) params.set("sasayakiStoreMode", options.sasayakiStoreMode);
+  if (options.noSasayakiCue) params.set("noSasayakiCue", "1");
   if (options.emptyExpression) params.set("emptyExpression", "1");
   if (options.popupWidth) params.set("popupWidth", String(options.popupWidth));
   if (options.popupHeight) params.set("popupHeight", String(options.popupHeight));
@@ -144,9 +149,15 @@ async function popupMetrics(page) {
       ankiLastRequest: JSON.parse(state?.getAttribute("data-anki-last-request") ?? "null"),
       coverStoreCount: Number(state?.getAttribute("data-cover-store-count") ?? 0),
       coverLastBookId: state?.getAttribute("data-cover-last-book-id") ?? "",
+      sasayakiStoreCount: Number(state?.getAttribute("data-sasayaki-store-count") ?? 0),
+      sasayakiLastRequest: JSON.parse(state?.getAttribute("data-sasayaki-last-request") ?? "null"),
       operationEvents: state?.getAttribute("data-operation-events") ?? "",
       wordAudioPrepareCount: Number(state?.getAttribute("data-word-audio-prepare-count") ?? 0),
       wordAudioLastRequest: JSON.parse(state?.getAttribute("data-word-audio-last-request") ?? "null"),
+      sasayakiActionCount: Number(state?.getAttribute("data-sasayaki-action-count") ?? 0),
+      sasayakiLastAction: JSON.parse(state?.getAttribute("data-sasayaki-last-action") ?? "null"),
+      sasayakiPlaying: state?.getAttribute("data-sasayaki-playing") === "true",
+      sasayakiControls: document.querySelectorAll(".lookup-sasayaki-controls button").length,
       popup: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom },
       viewport: { width: window.innerWidth, height: window.innerHeight },
       controlsTop: controlsRect?.top ?? window.innerHeight,
@@ -493,6 +504,34 @@ async function main() {
     assert(playedAudio.wordAudioLastRequest.expression === "school" && playedAudio.wordAudioLastRequest.sources[0].id === "probe", "Playback should call the shared resolver with lookup text and stable source settings.", playedAudio);
     assert(configuredAnki.ankiPreviewButtons === 0 && configuredAnki.ankiPreviewRows === 0, "Configured popup should not expose manual Anki preview UI.", configuredAnki);
 
+    await openProbe(page, "ready", { ankiMode: "configured", sasayakiControls: true });
+    const sasayakiControls = await popupMetrics(page);
+    assert(sasayakiControls.sasayakiControls === 3, "Root lookup with a matched Sasayaki cue should expose replay, toggle, and play-forward controls.", sasayakiControls);
+    const replayPointerPreservedSelection = await page.getByRole("button", { name: "Replay Sasayaki cue", exact: true }).evaluate((button) => {
+      const event = new PointerEvent("pointerdown", { bubbles: true, cancelable: true });
+      button.dispatchEvent(event);
+      return event.defaultPrevented;
+    });
+    assert(replayPointerPreservedSelection, "Replay pointerdown should preserve the reader selection so the root popup stays open.", replayPointerPreservedSelection);
+    await page.getByRole("button", { name: "Play audio" }).first().click();
+    await page.waitForFunction(() => Number(document.querySelector(".probe-state")?.getAttribute("data-word-audio-prepare-count") ?? 0) === 1);
+    await page.getByRole("button", { name: "Replay Sasayaki cue", exact: true }).click();
+    const replaySasayaki = await popupMetrics(page);
+    assert(replaySasayaki.sasayakiLastAction.action === "replayCue" && replaySasayaki.sasayakiLastAction.popupId === "root", "Replay should target the root popup Sasayaki cue.", replaySasayaki);
+    assert(replaySasayaki.popupCount === 1, "Replay should keep the root dictionary popup open.", replaySasayaki);
+    assert(replaySasayaki.audioTitle.includes("Play word audio"), "Sasayaki controls should stop any active popup word audio before acting.", replaySasayaki);
+    await page.getByRole("button", { name: "Play Sasayaki", exact: true }).click();
+    const toggledSasayaki = await popupMetrics(page);
+    assert(toggledSasayaki.sasayakiLastAction.action === "togglePlayback" && toggledSasayaki.sasayakiPlaying, "Toggle should update the Sasayaki playback state.", toggledSasayaki);
+    assert(toggledSasayaki.popupCount === 1, "Toggle playback should keep the root dictionary popup open.", toggledSasayaki);
+    await page.getByRole("button", { name: "Play Sasayaki from this cue", exact: true }).click();
+    const forwardSasayaki = await popupMetrics(page);
+    assert(forwardSasayaki.sasayakiLastAction.action === "playForward", "Play-forward should dispatch the HSA root popup Sasayaki action.", forwardSasayaki);
+
+    await openProbe(page, "ready", { ankiMode: "configured", sasayakiControls: true, noSasayakiCue: true });
+    const noCueSasayaki = await popupMetrics(page);
+    assert(noCueSasayaki.sasayakiControls === 0, "Lookup popups without a matched Sasayaki cue should not show cue controls.", noCueSasayaki);
+
     await openProbe(page, "ready", { ankiMode: "configured" });
     await page.getByRole("button", { name: "Add to Anki" }).click();
     const ankiAdded = await popupMetrics(page);
@@ -527,6 +566,61 @@ async function main() {
     assert(ankiAdded.ankiLastFields.Media.includes("<img src=\"stored_hsw_") && ankiAdded.ankiLastFields.Media.includes(".svg"), "Add Anki should include stored dictionary media filenames.", ankiAdded);
     assert(ankiAdded.text.includes("Added Anki note 4242."), "Added state should show the Anki note id message.", ankiAdded);
     assert(ankiAdded.text.includes("Word audio stored as hsw_audio_probe.mp3"), "Add state should expose stored word audio.", ankiAdded);
+
+    await openProbe(page, "ready", { ankiMode: "configured", sasayakiField: true });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiSasayaki = await popupMetrics(page);
+    assert(
+      ankiSasayaki.operationEvents === "dictionary,cover,audio,sasayaki,add",
+      "Sasayaki audio should store after word audio and before addNote.",
+      ankiSasayaki,
+    );
+    assert(
+      ankiSasayaki.sasayakiStoreCount === 1 &&
+        ankiSasayaki.sasayakiLastRequest.bookId === "probe-book" &&
+        ankiSasayaki.sasayakiLastRequest.cueId === "cue-42" &&
+        ankiSasayaki.sasayakiLastRequest.sentence === "The academy school sentence contains the selected lookup term in a longer source paragraph.",
+      "Sasayaki export should pass bookId, cueId, and the Anki sentence context.",
+      ankiSasayaki,
+    );
+    assert(
+      ankiSasayaki.ankiLastFields.SentenceAudio === "[sound:hsw_sasayaki_probe.wav]",
+      "Stored Sasayaki WAV should render through the sentence-audio token.",
+      ankiSasayaki,
+    );
+
+    await openProbe(page, "ready", { ankiMode: "configured", sasayakiField: true, sasayakiStoreMode: "missing" });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiMissingSasayaki = await popupMetrics(page);
+    assert(
+      ankiMissingSasayaki.sasayakiStoreCount === 1 &&
+        ankiMissingSasayaki.ankiAddCount === 1 &&
+        ankiMissingSasayaki.ankiLastFields.SentenceAudio === "",
+      "Missing Sasayaki cues should warn and continue with a text note.",
+      ankiMissingSasayaki,
+    );
+    assert(ankiMissingSasayaki.text.includes("no longer matched"), "Missing Sasayaki warning should be visible.", ankiMissingSasayaki);
+
+    await openProbe(page, "ready", { ankiMode: "configured", sasayakiField: true, noSasayakiCue: true });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiNoActiveCue = await popupMetrics(page);
+    assert(
+      ankiNoActiveCue.sasayakiStoreCount === 0 &&
+        ankiNoActiveCue.ankiAddCount === 1 &&
+        ankiNoActiveCue.text.includes("No matched Sasayaki cue is active"),
+      "No active cue should skip native storage, warn, and continue.",
+      ankiNoActiveCue,
+    );
+
+    await openProbe(page, "ready", { ankiMode: "configured", sasayakiField: true, sasayakiStoreMode: "error" });
+    await page.getByRole("button", { name: "Add to Anki" }).click();
+    const ankiUnsafeSasayaki = await popupMetrics(page);
+    assert(
+      ankiUnsafeSasayaki.sasayakiStoreCount === 1 && ankiUnsafeSasayaki.ankiAddCount === 0,
+      "Unsafe Sasayaki sidecars should stop note creation.",
+      ankiUnsafeSasayaki,
+    );
+    assert(ankiUnsafeSasayaki.text.includes("escapes"), "Unsafe Sasayaki error should be visible.", ankiUnsafeSasayaki);
 
     await openProbe(page, "ready", { ankiMode: "configured", ankiAddMode: "syncWarning", forceSync: true });
     await page.getByRole("button", { name: "Add to Anki" }).click();

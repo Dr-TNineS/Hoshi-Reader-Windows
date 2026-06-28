@@ -179,6 +179,8 @@ async function visibleParagraphPoint(page) {
 
     const viewport = rv.getBoundingClientRect();
     for (const paragraph of rct.querySelectorAll("p")) {
+      if (paragraph.hasAttribute("data-offset-probe")) continue;
+      if (paragraph.hasAttribute("data-ruby-highlight-probe")) continue;
       const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT);
       while (walker.nextNode()) {
         const node = walker.currentNode;
@@ -216,8 +218,129 @@ async function visibleParagraphPoint(page) {
   });
 }
 
+async function offsetProbePoint(page) {
+  return page.evaluate(() => {
+    function inRange(value, start, end) {
+      return value >= start && value <= end;
+    }
+    function isReaderMatchableCodePoint(codePoint) {
+      return inRange(codePoint, 0x30, 0x39) ||
+        inRange(codePoint, 0x41, 0x5a) ||
+        inRange(codePoint, 0x61, 0x7a) ||
+        codePoint === 0x25cb ||
+        codePoint === 0x25ef ||
+        inRange(codePoint, 0x3005, 0x3007) ||
+        codePoint === 0x303b ||
+        inRange(codePoint, 0x3041, 0x3096) ||
+        inRange(codePoint, 0x309d, 0x309e) ||
+        inRange(codePoint, 0x30a1, 0x30fa) ||
+        codePoint === 0x30fc ||
+        inRange(codePoint, 0xff10, 0xff19) ||
+        inRange(codePoint, 0xff21, 0xff3a) ||
+        inRange(codePoint, 0xff41, 0xff5a) ||
+        inRange(codePoint, 0xff66, 0xff9d) ||
+        inRange(codePoint, 0x2e80, 0x2fdf) ||
+        inRange(codePoint, 0x3400, 0x4dbf) ||
+        inRange(codePoint, 0x4e00, 0x9fff) ||
+        inRange(codePoint, 0x20000, 0x2a6df) ||
+        inRange(codePoint, 0x2a700, 0x2b73f) ||
+        inRange(codePoint, 0x2b740, 0x2b81f) ||
+        inRange(codePoint, 0x2b820, 0x2ceaf) ||
+        inRange(codePoint, 0x2ceb0, 0x2ebef) ||
+        inRange(codePoint, 0x30000, 0x3134f) ||
+        inRange(codePoint, 0x31350, 0x323af);
+    }
+    function countChars(text) {
+      let count = 0;
+      for (const ch of text) {
+        if (isReaderMatchableCodePoint(ch.codePointAt(0))) count += 1;
+      }
+      return count;
+    }
+
+    const countReaderText = (root) => {
+      if (!root) return 0;
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode: (node) => node.parentElement?.closest("rt, rp")
+          ? NodeFilter.FILTER_REJECT
+          : NodeFilter.FILTER_ACCEPT,
+      });
+      let text = "";
+      while (walker.nextNode()) {
+        text += walker.currentNode.textContent ?? "";
+      }
+      return countChars(text);
+    };
+    const rubyProbeParagraph = document.querySelector("[data-ruby-highlight-probe]");
+    const paragraph = document.querySelector("[data-offset-probe]");
+    const h1 = document.querySelector(".rct h1");
+    const precedingRubyProbeChars = countReaderText(rubyProbeParagraph);
+    if (!(paragraph instanceof HTMLElement) || !(h1 instanceof HTMLElement)) {
+      throw new Error("Offset probe fixture not found.");
+    }
+    const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => node.parentElement?.closest("rt, rp")
+        ? NodeFilter.FILTER_REJECT
+        : NodeFilter.FILTER_ACCEPT,
+    });
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const text = node.textContent ?? "";
+      const index = text.indexOf("後");
+      if (index < 0) continue;
+      const range = document.createRange();
+      range.setStart(node, index);
+      range.setEnd(node, index + "後".length);
+      const rect = range.getBoundingClientRect();
+      range.detach();
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+        rubyProbeChars: precedingRubyProbeChars,
+        expectedOffset: countChars(h1.textContent ?? "") + countChars("始母"),
+        domOffset: Array.from(`${h1.textContent ?? ""}${rubyProbeParagraph?.textContent ?? ""}${paragraph.textContent ?? ""}`.split("後")[0]).length,
+      };
+    }
+    throw new Error("Offset probe target was not found.");
+  });
+}
+
+async function rubyHighlightProbePoint(page, targetText = "優") {
+  return page.evaluate((target) => {
+    const paragraph = document.querySelector("[data-ruby-highlight-probe]");
+    if (!(paragraph instanceof HTMLElement)) {
+      throw new Error("Ruby highlight probe fixture not found.");
+    }
+    const walker = document.createTreeWalker(paragraph, NodeFilter.SHOW_TEXT, {
+      acceptNode: (node) => node.parentElement?.closest("rt, rp")
+        ? NodeFilter.FILTER_REJECT
+        : NodeFilter.FILTER_ACCEPT,
+    });
+    while (walker.nextNode()) {
+      const node = walker.currentNode;
+      const text = node.textContent ?? "";
+      const index = text.indexOf(target);
+      if (index < 0) continue;
+      const range = document.createRange();
+      range.setStart(node, index);
+      range.setEnd(node, index + target.length);
+      const rect = range.getBoundingClientRect();
+      range.detach();
+      return {
+        x: rect.left + rect.width / 2,
+        y: rect.top + rect.height / 2,
+      };
+    }
+    throw new Error("Ruby highlight probe target was not found.");
+  }, targetText);
+}
+
 async function probeSelectionText(page) {
   return await page.locator(".probe-state").getAttribute("data-selection") ?? "";
+}
+
+async function probeSelectionChapterOffset(page) {
+  return Number(await page.locator(".probe-state").getAttribute("data-selection-chapter-offset") ?? -1);
 }
 
 async function probeDomSelectionText(page) {
@@ -232,8 +355,110 @@ async function probeRenderedHighlightText(page) {
   return await page.locator(".probe-state").getAttribute("data-rendered-highlight-text") ?? "";
 }
 
+async function readerLookupHighlightState(page) {
+  return page.evaluate(() => {
+    const cssHighlightSize = CSS.highlights?.get("hsw-reader-lookup-selection")?.size ?? 0;
+    const layer = document.querySelector(".lookup-highlight-layer");
+    const rects = Array.from(document.querySelectorAll(".lookup-highlight-rect"));
+    const rectObject = (rect) => ({
+      left: rect.left,
+      top: rect.top,
+      right: rect.right,
+      bottom: rect.bottom,
+      width: rect.width,
+      height: rect.height,
+    });
+    const textNodeRects = (root) => {
+      const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+        acceptNode: (node) => node.parentElement?.closest("rt, rp")
+          ? NodeFilter.FILTER_REJECT
+          : NodeFilter.FILTER_ACCEPT,
+      });
+      const result = [];
+      while (walker.nextNode()) {
+        const node = walker.currentNode;
+        const text = node.textContent ?? "";
+        if (!text.trim()) continue;
+        const range = document.createRange();
+        range.selectNodeContents(node);
+        Array.from(range.getClientRects())
+          .filter((rect) => rect.width > 0 && rect.height > 0)
+          .forEach((rect) => result.push(rectObject(rect)));
+        range.detach();
+      }
+      return result;
+    };
+    const rubySamples = Array.from(document.querySelectorAll("[data-ruby-highlight-probe] ruby"))
+      .map((ruby) => ({
+        baseText: textNodeRects(ruby).length ? Array.from(ruby.childNodes)
+          .filter((node) => node.nodeType === Node.TEXT_NODE)
+          .map((node) => node.textContent ?? "")
+          .join("") : "",
+        baseRects: textNodeRects(ruby),
+        annotationRects: Array.from(ruby.querySelectorAll("rt, rp"))
+          .flatMap((element) => Array.from(element.getClientRects()))
+          .filter((rect) => rect.width > 0 && rect.height > 0)
+          .map(rectObject),
+      }));
+
+    return {
+      text: layer instanceof HTMLElement ? layer.dataset.highlightText ?? "" : "",
+      rectCount: rects.length,
+      rects: rects.map((rect) => rectObject(rect.getBoundingClientRect())),
+      rubySamples,
+      cssHighlightSize,
+      domSelection: window.getSelection()?.toString().replace(/\s+/g, " ").trim() ?? "",
+    };
+  });
+}
+
+function rectContainsCenter(outer, inner) {
+  const x = inner.left + inner.width / 2;
+  const y = inner.top + inner.height / 2;
+  return x >= outer.left && x <= outer.right && y >= outer.top && y <= outer.bottom;
+}
+
+function rubyHighlightGeometry(state, rubyText) {
+  const selectedRubySample = state.rubySamples.find((sample) => sample.baseText.includes(rubyText));
+  const rubyCoveredByUnifiedRect = !!selectedRubySample && state.rects.some((rect) => (
+    selectedRubySample.baseRects.some((baseRect) => rectContainsCenter(rect, baseRect)) &&
+    selectedRubySample.annotationRects.some((annotationRect) => rectContainsCenter(rect, annotationRect))
+  ));
+  const allRubyBaseRects = state.rubySamples.flatMap((sample) => sample.baseRects);
+  const allRubyAnnotationRects = state.rubySamples.flatMap((sample) => sample.annotationRects);
+  const annotationOnlyRects = state.rects.filter((rect) => (
+    allRubyAnnotationRects.some((annotationRect) => rectContainsCenter(rect, annotationRect)) &&
+    !allRubyBaseRects.some((baseRect) => rectContainsCenter(rect, baseRect))
+  ));
+  return { selectedRubySample, rubyCoveredByUnifiedRect, annotationOnlyRects };
+}
+
+async function sasayakiHighlightState(page) {
+  return page.evaluate(() => {
+    const cssHighlightSize = CSS.highlights?.get("hsw-reader-sasayaki-cue")?.size ?? 0;
+    const reader = document.querySelector(".rc");
+    const viewport = document.querySelector(".rv");
+    const layer = document.querySelector(".sasayaki-highlight-layer");
+    const rects = Array.from(document.querySelectorAll(".sasayaki-highlight-rect"));
+    const firstRect = rects[0];
+    return {
+      text: layer instanceof HTMLElement ? layer.dataset.highlightText ?? "" : "",
+      rectCount: rects.length,
+      cssHighlightSize,
+      scrollTop: viewport instanceof HTMLElement ? viewport.scrollTop : -1,
+      pageSize: viewport instanceof HTMLElement ? viewport.clientHeight : 0,
+      textColor: reader ? getComputedStyle(reader).getPropertyValue("--sasayaki-highlight-text").trim() : "",
+      backgroundColor: firstRect ? getComputedStyle(firstRect).backgroundColor : "",
+    };
+  });
+}
+
 async function probeSentenceText(page) {
   return await page.locator(".probe-state").getAttribute("data-sentence") ?? "";
+}
+
+async function probeSentenceOffset(page) {
+  return Number(await page.locator(".probe-state").getAttribute("data-sentence-offset") ?? -1);
 }
 
 async function probeSelectionCount(page) {
@@ -394,6 +619,25 @@ async function main() {
 
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.reload();
+
+    const rubyOffsetPoint = await offsetProbePoint(page);
+    await page.mouse.click(rubyOffsetPoint.x, rubyOffsetPoint.y);
+    await page.waitForFunction(() => {
+      const value = document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "";
+      return value.length > 0;
+    }, { timeout: 10000 });
+    const rubyOffsetSelection = await probeSelectionText(page);
+    const rubyChapterOffset = await probeSelectionChapterOffset(page);
+    const expectedRubyChapterOffset = rubyOffsetPoint.expectedOffset + rubyOffsetPoint.rubyProbeChars;
+    assert(
+      rubyOffsetSelection.startsWith("後") &&
+        rubyChapterOffset === expectedRubyChapterOffset &&
+        rubyChapterOffset < rubyOffsetPoint.domOffset,
+      "Reader selection chapterOffset should use Sasayaki/reader character coordinates, not raw DOM text offsets that include ruby text.",
+      { rubyOffsetPoint, rubyOffsetSelection, rubyChapterOffset },
+    );
+    await page.keyboard.press("Escape");
+    await page.waitForFunction(() => (document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "") === "");
 
     const adjacentPoints = await adjacentReaderCharacterPoints(page);
     const coalescedStartCount = await probeSelectionCount(page);
@@ -563,10 +807,15 @@ async function main() {
     assert(shiftHoverDomSelection === "", "Shift hover lookup should not leave a native browser selection.", { shiftHoverDomSelection, shiftHoverRenderedHighlight });
     assert(shiftHoverRenderedHighlight === "", "Shift hover should keep lookup selection hidden while no matched result is available.", { shiftHoverRenderedHighlight });
     const shiftHoverSentence = await probeSentenceText(page);
+    const shiftHoverSentenceOffset = await probeSentenceOffset(page);
     assert(
-      shiftHoverSentence.includes(shiftHoverSelection) && shiftHoverSentence.length > shiftHoverSelection.length,
-      "Shift hover should capture the source paragraph separately from the lookup term.",
-      { lookupPoint, shiftHoverSelection, shiftHoverSentence },
+      shiftHoverSentence.includes(shiftHoverSelection) &&
+        shiftHoverSentence.length > shiftHoverSelection.length &&
+        !shiftHoverSentence.slice(0, -1).includes("。") &&
+        shiftHoverSentenceOffset >= 0 &&
+        shiftHoverSentence.slice(shiftHoverSentenceOffset, shiftHoverSentenceOffset + shiftHoverSelection.length) === shiftHoverSelection,
+      "Shift hover should capture only the sentence containing the lookup term with a usable Anki sentence offset.",
+      { lookupPoint, shiftHoverSelection, shiftHoverSentence, shiftHoverSentenceOffset },
     );
     const shiftHoverCount = await probeSelectionCount(page);
 
@@ -654,6 +903,60 @@ async function main() {
       { highlightPoint, fullLookupSelection, narrowedDomSelection, renderedHighlightText, highlightText },
     );
 
+    await page.goto(`${url}&lookupHighlightMode=rubyFull`);
+    await page.locator(".rv.ready").waitFor({ timeout: 10000 });
+    const rubyHighlightPoint = await rubyHighlightProbePoint(page);
+    await page.mouse.click(rubyHighlightPoint.x, rubyHighlightPoint.y);
+    await page.waitForFunction(() => (document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "").length > 0);
+    await page.waitForFunction(() => {
+      const state = document.querySelector(".probe-state");
+      return (state?.getAttribute("data-highlight-text") ?? "") === "優しい微笑み" &&
+        (state?.getAttribute("data-rendered-highlight-text") ?? "") === "優しい微笑み" &&
+        (state?.getAttribute("data-dom-selection") ?? "") === "";
+    }, { timeout: 10000 });
+    const rubyLookupSelection = await probeSelectionText(page);
+    const rubyHighlightState = await readerLookupHighlightState(page);
+    const rubyGeometry = rubyHighlightGeometry(rubyHighlightState, "微笑");
+    assert(
+      rubyLookupSelection.startsWith("優しい微笑み") &&
+        rubyLookupSelection.length > "優しい微笑み".length &&
+        rubyHighlightState.text === "優しい微笑み" &&
+        rubyHighlightState.rectCount === 1 &&
+        rubyGeometry.rubyCoveredByUnifiedRect &&
+        rubyGeometry.annotationOnlyRects.length === 0 &&
+        rubyHighlightState.cssHighlightSize === 0 &&
+        rubyHighlightState.domSelection === "",
+      "Ruby lookup highlight should render one HSA-style ruby-aware column without annotation-only fragments.",
+      { rubyHighlightPoint, rubyLookupSelection, rubyHighlightState, rubyGeometry },
+    );
+
+    await page.goto(`${url}&lookupHighlightMode=rubyKagami`);
+    await page.locator(".rv.ready").waitFor({ timeout: 10000 });
+    const kagamiRubyPoint = await rubyHighlightProbePoint(page, "不");
+    await page.mouse.click(kagamiRubyPoint.x, kagamiRubyPoint.y);
+    await page.waitForFunction(() => (document.querySelector(".probe-state")?.getAttribute("data-selection") ?? "").length > 0);
+    await page.waitForFunction(() => {
+      const state = document.querySelector(".probe-state");
+      return (state?.getAttribute("data-highlight-text") ?? "") === "不機嫌" &&
+        (state?.getAttribute("data-rendered-highlight-text") ?? "") === "不機嫌" &&
+        (state?.getAttribute("data-dom-selection") ?? "") === "";
+    }, { timeout: 10000 });
+    const kagamiLookupSelection = await probeSelectionText(page);
+    const kagamiHighlightState = await readerLookupHighlightState(page);
+    const kagamiRubyGeometry = rubyHighlightGeometry(kagamiHighlightState, "不機嫌");
+    assert(
+      kagamiLookupSelection.startsWith("不機嫌") &&
+        kagamiLookupSelection.length > "不機嫌".length &&
+        kagamiHighlightState.text === "不機嫌" &&
+        kagamiHighlightState.rectCount === 1 &&
+        kagamiRubyGeometry.rubyCoveredByUnifiedRect &&
+        kagamiRubyGeometry.annotationOnlyRects.length === 0 &&
+        kagamiHighlightState.cssHighlightSize === 0 &&
+        kagamiHighlightState.domSelection === "",
+      "Kagami-style ruby lookup highlight should render one HSA-style ruby-aware column.",
+      { kagamiRubyPoint, kagamiLookupSelection, kagamiHighlightState, kagamiRubyGeometry },
+    );
+
     await page.locator(".rv").click();
     await page.keyboard.press("Control+ArrowLeft");
     await waitForProbeChapter(page, 1);
@@ -668,6 +971,11 @@ async function main() {
       await page.keyboard.press("ArrowLeft");
       await waitForPageIndex(page, pageNumber - 1);
     }
+    await page.waitForFunction(() => {
+      const state = document.querySelector(".probe-state");
+      return state?.getAttribute("data-chapter-index") === "0" &&
+        state?.getAttribute("data-book-read-chars") === state?.getAttribute("data-chapter-read-chars");
+    }, { timeout: 10000 });
     const beforeChapterBoundary = await probeProgressState(page);
     await page.keyboard.press("ArrowLeft");
     await waitForProbeChapter(page, 1);
@@ -707,7 +1015,51 @@ async function main() {
     assert(!narrow.horizontalOverflow, "Reader fixture should not create horizontal overflow in a narrow window.", narrow);
     assert(narrow.totalPages >= desktop.totalPages, "Narrow reader should keep a paginated layout.", { desktop, narrow });
 
-    console.log(JSON.stringify({ desktop, narrow }, null, 2));
+    await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto(`${url}&sasayakiMode=highlight&theme=light`);
+    await page.locator(".rv.ready").waitFor({ timeout: 10000 });
+    await page.waitForFunction(() => document.querySelectorAll(".sasayaki-highlight-rect").length > 0);
+    const lightCue = await sasayakiHighlightState(page);
+    assert(
+      lightCue.text.length > 0 && lightCue.rectCount > 0 && lightCue.cssHighlightSize === 0 && lightCue.scrollTop === 0,
+      "A current-chapter cue should render an overlay highlight without CSS Highlight or page movement when reveal is disabled.",
+      lightCue,
+    );
+    const highlightedMetrics = await readerMetrics(page);
+    assert(
+      highlightedMetrics.totalPages === desktop.totalPages,
+      "Sasayaki highlighting must not change pagination measurements.",
+      { desktop, highlightedMetrics },
+    );
+    assert(
+      lightCue.textColor === "#000000" && lightCue.backgroundColor === "rgba(135, 206, 235, 0.4)",
+      "Light mode should expose the HSA-aligned Sasayaki cue colors.",
+      lightCue,
+    );
+
+    await page.goto(`${url}&sasayakiMode=reveal&theme=dark`);
+    await page.locator(".rv.ready").waitFor({ timeout: 10000 });
+    await page.waitForFunction(() => {
+      const viewport = document.querySelector(".rv");
+      return viewport instanceof HTMLElement && viewport.scrollTop > 0 &&
+        document.querySelectorAll(".sasayaki-highlight-rect").length > 0;
+    });
+    const darkCue = await sasayakiHighlightState(page);
+    assert(
+      darkCue.cssHighlightSize === 0 &&
+        darkCue.rectCount > 0 &&
+        darkCue.scrollTop > 0 &&
+        Math.abs(darkCue.scrollTop - Math.round(darkCue.scrollTop / darkCue.pageSize) * darkCue.pageSize) <= 1,
+      "Revealing an active cue should move only to an aligned reader page.",
+      darkCue,
+    );
+    assert(
+      darkCue.textColor === "#ffffff" && darkCue.backgroundColor === "rgba(135, 206, 235, 0.4)",
+      "Dark mode should expose the HSA-aligned Sasayaki cue colors.",
+      darkCue,
+    );
+
+    console.log(JSON.stringify({ desktop, narrow, lightCue, darkCue }, null, 2));
   } finally {
     if (browser) await browser.close();
     stopServer(vite);
