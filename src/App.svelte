@@ -134,6 +134,8 @@
   let sasayakiSaveWaiters: Array<(ok: boolean) => void> = [];
   let sasayakiLastPersistedSecond = -1;
   let sasayakiExitingReader = false;
+  let sasayakiPlaybackRunId = 0;
+  let sasayakiSaveSeq = 0;
   let sasayakiActiveCue = $state<SasayakiPlaybackCue | null>(null);
   let sasayakiCueReveal = $state(false);
   let sasayakiCueSignal = $state(0);
@@ -166,6 +168,9 @@
 
   interface SasayakiPlaybackSnapshot {
     bookId: string;
+    runId: number;
+    saveSeq: number;
+    reason: string;
     lastPosition: number;
     delay: number;
     rate: number;
@@ -173,6 +178,20 @@
     autoPause: boolean;
     skipAction: SasayakiSkipAction;
   }
+
+  type SasayakiPersistenceTraceEntry = Record<string, unknown> & {
+    event: string;
+    at: number;
+    bookId: string | null;
+    runId: number;
+    currentTime: number;
+    sessionLastPosition: number | null;
+    audioCurrentTime: number | null;
+    audioPaused: boolean | null;
+    view: "bookshelf" | "reader";
+  };
+
+  const SASAYAKI_PERSISTENCE_TRACE_LIMIT = 160;
 
   // Initialize persisted reading state once. Returning to the shelf should stay
   // on the shelf, so session restore remains intentionally one-shot.
@@ -223,14 +242,14 @@
   $effect(() => {
     if (!isTauriRuntime()) return;
     const handleUnload = () => {
-      void stopSasayakiPlayback(true);
+      void stopSasayakiPlayback(true, "window-unload");
     };
     globalThis.addEventListener("pagehide", handleUnload);
     globalThis.addEventListener("beforeunload", handleUnload);
     return () => {
       globalThis.removeEventListener("pagehide", handleUnload);
       globalThis.removeEventListener("beforeunload", handleUnload);
-      void stopSasayakiPlayback(true);
+      void stopSasayakiPlayback(true, "effect-cleanup");
     };
   });
 
@@ -287,7 +306,7 @@
     }
 
     if (sasayakiPlaybackBookId && sasayakiPlaybackBookId !== locator.bookId) {
-      await stopSasayakiPlayback(true);
+      await stopSasayakiPlayback(true, "book-switch");
     }
     currentBookLocator = locator;
     if (locator.bookId) {
@@ -626,7 +645,7 @@
       sasayakiStatus = next;
       sasayakiCues = [];
       if (sasayakiPlaybackBookId === book.bookId) {
-        await stopSasayakiPlayback(false);
+        await stopSasayakiPlayback(false, "remove-sasayaki");
         sasayakiPlayback = null;
         sasayakiPlaybackBookId = null;
       }
@@ -645,6 +664,7 @@
 
   async function prepareSasayakiPlayback(bookId: string | null) {
     teardownSasayakiAudio();
+    const runId = ++sasayakiPlaybackRunId;
     sasayakiPlaybackBookId = bookId;
     sasayakiPlayback = null;
     sasayakiPlaybackOpen = false;
@@ -661,21 +681,71 @@
       sasayakiLookupResumeTimer = null;
     }
     sasayakiCueNavigationRun += 1;
-    if (!bookId || !isTauriRuntime()) return;
+    recordSasayakiPersistence("prepare.start", { bookId, runId });
+    if (!bookId || !isTauriRuntime()) {
+      recordSasayakiPersistence("prepare.skip", { bookId, runId, reason: bookId ? "not-tauri" : "no-book" });
+      return;
+    }
     try {
       const session = await invoke<SasayakiPlaybackSession>("sasayaki_prepare_playback", { bookId });
-      if (sasayakiPlaybackBookId !== bookId) return;
+      if (sasayakiPlaybackBookId !== bookId || sasayakiPlaybackRunId !== runId) {
+        recordSasayakiPersistence("prepare.stale", {
+          bookId,
+          runId,
+          currentRunId: sasayakiPlaybackRunId,
+          currentBookId: sasayakiPlaybackBookId,
+          sessionLastPosition: session.lastPosition,
+        });
+        return;
+      }
       sasayakiPlayback = session;
       setSasayakiAudioSource(session);
       sasayakiCurrentTime = session.lastPosition;
       scheduleSasayakiCuePresentation(false, true);
+      recordSasayakiPersistence("prepare.success", {
+        bookId,
+        runId,
+        sessionLastPosition: session.lastPosition,
+        audioAvailable: session.audioAvailable,
+        configured: session.configured,
+      });
     } catch (e) {
       if (sasayakiPlaybackBookId === bookId) sasayakiPlaybackError = String(e);
+      recordSasayakiPersistence("prepare.failure", { bookId, runId, error: String(e) });
     }
   }
 
   function sasayakiDiagnosticsEnabled(): boolean {
     return typeof localStorage !== "undefined" && localStorage.getItem("hoshi_sasayaki_debug") === "1";
+  }
+
+  function sasayakiPersistenceWindow(): Window & {
+    __HSW_SASAYAKI_PERSISTENCE__?: SasayakiPersistenceTraceEntry[];
+  } {
+    return window as Window & {
+      __HSW_SASAYAKI_PERSISTENCE__?: SasayakiPersistenceTraceEntry[];
+    };
+  }
+
+  function recordSasayakiPersistence(event: string, details: Record<string, unknown> = {}) {
+    const audio = sasayakiAudio;
+    const entry: SasayakiPersistenceTraceEntry = {
+      event,
+      at: Date.now(),
+      bookId: sasayakiPlaybackBookId,
+      runId: sasayakiPlaybackRunId,
+      currentTime: sasayakiCurrentTime,
+      sessionLastPosition: sasayakiPlayback?.lastPosition ?? null,
+      audioCurrentTime: audio && Number.isFinite(audio.currentTime) ? audio.currentTime : null,
+      audioPaused: audio ? audio.paused : null,
+      view,
+      ...details,
+    };
+    const target = sasayakiPersistenceWindow();
+    const trace = target.__HSW_SASAYAKI_PERSISTENCE__ ?? [];
+    trace.push(entry);
+    target.__HSW_SASAYAKI_PERSISTENCE__ = trace.slice(-SASAYAKI_PERSISTENCE_TRACE_LIMIT);
+    if (sasayakiDiagnosticsEnabled()) console.debug("[HSW SasayakiPersistence]", entry);
   }
 
   function recordSasayakiDiagnostic(event: string, details: Record<string, unknown> = {}) {
@@ -700,6 +770,10 @@
       ? Math.floor(Math.max(0, session?.lastPosition ?? 0))
       : -1;
     recordSasayakiDiagnostic("audio-source", { path: nextPath });
+    recordSasayakiPersistence("audio.source", {
+      hasPath: Boolean(nextPath),
+      sessionLastPosition: session?.lastPosition ?? null,
+    });
   }
 
   function restoreWordAudioCoordination(id: number | void = wordAudioCoordination?.id) {
@@ -782,6 +856,11 @@
   }
 
   function teardownSasayakiAudio() {
+    recordSasayakiPersistence("stop.teardown", {
+      playing: sasayakiPlaying,
+      hasAudio: Boolean(sasayakiAudio),
+      pendingSave: Boolean(sasayakiPendingSave),
+    });
     replaceWordAudioCoordination();
     clearSasayakiCueTimer();
     clearSasayakiReplayCleanup();
@@ -893,6 +972,7 @@
       sasayakiLastTimeCommitAt = performance.now();
       scheduleSasayakiCuePresentation(false, true);
       recordSasayakiDiagnostic("loadedmetadata", { restored });
+      recordSasayakiPersistence("metadata.restore", { restored, duration: sasayakiDuration });
     }
   }
 
@@ -901,7 +981,8 @@
     if (sasayakiReplayCleanup) return;
     const position = clampPlaybackTime(sasayakiAudio?.currentTime ?? sasayakiCurrentTime, sasayakiDuration);
     if (shouldPersistPlaybackSecond(position, sasayakiLastPersistedSecond)) {
-      scheduleSasayakiPlaybackSave(true);
+      recordSasayakiPersistence("timeupdate.persist", { position });
+      scheduleSasayakiPlaybackSave(true, "timeupdate");
     }
   }
 
@@ -922,7 +1003,10 @@
       recordSasayakiDiagnostic("pause", { ignored: "teardown" });
       return;
     }
-    if (!sasayakiSuppressPauseSave) scheduleSasayakiPlaybackSave(true);
+    if (!sasayakiSuppressPauseSave) {
+      recordSasayakiPersistence("pause.persist", { position: sasayakiCurrentTime });
+      scheduleSasayakiPlaybackSave(true, "pause");
+    }
     recordSasayakiDiagnostic("pause");
   }
 
@@ -932,7 +1016,8 @@
     sasayakiPlaying = false;
     sasayakiCurrentTime = audio ? clampPlaybackTime(audio.duration, sasayakiDuration) : sasayakiDuration;
     scheduleSasayakiCuePresentation(false, true);
-    scheduleSasayakiPlaybackSave(true);
+    recordSasayakiPersistence("ended.persist", { position: sasayakiCurrentTime });
+    scheduleSasayakiPlaybackSave(true, "ended");
     recordSasayakiDiagnostic("ended");
   }
 
@@ -943,21 +1028,22 @@
     recordSasayakiDiagnostic("error");
   }
 
-  function scheduleSasayakiPlaybackSave(immediate = false) {
+  function scheduleSasayakiPlaybackSave(immediate = false, reason = "scheduled") {
     if (sasayakiSaveTimer) clearTimeout(sasayakiSaveTimer);
+    recordSasayakiPersistence("save.enqueue", { immediate, reason });
     if (immediate) {
       sasayakiSaveTimer = null;
-      void saveSasayakiPlayback();
+      void saveSasayakiPlayback(reason);
       return;
     }
     sasayakiSaveTimer = setTimeout(() => {
       sasayakiSaveTimer = null;
-      void saveSasayakiPlayback();
+      void saveSasayakiPlayback(reason);
     }, 250);
   }
 
-  function saveSasayakiPlayback(): Promise<boolean> {
-    const snapshot = captureSasayakiPlaybackSnapshot();
+  function saveSasayakiPlayback(reason = "manual"): Promise<boolean> {
+    const snapshot = captureSasayakiPlaybackSnapshot(reason);
     if (!snapshot) return Promise.resolve(true);
     sasayakiPendingSave = snapshot;
     const saveDone = new Promise<boolean>((resolve) => {
@@ -967,13 +1053,23 @@
     return saveDone;
   }
 
-  function captureSasayakiPlaybackSnapshot(): SasayakiPlaybackSnapshot | null {
+  function captureSasayakiPlaybackSnapshot(reason: string): SasayakiPlaybackSnapshot | null {
     const bookId = sasayakiPlaybackBookId;
     const session = sasayakiPlayback;
-    if (!bookId || !session?.configured || !isTauriRuntime()) return null;
+    if (!bookId || !session?.configured || !isTauriRuntime()) {
+      recordSasayakiPersistence("save.capture", {
+        reason,
+        skipped: true,
+        skipReason: !bookId ? "no-book" : !session?.configured ? "not-configured" : "not-tauri",
+      });
+      return null;
+    }
     const lastPosition = clampPlaybackTime(sasayakiAudio?.currentTime ?? sasayakiCurrentTime, sasayakiDuration);
-    return {
+    const snapshot = {
       bookId,
+      runId: sasayakiPlaybackRunId,
+      saveSeq: ++sasayakiSaveSeq,
+      reason,
       lastPosition,
       delay: session.delay,
       rate: session.rate,
@@ -981,17 +1077,35 @@
       autoPause: session.autoPause,
       skipAction: session.skipAction,
     };
+    recordSasayakiPersistence("save.capture", {
+      reason,
+      saveSeq: snapshot.saveSeq,
+      snapshotLastPosition: snapshot.lastPosition,
+    });
+    return snapshot;
   }
 
   function drainSasayakiPlaybackSaves() {
     if (sasayakiSaveWorkerRunning) return;
     sasayakiSaveWorkerRunning = true;
+    recordSasayakiPersistence("save.drain", { pending: Boolean(sasayakiPendingSave) });
     void (async () => {
       let ok = true;
       try {
         while (sasayakiPendingSave) {
           const snapshot = sasayakiPendingSave;
           sasayakiPendingSave = null;
+          if (snapshot.runId !== sasayakiPlaybackRunId || snapshot.bookId !== sasayakiPlaybackBookId) {
+            recordSasayakiPersistence("save.stale", {
+              saveSeq: snapshot.saveSeq,
+              snapshotRunId: snapshot.runId,
+              currentRunId: sasayakiPlaybackRunId,
+              snapshotBookId: snapshot.bookId,
+              currentBookId: sasayakiPlaybackBookId,
+              snapshotLastPosition: snapshot.lastPosition,
+              reason: snapshot.reason,
+            });
+          }
           ok = await persistSasayakiPlaybackSnapshot(snapshot);
         }
       } finally {
@@ -1008,6 +1122,12 @@
   }
 
   async function persistSasayakiPlaybackSnapshot(snapshot: SasayakiPlaybackSnapshot): Promise<boolean> {
+    recordSasayakiPersistence("save.start", {
+      saveSeq: snapshot.saveSeq,
+      snapshotRunId: snapshot.runId,
+      snapshotLastPosition: snapshot.lastPosition,
+      reason: snapshot.reason,
+    });
     try {
       const saved = await invoke<SasayakiPlaybackSession>("sasayaki_save_playback", {
         bookId: snapshot.bookId,
@@ -1018,19 +1138,42 @@
         autoPause: snapshot.autoPause,
         skipAction: snapshot.skipAction,
       });
-      if (sasayakiPlaybackBookId !== snapshot.bookId) return true;
+      if (sasayakiPlaybackBookId !== snapshot.bookId || sasayakiPlaybackRunId !== snapshot.runId) {
+        recordSasayakiPersistence("save.success", {
+          saveSeq: snapshot.saveSeq,
+          snapshotRunId: snapshot.runId,
+          snapshotLastPosition: snapshot.lastPosition,
+          stale: true,
+          returnedLastPosition: saved.lastPosition,
+        });
+        return true;
+      }
       sasayakiPlayback = { ...saved, lastPosition: snapshot.lastPosition };
       if (!sasayakiAudio || sasayakiAudio.paused) sasayakiCurrentTime = snapshot.lastPosition;
       sasayakiLastPersistedSecond = Math.floor(Math.max(0, snapshot.lastPosition));
+      recordSasayakiPersistence("save.success", {
+        saveSeq: snapshot.saveSeq,
+        snapshotRunId: snapshot.runId,
+        snapshotLastPosition: snapshot.lastPosition,
+        returnedLastPosition: saved.lastPosition,
+      });
       recordSasayakiDiagnostic("save", { time: snapshot.lastPosition });
       return true;
     } catch (e) {
       if (sasayakiPlaybackBookId === snapshot.bookId) sasayakiPlaybackError = String(e);
+      recordSasayakiPersistence("save.failure", {
+        saveSeq: snapshot.saveSeq,
+        snapshotRunId: snapshot.runId,
+        snapshotLastPosition: snapshot.lastPosition,
+        reason: snapshot.reason,
+        error: String(e),
+      });
       return false;
     }
   }
 
-  async function stopSasayakiPlayback(save: boolean): Promise<boolean> {
+  async function stopSasayakiPlayback(save: boolean, reason = "stop"): Promise<boolean> {
+    recordSasayakiPersistence("stop.start", { save, reason });
     replaceWordAudioCoordination();
     if (sasayakiLookupResumeTimer) {
       clearTimeout(sasayakiLookupResumeTimer);
@@ -1043,11 +1186,13 @@
     }
     if (sasayakiAudio) {
       sasayakiCurrentTime = sasayakiAudio.currentTime;
+      recordSasayakiPersistence("stop.sample", { sampledTime: sasayakiCurrentTime, reason });
       sasayakiSuppressPauseSave = true;
       sasayakiAudio.pause();
       sasayakiSuppressPauseSave = false;
     }
-    const saved = save ? await saveSasayakiPlayback() : true;
+    const saved = save ? await saveSasayakiPlayback(reason) : true;
+    recordSasayakiPersistence("stop.saveResult", { saved, reason });
     if (!saved) return false;
     teardownSasayakiAudio();
     sasayakiPlaybackOpen = false;
@@ -1090,7 +1235,10 @@
     sasayakiCurrentTime = target;
     sasayakiLastTimeCommitAt = performance.now();
     scheduleSasayakiCuePresentation(revealCue, true);
-    if (savePosition) scheduleSasayakiPlaybackSave(true);
+    if (savePosition) {
+      recordSasayakiPersistence("seek.persist", { target });
+      scheduleSasayakiPlaybackSave(true, "seek");
+    }
     recordSasayakiDiagnostic("seek", { target });
   }
 
@@ -1128,34 +1276,34 @@
     const normalized = Math.max(0.5, Math.min(2, rate));
     sasayakiPlayback = { ...sasayakiPlayback, rate: normalized };
     if (sasayakiAudio) sasayakiAudio.playbackRate = normalized;
-    scheduleSasayakiPlaybackSave();
+    scheduleSasayakiPlaybackSave(false, "rate");
   }
 
   function setSasayakiDelay(delay: number) {
     if (!sasayakiPlayback) return;
     sasayakiPlayback = { ...sasayakiPlayback, delay: Math.max(-2, Math.min(2, delay)) };
     scheduleSasayakiCuePresentation(false, true);
-    scheduleSasayakiPlaybackSave();
+    scheduleSasayakiPlaybackSave(false, "delay");
   }
 
   function setSasayakiAutoScroll(autoScroll: boolean) {
     if (!sasayakiPlayback) return;
     sasayakiPlayback = { ...sasayakiPlayback, autoScroll };
     scheduleSasayakiCuePresentation(autoScroll, true);
-    scheduleSasayakiPlaybackSave();
+    scheduleSasayakiPlaybackSave(false, "auto-scroll");
   }
 
   function setSasayakiAutoPause(autoPause: boolean) {
     if (!sasayakiPlayback) return;
     sasayakiPlayback = { ...sasayakiPlayback, autoPause };
     if (!autoPause) sasayakiPausedByLookup = false;
-    scheduleSasayakiPlaybackSave();
+    scheduleSasayakiPlaybackSave(false, "auto-pause");
   }
 
   function setSasayakiSkipAction(skipAction: SasayakiSkipAction) {
     if (!sasayakiPlayback) return;
     sasayakiPlayback = { ...sasayakiPlayback, skipAction };
-    scheduleSasayakiPlaybackSave();
+    scheduleSasayakiPlaybackSave(false, "skip-action");
   }
 
   function pauseSasayakiForLookup() {
@@ -1844,13 +1992,21 @@
   }
 
   async function backToShelf() {
-    if (sasayakiExitingReader) return;
+    if (sasayakiExitingReader) {
+      recordSasayakiPersistence("backToShelf.blocked", { reason: "already-exiting" });
+      return;
+    }
+    recordSasayakiPersistence("backToShelf.start");
     sasayakiExitingReader = true;
     closeReaderSelection();
     try {
-      const stopped = await stopSasayakiPlayback(true);
-      if (!stopped) return;
+      const stopped = await stopSasayakiPlayback(true, "back-to-shelf");
+      if (!stopped) {
+        recordSasayakiPersistence("backToShelf.blocked", { reason: "save-failed" });
+        return;
+      }
       view = "bookshelf";
+      recordSasayakiPersistence("backToShelf.success");
     } finally {
       sasayakiExitingReader = false;
     }

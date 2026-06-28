@@ -352,6 +352,16 @@ pub fn sasayaki_save_playback(
     skip_action: SasayakiSkipAction,
     app: AppHandle,
 ) -> Result<SasayakiPlaybackSession, String> {
+    log::info!(
+        "sasayaki.save.command.start book_id={} last_position={:.3} delay={:.3} rate={:.3} auto_scroll={} auto_pause={} skip_action={:?}",
+        book_id,
+        last_position,
+        delay,
+        rate,
+        auto_scroll,
+        auto_pause,
+        skip_action
+    );
     let book_dir = library_book_dir(&app, &book_id)?;
     save_playback(
         &book_dir,
@@ -677,6 +687,16 @@ fn save_playback(
     skip_action: SasayakiSkipAction,
     app: Option<&AppHandle>,
 ) -> Result<SasayakiPlaybackSession, String> {
+    log::info!(
+        "sasayaki.save.start book_id={} last_position={:.3} delay={:.3} rate={:.3} auto_scroll={} auto_pause={} skip_action={:?}",
+        book_id,
+        last_position,
+        delay,
+        rate,
+        auto_scroll,
+        auto_pause,
+        skip_action
+    );
     validate_playback_values(last_position, delay, rate)?;
     validate_book_context(book_dir, book_id)?;
     let root = book_dir.join(SIDECAR_DIR_NAME);
@@ -694,7 +714,20 @@ fn save_playback(
         skip_action,
     };
     sidecar.updated_at = now_millis()?;
-    write_sidecar_atomic(&root, &sidecar)?;
+    if let Err(error) = write_sidecar_atomic(&root, &sidecar) {
+        log::warn!(
+            "sasayaki.save.failure book_id={} last_position={:.3} error={}",
+            book_id,
+            last_position,
+            error
+        );
+        return Err(error);
+    }
+    log::info!(
+        "sasayaki.save.success book_id={} last_position={:.3}",
+        book_id,
+        last_position
+    );
     playback_session(&root, &sidecar, app)
 }
 
@@ -1572,7 +1605,22 @@ fn write_sidecar_atomic(root: &Path, sidecar: &SasayakiSidecar) -> Result<(), St
     let path = root.join("sidecar.json");
     let temp = root.join("sidecar.json.tmp");
     let backup = root.join("sidecar.json.replacing");
-    write_file_synced(&temp, &json)?;
+    log::info!(
+        "sasayaki.sidecar.write.start book_id={} path={} last_position={:.3}",
+        sidecar.book_id,
+        path.display(),
+        sidecar.playback.last_position
+    );
+    if let Err(error) = write_file_synced(&temp, &json) {
+        log::warn!(
+            "sasayaki.sidecar.write.failure book_id={} path={} last_position={:.3} error={}",
+            sidecar.book_id,
+            path.display(),
+            sidecar.playback.last_position,
+            error
+        );
+        return Err(error);
+    }
     if path.exists() {
         if backup.exists() {
             fs::remove_file(&backup)
@@ -1586,12 +1634,25 @@ fn write_sidecar_atomic(root: &Path, sidecar: &SasayakiSidecar) -> Result<(), St
             let _ = fs::rename(&backup, &path);
         }
         let _ = fs::remove_file(&temp);
+        log::warn!(
+            "sasayaki.sidecar.write.failure book_id={} path={} last_position={:.3} error={}",
+            sidecar.book_id,
+            path.display(),
+            sidecar.playback.last_position,
+            error
+        );
         return Err(format!("Cannot install Sasayaki sidecar: {error}"));
     }
     if backup.exists() {
         fs::remove_file(&backup)
             .map_err(|error| format!("Cannot clear Sasayaki sidecar backup: {error}"))?;
     }
+    log::info!(
+        "sasayaki.sidecar.write.success book_id={} path={} last_position={:.3}",
+        sidecar.book_id,
+        path.display(),
+        sidecar.playback.last_position
+    );
     Ok(())
 }
 

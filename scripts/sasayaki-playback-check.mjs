@@ -64,6 +64,7 @@ async function presentation(page) {
     lifecycleCurrentTime: await state.getAttribute("data-lifecycle-current-time"),
     lifecycleSaveAttempts: await state.getAttribute("data-lifecycle-save-attempts"),
     lifecycleError: await state.getAttribute("data-lifecycle-error"),
+    traceEvents: await state.getAttribute("data-trace-events"),
   };
 }
 
@@ -231,6 +232,14 @@ async function main() {
     assert(
       lifecycle.lifecycleSavedPosition === "64.25" && lifecycle.lifecycleSaveAttempts === "3",
       "Rapid repeated reader exits should coalesce behind one in-flight Sasayaki save.",
+      lifecycle,
+    );
+    await page.getByRole("button", { name: "Probe reopen Sasayaki book", exact: true }).dispatchEvent("click");
+    await page.getByRole("button", { name: "Probe stale Sasayaki save trace", exact: true }).dispatchEvent("click");
+    lifecycle = await presentation(page);
+    assert(
+      lifecycle.traceEvents === "save.start:2:42.75,save.success:2:42.75,save.stale:1:0.00,save.start:1:0.00,save.success:1:0.00",
+      "Sasayaki persistence trace should expose stale save attempts that can overwrite a newer run.",
       lifecycle,
     );
 

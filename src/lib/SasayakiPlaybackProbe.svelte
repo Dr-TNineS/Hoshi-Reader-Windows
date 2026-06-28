@@ -42,6 +42,8 @@
   let lifecycleSaveAttempts = $state(0);
   let lifecycleError = $state("");
   let lifecycleFailNextSave = false;
+  let probeCurrentRunId = 1;
+  let traceEvents = $state<string[]>([]);
   let session = $state<SasayakiPlaybackSession>({
     configured: true,
     audioPath: "C:/Books/audio.wav",
@@ -152,6 +154,24 @@
     readerView = true;
     open = true;
     lifecycleError = "";
+  }
+
+  function recordProbeTrace(event: string, runId: number, position: number) {
+    traceEvents = [...traceEvents, `${event}:${runId}:${position.toFixed(2)}`];
+  }
+
+  function probeStaleSnapshotTrace() {
+    traceEvents = [];
+    const staleSnapshot = { runId: probeCurrentRunId, position: 0 };
+    probeCurrentRunId += 1;
+    const currentSnapshot = { runId: probeCurrentRunId, position: 42.75 };
+    recordProbeTrace("save.start", currentSnapshot.runId, currentSnapshot.position);
+    recordProbeTrace("save.success", currentSnapshot.runId, currentSnapshot.position);
+    if (staleSnapshot.runId !== probeCurrentRunId) {
+      recordProbeTrace("save.stale", staleSnapshot.runId, staleSnapshot.position);
+    }
+    recordProbeTrace("save.start", staleSnapshot.runId, staleSnapshot.position);
+    recordProbeTrace("save.success", staleSnapshot.runId, staleSnapshot.position);
   }
 
   function restoreWordAudioCoordination(id = wordAudioCoordination?.id) {
@@ -289,6 +309,11 @@
       void probeExitReader();
     }}
   >Lifecycle rapid exit</button>
+  <button
+    class="probe-action"
+    aria-label="Probe stale Sasayaki save trace"
+    onclick={probeStaleSnapshotTrace}
+  >Stale save trace</button>
   {#if readerView && open}
     <div id="sasayaki-player">
       <button
@@ -454,6 +479,7 @@
     data-lifecycle-current-time={currentTime.toFixed(2)}
     data-lifecycle-save-attempts={lifecycleSaveAttempts}
     data-lifecycle-error={lifecycleError}
+    data-trace-events={traceEvents.join(",")}
   ></div>
 </main>
 
