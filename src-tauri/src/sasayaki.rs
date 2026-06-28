@@ -337,8 +337,28 @@ pub fn sasayaki_prepare_playback(
     book_id: String,
     app: AppHandle,
 ) -> Result<SasayakiPlaybackSession, String> {
+    log::info!("sasayaki.prepare.command.start book_id={}", book_id);
     let book_dir = library_book_dir(&app, &book_id)?;
-    prepare_playback(&book_dir, &book_id, Some(&app))
+    match prepare_playback(&book_dir, &book_id, Some(&app)) {
+        Ok(session) => {
+            log::info!(
+                "sasayaki.prepare.command.success book_id={} configured={} audio_available={} last_position={:.3}",
+                book_id,
+                session.configured,
+                session.audio_available,
+                session.last_position
+            );
+            Ok(session)
+        }
+        Err(error) => {
+            log::warn!(
+                "sasayaki.prepare.command.failure book_id={} error={}",
+                book_id,
+                error
+            );
+            Err(error)
+        }
+    }
 }
 
 #[tauri::command]

@@ -169,6 +169,7 @@
     recordProbeTrace("save.success", currentSnapshot.runId, currentSnapshot.position);
     if (staleSnapshot.runId !== probeCurrentRunId) {
       recordProbeTrace("save.stale", staleSnapshot.runId, staleSnapshot.position);
+      return;
     }
     recordProbeTrace("save.start", staleSnapshot.runId, staleSnapshot.position);
     recordProbeTrace("save.success", staleSnapshot.runId, staleSnapshot.position);

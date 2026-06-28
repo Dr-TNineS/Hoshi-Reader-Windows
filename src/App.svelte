@@ -306,7 +306,9 @@
     }
 
     if (sasayakiPlaybackBookId && sasayakiPlaybackBookId !== locator.bookId) {
-      await stopSasayakiPlayback(true, "book-switch");
+      const stopped = await stopSasayakiPlayback(true, "book-switch");
+      if (!stopped) return;
+      resetSasayakiPlaybackOwner("book-switch");
     }
     currentBookLocator = locator;
     if (locator.bookId) {
@@ -646,8 +648,7 @@
       sasayakiCues = [];
       if (sasayakiPlaybackBookId === book.bookId) {
         await stopSasayakiPlayback(false, "remove-sasayaki");
-        sasayakiPlayback = null;
-        sasayakiPlaybackBookId = null;
+        resetSasayakiPlaybackOwner("remove-sasayaki");
       }
       sasayakiMessage = "Removed Sasayaki data. Linked external audio was not deleted.";
     } catch (e) {
@@ -879,6 +880,18 @@
     recordSasayakiDiagnostic("teardown");
   }
 
+  function resetSasayakiPlaybackOwner(reason: string) {
+    recordSasayakiPersistence("owner.reset", { reason });
+    sasayakiPlaybackRunId += 1;
+    sasayakiPlaybackBookId = null;
+    sasayakiPlayback = null;
+    sasayakiCurrentTime = 0;
+    sasayakiDuration = 0;
+    sasayakiPlaybackOpen = false;
+    sasayakiPlaybackError = "";
+    sasayakiLastPersistedSecond = -1;
+  }
+
   function scheduleSasayakiCuePresentation(forceReveal: boolean, immediate = false) {
     sasayakiPendingCueForceReveal = sasayakiPendingCueForceReveal || forceReveal;
     if (immediate) {
@@ -1104,7 +1117,9 @@
               currentBookId: sasayakiPlaybackBookId,
               snapshotLastPosition: snapshot.lastPosition,
               reason: snapshot.reason,
+              skipped: true,
             });
+            continue;
           }
           ok = await persistSasayakiPlaybackSnapshot(snapshot);
         }
@@ -2005,6 +2020,7 @@
         recordSasayakiPersistence("backToShelf.blocked", { reason: "save-failed" });
         return;
       }
+      resetSasayakiPlaybackOwner("back-to-shelf");
       view = "bookshelf";
       recordSasayakiPersistence("backToShelf.success");
     } finally {

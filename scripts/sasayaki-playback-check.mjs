@@ -238,8 +238,8 @@ async function main() {
     await page.getByRole("button", { name: "Probe stale Sasayaki save trace", exact: true }).dispatchEvent("click");
     lifecycle = await presentation(page);
     assert(
-      lifecycle.traceEvents === "save.start:2:42.75,save.success:2:42.75,save.stale:1:0.00,save.start:1:0.00,save.success:1:0.00",
-      "Sasayaki persistence trace should expose stale save attempts that can overwrite a newer run.",
+      lifecycle.traceEvents === "save.start:2:42.75,save.success:2:42.75,save.stale:1:0.00",
+      "Sasayaki persistence should reject stale save attempts before they can overwrite a newer run.",
       lifecycle,
     );
 
