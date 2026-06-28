@@ -48,6 +48,10 @@ async function metrics(page) {
     const result = document.querySelector(".dictionary-search-results");
     const search = document.querySelector(".dictionary-search-bar input");
     const root = document.querySelector('[data-popup-id="dictionary-search-root"]');
+    const rootContent = document.querySelector('[data-popup-id="dictionary-search-root"] .lookup-content');
+    const rootExpression = document.querySelector('[data-popup-id="dictionary-search-root"] .lookup-expression');
+    const childContent = document.querySelector('.lookup-pop:not([data-popup-id="dictionary-search-root"]) .lookup-content');
+    const childExpression = document.querySelector('.lookup-pop:not([data-popup-id="dictionary-search-root"]) .lookup-expression');
     const rootRect = root instanceof HTMLElement ? root.getBoundingClientRect() : null;
     const panelRect = panel instanceof HTMLElement ? panel.getBoundingClientRect() : null;
     const resultRect = result instanceof HTMLElement ? result.getBoundingClientRect() : null;
@@ -72,6 +76,11 @@ async function metrics(page) {
       root: rootRect ? { left: rootRect.left, top: rootRect.top, right: rootRect.right, bottom: rootRect.bottom } : null,
       closeButtons: document.querySelectorAll('[data-popup-id="dictionary-search-root"] button[aria-label="Close lookup"]').length,
       sasayakiButtons: document.querySelectorAll('[data-popup-id="dictionary-search-root"] .lookup-sasayaki-controls button').length,
+      popupScaleControls: document.querySelectorAll('[aria-label="Popup scale"]').length,
+      rootScale: rootContent instanceof HTMLElement ? getComputedStyle(rootContent).getPropertyValue("--popup-scale").trim() : "",
+      rootExpressionFontSize: rootExpression instanceof HTMLElement ? Number.parseFloat(getComputedStyle(rootExpression).fontSize) : 0,
+      childScale: childContent instanceof HTMLElement ? getComputedStyle(childContent).getPropertyValue("--popup-scale").trim() : "",
+      childExpressionFontSize: childExpression instanceof HTMLElement ? Number.parseFloat(getComputedStyle(childExpression).fontSize) : 0,
       rootScroller: (() => {
         const scroller = document.querySelector('[data-popup-id="dictionary-search-root"] .lookup-results');
         return scroller instanceof HTMLElement ? { scrollTop: scroller.scrollTop, scrollHeight: scroller.scrollHeight, clientHeight: scroller.clientHeight } : null;
@@ -130,6 +139,8 @@ async function main() {
     assert(state.lookupEvents.includes(":7:13"), "Lookup should receive dictionary maxResults and scanLength.", state);
     assert(state.rootState === "ready" && state.rootResults === 1, "Ready search should render root results.", state);
     assert(state.closeButtons === 0 && state.sasayakiButtons === 0, "Page presentation should hide close and Sasayaki controls.", state);
+    assert(state.rootScale === "1.2" && Math.abs(state.rootExpressionFontSize - 31.2) < 0.2, "Dictionary root results should use the fixed 1.20 lookup scale.", state);
+    assert(state.popupScaleControls === 0, "Dictionary Search should not expose a scale control.", state);
 
     await page.getByRole("button", { name: "Clear search" }).click();
     state = await metrics(page);
@@ -183,6 +194,7 @@ async function main() {
     await page.waitForFunction(() => Number(document.querySelector(".probe-state")?.getAttribute("data-child-count") ?? 0) > 0);
     state = await metrics(page);
     assert(state.childCount > 0, "Selecting glossary text should open a child popup.", state);
+    assert(state.childScale === "1.2" && Math.abs(state.childExpressionFontSize - 31.2) < 0.2, "Dictionary child popups should use the fixed 1.20 lookup scale.", state);
 
     await search(page, "新語");
     await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-last-query") === "新語");

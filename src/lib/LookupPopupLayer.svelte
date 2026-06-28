@@ -181,6 +181,7 @@
       {sasayakiAvailable}
       onSasayakiAction={onSasayakiAction}
       onAddAnkiNote={onAddAnkiNote}
+      scale={popupSettings.scale}
     />
   </aside>
 {/each}

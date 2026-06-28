@@ -52,6 +52,7 @@
   } = $props();
 
   const rootPopupId = "dictionary-search-root";
+  const DICTIONARY_SEARCH_SCALE = 1.2;
   let searchInput: HTMLInputElement | null = null;
   let pageShell: HTMLElement | null = null;
   let bounds = $state<{ left: number; top: number; right: number; bottom: number } | null>(null);
@@ -394,6 +395,7 @@
         onPrepareWordAudio={actions.onPrepareWordAudio}
         onAddAnkiNote={actions.onAddAnkiNote}
         presentation="page"
+        scale={DICTIONARY_SEARCH_SCALE}
       />
     {:else}
       <div class="dictionary-search-idle" aria-hidden="true"></div>
@@ -402,7 +404,7 @@
 
   <LookupPopupLayer
     popups={searchState.childPopups}
-    popupSettings={{ width: 360, height: 320, scale: 1 }}
+    popupSettings={{ width: 360, height: 320, scale: DICTIONARY_SEARCH_SCALE }}
     {dictionarySettings}
     {ankiSettings}
     onClose={closePopup}
