@@ -87,6 +87,36 @@ async function main() {
     }
 
     const ownedCard = page.locator(".book-card").filter({ hasText: "Owned Book" });
+    await page.locator(".panel-head").getByRole("heading", { name: "Library", exact: true }).waitFor();
+    const ownedCover = ownedCard.locator(".book-cover");
+    await ownedCover.getByText("EPUB", { exact: true }).waitFor();
+    const ownedCoverBox = await ownedCover.boundingBox();
+    assert(ownedCoverBox, "Owned book cover should be measurable.");
+    assert(
+      ownedCoverBox.width >= 158 && ownedCoverBox.width <= 162,
+      "Desktop bookshelf covers should use the HSM fixed 160px width.",
+      { width: ownedCoverBox.width },
+    );
+    const coverAspectRatio = ownedCoverBox.width / ownedCoverBox.height;
+    assert(
+      Math.abs(coverAspectRatio - 0.709) < 0.015,
+      "Bookshelf cover frame should keep the Hoshi 0.709 aspect ratio.",
+      { width: ownedCoverBox.width, height: ownedCoverBox.height, coverAspectRatio },
+    );
+
+    await page.setViewportSize({ width: 520, height: 720 });
+    const narrowScroll = await page.evaluate(() => ({
+      documentScrollWidth: document.documentElement.scrollWidth,
+      bodyScrollWidth: document.body.scrollWidth,
+      viewportWidth: window.innerWidth,
+    }));
+    assert(
+      narrowScroll.documentScrollWidth <= narrowScroll.viewportWidth && narrowScroll.bodyScrollWidth <= narrowScroll.viewportWidth,
+      "Narrow bookshelf layout should not create horizontal overflow.",
+      narrowScroll,
+    );
+    await page.setViewportSize({ width: 1280, height: 720 });
+
     await ownedCard.hover();
     const sasayakiTrigger = ownedCard.getByRole("button", { name: "Configure Sasayaki for Owned Book", exact: true });
     await sasayakiTrigger.click();

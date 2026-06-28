@@ -1,6 +1,6 @@
 <script lang="ts">
-  import { convertFileSrc } from "@tauri-apps/api/core";
   import AnkiConnectPanel from "./AnkiConnectPanel.svelte";
+  import BookCoverImage from "./BookCoverImage.svelte";
   import SasayakiBookPanel from "./SasayakiBookPanel.svelte";
   import type { AnkiAudioSource, AnkiSettings, DictionaryManifestEntry, DictionaryStatus, LocalAudioStatus, SasayakiCueItem, SasayakiStatus } from "./types";
   import AppearancePanel from "./AppearancePanel.svelte";
@@ -176,10 +176,6 @@
     return navItems.find((item) => item.id === panel)?.label ?? "Library";
   }
 
-  function coverUrl(book: BookRecord): string {
-    return book.coverPath ? convertFileSrc(book.coverPath) : "";
-  }
-
   function coverFailed(book: BookRecord): boolean {
     return failedCoverKeys.has(bookRecordKey(book));
   }
@@ -281,7 +277,7 @@
                   <button class="book-open" onclick={() => onContinueBook(book)}>
                     <span class="book-cover" aria-hidden="true">
                       {#if book.coverPath && !coverFailed(book)}
-                        <img src={coverUrl(book)} alt="" loading="lazy" onerror={() => markCoverFailed(book)} />
+                        <BookCoverImage coverPath={book.coverPath} onFailure={() => markCoverFailed(book)} />
                       {:else}
                         <span>EPUB</span>
                       {/if}
@@ -445,7 +441,7 @@
   .empty-mark { width: 80px; height: 112px; display: flex; align-items: center; justify-content: center; background: linear-gradient(160deg, var(--app-control), var(--app-bg)); color: var(--app-muted); border: 1px solid var(--app-border); border-radius: 6px; font-size: 12px; font-weight: 700; }
   .empty-state p { color: var(--app-text); font-size: 15px; font-weight: 650; }
   .empty-state span { display: block; margin-top: 5px; color: var(--app-muted); font-size: 13px; line-height: 1.4; }
-  .book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(148px, 184px)); gap: 22px 18px; align-items: start; padding-bottom: 24px; }
+  .book-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(160px, 100%), 160px)); gap: 20px; align-items: start; padding-bottom: 24px; }
   .book-card { position: relative; min-width: 0; }
   .sasayaki-trigger { position: absolute; top: 8px; left: 8px; min-height: 28px; padding: 5px 8px; background: color-mix(in srgb, var(--app-bg) 82%, transparent); color: var(--app-text); border: 1px solid color-mix(in srgb, var(--app-border) 80%, transparent); border-radius: 7px; cursor: pointer; font-size: 12px; opacity: 0; transition: opacity 120ms ease, background 120ms ease; }
   .book-card:hover .sasayaki-trigger, .sasayaki-trigger:focus-visible { opacity: 1; }
@@ -453,8 +449,8 @@
   .sasayaki-trigger:focus-visible { outline: var(--ui-focus-ring-width) solid var(--ui-focus-ring-color); outline-offset: var(--ui-focus-ring-offset); }
   .book-open { width: 100%; min-width: 0; display: flex; flex-direction: column; gap: 8px; padding: 0; text-align: left; background: transparent; color: inherit; border: none; cursor: pointer; }
   .book-open:hover .book-cover { border-color: var(--app-muted); background: var(--app-surface-hover); }
-  .book-cover { position: relative; width: 100%; aspect-ratio: 0.7; display: flex; align-items: center; justify-content: center; overflow: hidden; background: linear-gradient(155deg, var(--app-control), var(--app-bg)); color: var(--app-muted); border: 1px solid var(--app-border); border-radius: 8px; box-shadow: 0 8px 22px color-mix(in srgb, #000 20%, transparent); font-size: 13px; font-weight: 700; line-height: 1.2; transition: border-color 120ms ease, background 120ms ease; }
-  .book-cover img { width: 100%; height: 100%; object-fit: cover; display: block; }
+  .book-cover { position: relative; width: 100%; aspect-ratio: 0.709; display: flex; align-items: center; justify-content: center; overflow: hidden; padding: 3px; background: color-mix(in srgb, var(--app-control) 72%, var(--app-bg)); color: var(--app-muted); border: 1px solid var(--app-border); border-radius: 7px; box-shadow: 0 8px 22px color-mix(in srgb, #000 20%, transparent); font-size: 13px; font-weight: 700; line-height: 1.2; transition: border-color 120ms ease, background 120ms ease; }
+  .book-cover :global(img) { width: 100%; height: 100%; object-fit: contain; display: block; background: color-mix(in srgb, var(--app-control) 55%, transparent); border-radius: 6px; }
   .book-cover span { padding: 8px; overflow-wrap: anywhere; text-align: center; }
   .book-progress-row { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 8px; align-items: center; }
   .book-progress { height: 5px; min-width: 0; overflow: hidden; background: var(--app-border); border-radius: 999px; }
@@ -472,7 +468,7 @@
     .panel-head { flex-direction: column; }
     .head-open { width: 100%; }
     .section-head { align-items: start; flex-direction: column; gap: 4px; }
-    .book-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 18px 14px; }
+    .book-grid { grid-template-columns: repeat(auto-fill, minmax(min(160px, 100%), 160px)); gap: 18px 14px; }
     .empty-state { grid-template-columns: 1fr; }
     .sasayaki-trigger { opacity: 1; }
   }

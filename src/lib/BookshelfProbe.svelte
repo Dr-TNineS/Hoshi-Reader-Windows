@@ -10,6 +10,7 @@
       bookId: "owned-book",
       sourcePath: "C:/Books/Owned Book.epub",
       libraryPath: "C:/AppData/library/owned-book/book.epub",
+      coverPath: "C:/AppData/library/owned-book/missing-cover.jpg",
       title: "Owned Book",
       chapter: 2,
       totalChapters: 10,
