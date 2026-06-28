@@ -162,8 +162,11 @@ Key changes:
 
 - Add Rust command `anki_store_remote_audio(endpoint, request)`.
 - Accept only configured HTTP/HTTPS templates expanded from lookup expression
-  and reading; reject file paths, localhost-private expansion surprises, and
-  unsupported schemes unless explicitly configured later.
+  and reading; reject file paths, credentials, and unsupported schemes.
+- Allow user-configured localhost, loopback, private/LAN, link-local, IPv6
+  local/private, DNS-resolved local/private targets, and redirects to those
+  targets. HSA/Yomitan `audioSourceList` responses are followed to the first
+  listed HTTP/HTTPS audio URL before audio signature/type validation.
 - Enforce timeout and size limits.
 - Support practical audio MIME/extensions: mp3, ogg/opus, wav, m4a/aac.
 - Return `{ filename, warnings }`; missing audio returns warnings and no

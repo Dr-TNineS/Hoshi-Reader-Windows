@@ -9,7 +9,7 @@ use sha2::{Digest, Sha256};
 use std::collections::{BTreeMap, HashSet};
 use std::fs;
 use std::io::{Read, Write};
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr, TcpStream, ToSocketAddrs};
+use std::net::{TcpStream, ToSocketAddrs};
 use std::path::{Path, PathBuf};
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use tauri::{AppHandle, Manager};
@@ -501,6 +501,9 @@ pub fn word_audio_prepare_playback(
         });
     };
     let cache_path = cache_word_audio(&app, &resolved.bytes, &resolved.extension)?;
+    app.asset_protocol_scope()
+        .allow_file(&cache_path)
+        .map_err(|error| format!("Cannot authorize word audio playback: {error}"))?;
     Ok(WordAudioPlaybackResult {
         cache_path: Some(cache_path.to_string_lossy().into_owned()),
         mime_type: Some(audio_mime_type(&resolved.extension).into()),
@@ -886,6 +889,25 @@ struct RemoteAudioDownload {
     warning: Option<String>,
 }
 
+#[derive(Debug, Deserialize)]
+#[serde(rename_all = "camelCase")]
+struct RemoteAudioSourceList {
+    #[serde(default)]
+    audio_sources: Vec<RemoteAudioSourceEntry>,
+}
+
+#[derive(Debug, Deserialize)]
+struct RemoteAudioSourceEntry {
+    #[serde(default)]
+    url: String,
+}
+
+enum RemoteAudioSourceListResolution {
+    DirectAudio,
+    Follow(Url),
+    Warning(String),
+}
+
 fn download_remote_audio(
     request: &AnkiRemoteAudioRequest,
 ) -> Result<Option<RemoteAudioDownload>, String> {
@@ -904,7 +926,7 @@ fn download_remote_audio(
             }))
         }
     };
-    let mut current = match Url::parse(&expanded) {
+    let current = match Url::parse(&expanded) {
         Ok(url) => url,
         Err(error) => {
             return Ok(Some(RemoteAudioDownload {
@@ -916,10 +938,29 @@ fn download_remote_audio(
         }
     };
     let timeout = remote_audio_timeout(request.timeout_ms);
+    let download = download_remote_audio_url(current, timeout)?;
+    let Some(download) = download else {
+        return Ok(None);
+    };
+    match remote_audio_source_list_url(&download)? {
+        RemoteAudioSourceListResolution::DirectAudio => Ok(Some(download)),
+        RemoteAudioSourceListResolution::Follow(url) => download_remote_audio_url(url, timeout),
+        RemoteAudioSourceListResolution::Warning(warning) => Ok(Some(RemoteAudioDownload {
+            bytes: None,
+            content_type: None,
+            final_url: download.final_url,
+            warning: Some(warning),
+        })),
+    }
+}
 
+fn download_remote_audio_url(
+    mut current: Url,
+    timeout: Duration,
+) -> Result<Option<RemoteAudioDownload>, String> {
     for redirect_count in 0..=MAX_REMOTE_AUDIO_REDIRECTS {
-        let target = match validate_remote_audio_url(&current) {
-            Ok(target) => target,
+        match validate_remote_audio_url(&current) {
+            Ok(()) => {}
             Err(error)
                 if error.starts_with("Cannot resolve remote audio host:")
                     || error == "Remote audio host resolved to no addresses." =>
@@ -937,7 +978,6 @@ fn download_remote_audio(
             .redirect(Policy::none())
             .connect_timeout(timeout)
             .timeout(timeout)
-            .resolve(&target.host, target.address)
             .build()
         {
             Ok(client) => client,
@@ -1005,6 +1045,58 @@ fn download_remote_audio(
     unreachable!("redirect loop always returns")
 }
 
+fn remote_audio_source_list_url(
+    download: &RemoteAudioDownload,
+) -> Result<RemoteAudioSourceListResolution, String> {
+    let Some(bytes) = download.bytes.as_deref() else {
+        return Ok(RemoteAudioSourceListResolution::DirectAudio);
+    };
+    let looks_like_json = normalize_content_type(download.content_type.as_deref())
+        .is_some_and(|mime| mime.eq_ignore_ascii_case("application/json"))
+        || bytes
+            .iter()
+            .copied()
+            .find(|byte| !byte.is_ascii_whitespace())
+            .is_some_and(|byte| byte == b'{');
+    if !looks_like_json {
+        return Ok(RemoteAudioSourceListResolution::DirectAudio);
+    }
+    let value: Value = match serde_json::from_slice(bytes) {
+        Ok(value) => value,
+        Err(error)
+            if normalize_content_type(download.content_type.as_deref())
+                .is_some_and(|mime| mime.eq_ignore_ascii_case("application/json")) =>
+        {
+            return Ok(RemoteAudioSourceListResolution::Warning(format!(
+                "Remote audio source list response was invalid JSON: {error}"
+            )))
+        }
+        Err(_) => return Ok(RemoteAudioSourceListResolution::DirectAudio),
+    };
+    if value.get("type").and_then(Value::as_str) != Some("audioSourceList") {
+        return Ok(RemoteAudioSourceListResolution::DirectAudio);
+    }
+    let list: RemoteAudioSourceList = serde_json::from_value(value)
+        .map_err(|error| format!("Cannot parse remote audio source list: {error}"))?;
+    let Some(entry) = list.audio_sources.first() else {
+        return Ok(RemoteAudioSourceListResolution::Warning(
+            "Remote audio source list did not include an audio URL.".into(),
+        ));
+    };
+    let url = entry.url.trim();
+    if url.is_empty() {
+        return Ok(RemoteAudioSourceListResolution::Warning(
+            "Remote audio source list did not include an audio URL.".into(),
+        ));
+    }
+    match Url::parse(url) {
+        Ok(url) => Ok(RemoteAudioSourceListResolution::Follow(url)),
+        Err(error) => Ok(RemoteAudioSourceListResolution::Warning(format!(
+            "Remote audio source list included an invalid URL: {error}"
+        ))),
+    }
+}
+
 fn expand_audio_url_template(
     template: &str,
     expression: &str,
@@ -1038,81 +1130,18 @@ fn ensure_remote_audio_redirect_allowed(completed_redirects: usize) -> Result<()
     Ok(())
 }
 
-#[derive(Debug)]
-struct ResolvedRemoteTarget {
-    host: String,
-    address: SocketAddr,
-}
-
-fn validate_remote_audio_url(url: &Url) -> Result<ResolvedRemoteTarget, String> {
+fn validate_remote_audio_url(url: &Url) -> Result<(), String> {
     if !matches!(url.scheme(), "http" | "https") {
         return Err("Remote audio URL must use HTTP or HTTPS.".into());
     }
     if !url.username().is_empty() || url.password().is_some() {
         return Err("Remote audio URL must not contain credentials.".into());
     }
-    let host = url
-        .host_str()
+    url.host_str()
         .ok_or_else(|| "Remote audio URL must include a host.".to_string())?;
-    if host.eq_ignore_ascii_case("localhost") || host.ends_with(".localhost") {
-        return Err("Remote audio URL must not target localhost.".into());
-    }
-    let port = url
-        .port_or_known_default()
+    url.port_or_known_default()
         .ok_or_else(|| "Remote audio URL has no usable port.".to_string())?;
-    let addresses: Vec<SocketAddr> = (host, port)
-        .to_socket_addrs()
-        .map_err(|error| format!("Cannot resolve remote audio host: {error}"))?
-        .collect();
-    if addresses.is_empty() {
-        return Err("Remote audio host resolved to no addresses.".into());
-    }
-    if addresses.iter().any(|address| !is_public_ip(address.ip())) {
-        return Err("Remote audio URL resolved to a private, local, or reserved address.".into());
-    }
-    Ok(ResolvedRemoteTarget {
-        host: host.into(),
-        address: addresses[0],
-    })
-}
-
-fn is_public_ip(ip: IpAddr) -> bool {
-    match ip {
-        IpAddr::V4(ip) => is_public_ipv4(ip),
-        IpAddr::V6(ip) => is_public_ipv6(ip),
-    }
-}
-
-fn is_public_ipv4(ip: Ipv4Addr) -> bool {
-    let [a, b, c, _] = ip.octets();
-    !(ip.is_unspecified()
-        || ip.is_loopback()
-        || ip.is_private()
-        || ip.is_link_local()
-        || ip.is_multicast()
-        || ip.is_broadcast()
-        || ip.is_documentation()
-        || a == 0
-        || (a == 100 && (64..=127).contains(&b))
-        || (a == 192 && b == 0)
-        || (a == 192 && b == 88 && c == 99)
-        || (a == 198 && matches!(b, 18 | 19))
-        || a >= 240)
-}
-
-fn is_public_ipv6(ip: Ipv6Addr) -> bool {
-    let segments = ip.segments();
-    if let Some(ipv4) = ip.to_ipv4_mapped() {
-        return is_public_ipv4(ipv4);
-    }
-    !(ip.is_unspecified()
-        || ip.is_loopback()
-        || ip.is_multicast()
-        || (segments[0] & 0xfe00) == 0xfc00
-        || (segments[0] & 0xffc0) == 0xfe80
-        || (segments[0] & 0xffc0) == 0xfec0
-        || (segments[0] & 0xe000) != 0x2000
-        || (segments[0] == 0x2001 && (segments[1] <= 0x01ff || segments[1] == 0x0db8)))
+    Ok(())
 }
 
 fn read_remote_audio_response(
@@ -1778,6 +1807,77 @@ fn now_millis() -> Result<u64, String> {
 mod tests {
     use super::*;
 
+    struct RemoteAudioTestServer {
+        base_url: String,
+        requests: std::sync::Arc<std::sync::Mutex<Vec<String>>>,
+        handle: Option<std::thread::JoinHandle<()>>,
+    }
+
+    impl RemoteAudioTestServer {
+        fn url(&self, path: &str) -> String {
+            format!("{}{}", self.base_url, path)
+        }
+
+        fn requests(&self) -> Vec<String> {
+            self.requests.lock().unwrap().clone()
+        }
+    }
+
+    impl Drop for RemoteAudioTestServer {
+        fn drop(&mut self) {
+            if let Some(handle) = self.handle.take() {
+                handle.join().unwrap();
+            }
+        }
+    }
+
+    fn remote_audio_test_server(responses: Vec<String>) -> RemoteAudioTestServer {
+        remote_audio_test_server_with_base(|_| responses)
+    }
+
+    fn remote_audio_test_server_with_base<F>(build_responses: F) -> RemoteAudioTestServer
+    where
+        F: FnOnce(&str) -> Vec<String>,
+    {
+        let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let address = listener.local_addr().unwrap();
+        let base_url = format!("http://localhost:{}", address.port());
+        let responses = build_responses(&base_url);
+        let requests = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+        let thread_requests = std::sync::Arc::clone(&requests);
+        let handle = std::thread::spawn(move || {
+            for response in responses {
+                let (mut stream, _) = listener.accept().unwrap();
+                let mut buffer = [0_u8; 4096];
+                let count = stream.read(&mut buffer).unwrap();
+                let request = String::from_utf8_lossy(&buffer[..count]);
+                if let Some(line) = request.lines().next() {
+                    let path = line.split_whitespace().nth(1).unwrap_or("").to_string();
+                    thread_requests.lock().unwrap().push(path);
+                }
+                stream.write_all(response.as_bytes()).unwrap();
+            }
+        });
+        RemoteAudioTestServer {
+            base_url,
+            requests,
+            handle: Some(handle),
+        }
+    }
+
+    fn http_response(status: &str, headers: &[(&str, String)], body: &[u8]) -> String {
+        let mut response = format!("HTTP/1.1 {status}\r\nContent-Length: {}\r\n", body.len());
+        for (name, value) in headers {
+            response.push_str(name);
+            response.push_str(": ");
+            response.push_str(value);
+            response.push_str("\r\n");
+        }
+        response.push_str("Connection: close\r\n\r\n");
+        response.push_str(&String::from_utf8_lossy(body));
+        response
+    }
+
     fn temp_root(name: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!(
             "hoshi_anki_settings_{name}_{}",
@@ -2057,16 +2157,10 @@ mod tests {
     }
 
     #[test]
-    fn remote_audio_url_validation_blocks_non_public_targets() {
+    fn remote_audio_url_validation_allows_local_and_private_http_targets() {
         for url in [
             "file:///C:/audio.mp3",
             "ftp://8.8.8.8/audio.mp3",
-            "http://localhost/audio.mp3",
-            "http://127.0.0.1/audio.mp3",
-            "http://10.0.0.1/audio.mp3",
-            "http://169.254.1.2/audio.mp3",
-            "http://[::1]/audio.mp3",
-            "http://[fc00::1]/audio.mp3",
             "http://user:pass@8.8.8.8/audio.mp3",
         ] {
             assert!(
@@ -2074,9 +2168,143 @@ mod tests {
                 "{url}"
             );
         }
-        let public =
-            validate_remote_audio_url(&Url::parse("https://8.8.8.8/audio.mp3").unwrap()).unwrap();
-        assert_eq!(public.address.ip(), "8.8.8.8".parse::<IpAddr>().unwrap());
+        for url in [
+            "http://localhost/audio.mp3",
+            "http://foo.localhost/audio.mp3",
+            "http://127.0.0.1/audio.mp3",
+            "http://10.0.0.1/audio.mp3",
+            "http://172.16.0.1/audio.mp3",
+            "http://192.168.0.1/audio.mp3",
+            "http://169.254.1.2/audio.mp3",
+            "http://[::1]/audio.mp3",
+            "http://[fc00::1]/audio.mp3",
+            "http://[fe80::1]/audio.mp3",
+            "https://8.8.8.8/audio.mp3",
+        ] {
+            validate_remote_audio_url(&Url::parse(url).unwrap()).unwrap_or_else(|error| {
+                panic!("{url} should be allowed: {error}");
+            });
+        }
+    }
+
+    #[test]
+    fn remote_audio_requests_configured_localhost_url_and_direct_audio() {
+        let server = remote_audio_test_server(vec![http_response(
+            "200 OK",
+            &[("Content-Type", "audio/mpeg".into())],
+            b"ID3direct",
+        )]);
+        let request = AnkiRemoteAudioRequest {
+            source_name: "Local".into(),
+            url_template: server.url("/audio?term={term}&reading={reading}"),
+            expression: "読む".into(),
+            reading: "よむ".into(),
+            timeout_ms: 5000,
+        };
+
+        let (resolved, warnings) = resolve_remote_audio(&request).unwrap();
+
+        let resolved = resolved.unwrap();
+        assert_eq!(resolved.extension, "mp3");
+        assert_eq!(resolved.bytes, b"ID3direct");
+        assert!(warnings.is_empty());
+        assert_eq!(
+            server.requests(),
+            ["/audio?term=%E8%AA%AD%E3%82%80&reading=%E3%82%88%E3%82%80"]
+        );
+    }
+
+    #[test]
+    fn remote_audio_follows_hsa_audio_source_list_to_localhost_audio() {
+        let server = remote_audio_test_server_with_base(|base_url| {
+            vec![
+                http_response(
+                    "200 OK",
+                    &[("Content-Type", "application/json".into())],
+                    format!(
+                        r#"{{"type":"audioSourceList","audioSources":[{{"name":"nhk16","url":"{base_url}/actual.mp3"}}]}}"#
+                    )
+                    .as_bytes(),
+                ),
+                http_response(
+                    "200 OK",
+                    &[("Content-Type", "audio/mpeg".into())],
+                    b"ID3listed",
+                ),
+            ]
+        });
+        let request = AnkiRemoteAudioRequest {
+            source_name: "Yomitan".into(),
+            url_template: server.url("/source-list?term={term}&reading={reading}"),
+            expression: "読む".into(),
+            reading: "よむ".into(),
+            timeout_ms: 5000,
+        };
+
+        let (resolved, warnings) = resolve_remote_audio(&request).unwrap();
+
+        assert_eq!(resolved.unwrap().bytes, b"ID3listed");
+        assert!(warnings.is_empty());
+        assert_eq!(
+            server.requests(),
+            [
+                "/source-list?term=%E8%AA%AD%E3%82%80&reading=%E3%82%88%E3%82%80",
+                "/actual.mp3"
+            ]
+        );
+    }
+
+    #[test]
+    fn remote_audio_allows_redirect_to_localhost_audio() {
+        let server = remote_audio_test_server(vec![
+            http_response("302 Found", &[("Location", "/redirected.mp3".into())], b""),
+            http_response(
+                "200 OK",
+                &[("Content-Type", "audio/mpeg".into())],
+                b"ID3redirect",
+            ),
+        ]);
+        let request = AnkiRemoteAudioRequest {
+            source_name: "Redirect".into(),
+            url_template: server.url("/start"),
+            expression: "読む".into(),
+            reading: "よむ".into(),
+            timeout_ms: 5000,
+        };
+
+        let (resolved, warnings) = resolve_remote_audio(&request).unwrap();
+
+        assert_eq!(resolved.unwrap().bytes, b"ID3redirect");
+        assert!(warnings.is_empty());
+        assert_eq!(server.requests(), ["/start", "/redirected.mp3"]);
+    }
+
+    #[test]
+    fn remote_audio_source_list_empty_or_malformed_warns_without_audio() {
+        for body in [
+            br#"{"type":"audioSourceList","audioSources":[]}"#.as_slice(),
+            br#"{"type":"audioSourceList","audioSources":[{"name":"empty","url":""}]}"#.as_slice(),
+            br#"{"type":"audioSourceList","audioSources":["#.as_slice(),
+        ] {
+            let server = remote_audio_test_server(vec![http_response(
+                "200 OK",
+                &[("Content-Type", "application/json".into())],
+                body,
+            )]);
+            let request = AnkiRemoteAudioRequest {
+                source_name: "List".into(),
+                url_template: server.url("/list"),
+                expression: "読む".into(),
+                reading: "よむ".into(),
+                timeout_ms: 5000,
+            };
+
+            let (resolved, warnings) = resolve_remote_audio(&request).unwrap();
+
+            assert!(resolved.is_none());
+            assert_eq!(warnings.len(), 1);
+            assert!(warnings[0].contains("Word audio (List):"));
+        }
     }
 
     #[test]
@@ -2265,7 +2493,7 @@ mod tests {
     }
 
     #[test]
-    fn malformed_remote_audio_request_is_warning_but_unsafe_url_is_error() {
+    fn malformed_remote_audio_request_is_warning_but_unsupported_scheme_is_error() {
         let malformed = AnkiRemoteAudioRequest {
             source_name: "Probe".into(),
             url_template: "not a url {term}".into(),
@@ -2276,13 +2504,13 @@ mod tests {
         let result = download_remote_audio(&malformed).unwrap().unwrap();
         assert!(result.warning.unwrap().contains("invalid"));
 
-        let unsafe_request = AnkiRemoteAudioRequest {
-            url_template: "http://127.0.0.1/{term}.mp3".into(),
+        let unsupported_scheme = AnkiRemoteAudioRequest {
+            url_template: "file:///C:/audio.mp3".into(),
             ..malformed
         };
-        assert!(download_remote_audio(&unsafe_request)
+        assert!(download_remote_audio(&unsupported_scheme)
             .unwrap_err()
-            .contains("private, local, or reserved"));
+            .contains("HTTP or HTTPS"));
     }
 
     #[test]
