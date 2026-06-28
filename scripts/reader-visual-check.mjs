@@ -343,32 +343,15 @@ async function probeRenderedHighlightText(page) {
 
 async function readerLookupHighlightState(page) {
   return page.evaluate(() => {
-    const highlight = CSS.highlights?.get("hsw-reader-lookup-selection");
-    const ranges = [];
-    if (highlight?.forEach) {
-      highlight.forEach((range) => ranges.push(range));
-    } else if (highlight?.[Symbol.iterator]) {
-      for (const range of highlight) ranges.push(range);
-    }
+    const cssHighlightSize = CSS.highlights?.get("hsw-reader-lookup-selection")?.size ?? 0;
+    const layer = document.querySelector(".lookup-highlight-layer");
+    const rects = Array.from(document.querySelectorAll(".lookup-highlight-rect"));
 
     return {
-      text: ranges.map((range) => range.toString()).join(""),
-      rangeCount: ranges.length,
+      text: layer instanceof HTMLElement ? layer.dataset.highlightText ?? "" : "",
+      rectCount: rects.length,
+      cssHighlightSize,
       domSelection: window.getSelection()?.toString().replace(/\s+/g, " ").trim() ?? "",
-      containsRubyText: ranges.some((range) => /やさ|ほほえ/.test(range.toString())),
-      containsRubyNode: ranges.some((range) => {
-        const fragment = range.cloneContents();
-        return !!fragment.querySelector?.("rt, rp");
-      }),
-      endpointInsideRuby: ranges.some((range) => {
-        const start = range.startContainer.nodeType === Node.TEXT_NODE
-          ? range.startContainer.parentElement
-          : range.startContainer;
-        const end = range.endContainer.nodeType === Node.TEXT_NODE
-          ? range.endContainer.parentElement
-          : range.endContainer;
-        return !!start?.closest?.("rt, rp") || !!end?.closest?.("rt, rp");
-      }),
     };
   });
 }
@@ -860,11 +843,9 @@ async function main() {
       rubyLookupSelection.startsWith("優しい微笑み") &&
         rubyLookupSelection.length > "優しい微笑み".length &&
         rubyHighlightState.text === "優しい微笑み" &&
-        rubyHighlightState.rangeCount > 1 &&
-        rubyHighlightState.domSelection === "" &&
-        !rubyHighlightState.containsRubyText &&
-        !rubyHighlightState.containsRubyNode &&
-        !rubyHighlightState.endpointInsideRuby,
+        rubyHighlightState.rectCount > 1 &&
+        rubyHighlightState.cssHighlightSize === 0 &&
+        rubyHighlightState.domSelection === "",
       "Ruby lookup highlight should cover base text segments without including furigana.",
       { rubyHighlightPoint, rubyLookupSelection, rubyHighlightState },
     );

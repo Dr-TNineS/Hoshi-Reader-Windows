@@ -7,7 +7,6 @@
     READER_LOOKUP_HIGHLIGHT,
     READER_SASAYAKI_HIGHLIGHT,
     setLookupHighlightRange,
-    setLookupHighlightRanges,
   } from "../lookup-highlight";
   import type { ReaderProgress, ReaderSelection, ReaderSelectionRect, SasayakiPlaybackCue } from "../types";
 
@@ -81,6 +80,8 @@
   let layoutRun = 0;
   let resizeRun = 0;
   let contentMaxScroll = 0;
+  let lookupHighlightRects = $state<{ left: number; top: number; width: number; height: number }[]>([]);
+  let lookupHighlightText = $state("");
   let sasayakiHighlightRects = $state<{ left: number; top: number; width: number; height: number }[]>([]);
   let sasayakiHighlightText = $state("");
 
@@ -612,6 +613,8 @@
     activeLookupRanges.forEach((range) => range.detach());
     activeLookupRanges = [];
     lastAppliedLookupHighlightCount = -1;
+    lookupHighlightRects = [];
+    lookupHighlightText = "";
     clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
   }
 
@@ -654,9 +657,11 @@
     return [];
   }
 
-  function applyLookupHighlightCount(characterCount: number) {
-    if (activeLookupRanges.length === 0 || characterCount === lastAppliedLookupHighlightCount) return;
+  function applyLookupHighlightCount(characterCount: number, force = false) {
+    if (activeLookupRanges.length === 0 || (!force && characterCount === lastAppliedLookupHighlightCount)) return;
     if (characterCount <= 0) {
+      lookupHighlightRects = [];
+      lookupHighlightText = "";
       clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
       lastAppliedLookupHighlightCount = 0;
       return;
@@ -664,13 +669,18 @@
 
     const ranges = lookupPrefixRanges(characterCount);
     if (ranges.length === 0) {
+      lookupHighlightRects = [];
+      lookupHighlightText = "";
       clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
       lastAppliedLookupHighlightCount = characterCount;
       return;
     }
 
-    setLookupHighlightRanges(READER_LOOKUP_HIGHLIGHT, ranges);
+    clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
+    lookupHighlightRects = overlayRectsForRanges(ranges);
+    lookupHighlightText = ranges.map((range) => range.toString()).join("").replace(/\s+/g, " ").trim();
     ranges.forEach((range) => range.detach());
+    window.getSelection()?.removeAllRanges();
     lastAppliedLookupHighlightCount = characterCount;
   }
 
@@ -685,12 +695,12 @@
     sasayakiHighlightText = "";
   }
 
-  function sasayakiOverlayRectsFor(range: Range): { left: number; top: number; width: number; height: number }[] {
+  function overlayRectsForRanges(ranges: Range[]): { left: number; top: number; width: number; height: number }[] {
     if (!containerEl) return [];
 
     const viewportRect = containerEl.getBoundingClientRect();
     const scrollTop = logicalScrollPos();
-    return Array.from(range.getClientRects())
+    return ranges.flatMap((range) => Array.from(range.getClientRects()))
       .filter((rect) => rect.width > 0 && rect.height > 0)
       .map((rect) => ({
         left: rect.left - viewportRect.left,
@@ -698,6 +708,10 @@
         width: rect.width,
         height: rect.height,
       }));
+  }
+
+  function sasayakiOverlayRectsFor(range: Range): { left: number; top: number; width: number; height: number }[] {
+    return overlayRectsForRanges([range]);
   }
 
   function selectTextFromPoint(
@@ -764,6 +778,8 @@
     detachActiveLookupRange();
     activeLookupRanges = ranges.map((range) => range.cloneRange());
     lastAppliedLookupHighlightCount = 0;
+    lookupHighlightRects = [];
+    lookupHighlightText = "";
     clearLookupHighlight(READER_LOOKUP_HIGHLIGHT);
     window.getSelection()?.removeAllRanges();
 
@@ -971,6 +987,7 @@
     initializing = false;
     logReaderGeometry("resize-realign");
     applySasayakiCue();
+    applyLookupHighlightCount(lookupHighlightCount, true);
     scheduleProgressEmit();
   }
 
@@ -1226,6 +1243,16 @@
     {#if scrollTailTop > 0}
       <div class="scroll-tail" style={`top:${scrollTailTop}px`} aria-hidden="true"></div>
     {/if}
+    {#if lookupHighlightRects.length > 0}
+      <div class="lookup-highlight-layer" data-highlight-text={lookupHighlightText} aria-hidden="true">
+        {#each lookupHighlightRects as rect}
+          <span
+            class="lookup-highlight-rect"
+            style={`left:${rect.left}px;top:${rect.top}px;width:${rect.width}px;height:${rect.height}px`}
+          ></span>
+        {/each}
+      </div>
+    {/if}
     {#if sasayakiHighlightRects.length > 0}
       <div class="sasayaki-highlight-layer" data-highlight-text={sasayakiHighlightText} aria-hidden="true">
         {#each sasayakiHighlightRects as rect}
@@ -1285,6 +1312,7 @@
     pointer-events: none;
   }
 
+  .lookup-highlight-layer,
   .sasayaki-highlight-layer {
     position: absolute;
     inset: 0;
@@ -1293,12 +1321,20 @@
     pointer-events: none;
   }
 
+  .lookup-highlight-rect,
   .sasayaki-highlight-rect {
     position: absolute;
     display: block;
     border-radius: 2px;
-    background: var(--sasayaki-highlight-background, rgba(135, 206, 235, 0.4));
     pointer-events: none;
+  }
+
+  .lookup-highlight-rect {
+    background: var(--lookup-highlight-color, rgba(160, 160, 160, 0.32));
+  }
+
+  .sasayaki-highlight-rect {
+    background: var(--sasayaki-highlight-background, rgba(135, 206, 235, 0.4));
   }
 
   .rct {

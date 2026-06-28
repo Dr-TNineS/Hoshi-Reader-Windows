@@ -2,10 +2,6 @@
   import Reader from "./Reader.svelte";
   import { countChars } from "../reader";
   import { readerAppearancePalette } from "../appearance";
-  import {
-    lookupHighlightText as renderedLookupHighlightTextFor,
-    READER_LOOKUP_HIGHLIGHT,
-  } from "../lookup-highlight";
   import type { ReaderProgress, ReaderSelection, SasayakiPlaybackCue } from "../types";
 
   const params = new URLSearchParams(window.location.search);
@@ -166,7 +162,8 @@
     let secondFrame = 0;
     const syncSelection = () => {
       visibleSelectionText = window.getSelection()?.toString().replace(/\s+/g, " ").trim() ?? "";
-      renderedLookupHighlightText = renderedLookupHighlightTextFor(READER_LOOKUP_HIGHLIGHT);
+      const lookupLayer = document.querySelector<HTMLElement>(".lookup-highlight-layer");
+      renderedLookupHighlightText = lookupLayer?.dataset.highlightText ?? "";
       const sasayakiLayer = document.querySelector<HTMLElement>(".sasayaki-highlight-layer");
       renderedSasayakiHighlightText = sasayakiLayer?.dataset.highlightText ?? "";
     };
