@@ -7,10 +7,11 @@ use std::path::Path;
 use symphonia::core::audio::SampleBuffer;
 use symphonia::core::codecs::DecoderOptions;
 use symphonia::core::errors::Error as SymphoniaError;
-use symphonia::core::formats::FormatOptions;
+use symphonia::core::formats::{FormatOptions, SeekMode, SeekTo};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 use symphonia::core::probe::Hint;
+use symphonia::core::units::{Time, TimeBase};
 
 const MAX_CLIP_DURATION_MS: u64 = 60_000;
 const MAX_OUTPUT_BYTES: usize = 64 * 1024 * 1024;
@@ -57,13 +58,22 @@ pub(crate) fn clip_audio_file_to_wav(
         .default_track()
         .ok_or_else(|| "Audio source has no decodable default track.".to_string())?;
     let track_id = track.id;
+    let track_time_base = track.codec_params.time_base;
+    let track_sample_rate = track.codec_params.sample_rate;
     let mut decoder = symphonia::default::get_codecs()
         .make(&track.codec_params, &DecoderOptions::default())
         .map_err(|error| format!("Unsupported audio codec: {error}"))?;
 
     let mut output = Vec::new();
     let mut sample_buffer = None;
-    let mut decoded_frames = 0_u64;
+    let mut decoded_frames = seek_to_clip_start(
+        &mut format,
+        &mut decoder,
+        track_id,
+        track_time_base,
+        track_sample_rate,
+        range,
+    );
     let mut output_spec = None;
 
     loop {
@@ -240,6 +250,59 @@ fn milliseconds_to_frame(milliseconds: u64, sample_rate: u32) -> u64 {
     milliseconds
         .saturating_mul(sample_rate as u64)
         .saturating_div(1000)
+}
+
+fn milliseconds_to_time(milliseconds: u64) -> Time {
+    let seconds = milliseconds / 1000;
+    let frac = (milliseconds % 1000) as f64 / 1000.0;
+    Time::new(seconds, frac)
+}
+
+fn time_to_frame(time: Time, sample_rate: u32) -> u64 {
+    let whole = time.seconds.saturating_mul(sample_rate as u64);
+    let fractional = (time.frac * sample_rate as f64).floor().max(0.0) as u64;
+    whole.saturating_add(fractional)
+}
+
+fn timestamp_to_frame(time_base: Option<TimeBase>, timestamp: u64, sample_rate: u32) -> u64 {
+    time_base
+        .map(|base| time_to_frame(base.calc_time(timestamp), sample_rate))
+        .unwrap_or(timestamp)
+}
+
+fn seek_to_clip_start(
+    format: &mut Box<dyn symphonia::core::formats::FormatReader>,
+    decoder: &mut Box<dyn symphonia::core::codecs::Decoder>,
+    track_id: u32,
+    track_time_base: Option<TimeBase>,
+    track_sample_rate: Option<u32>,
+    range: AudioClipRange,
+) -> u64 {
+    if range.start_ms == 0 {
+        return 0;
+    }
+    let seeked = format.seek(
+        SeekMode::Accurate,
+        SeekTo::Time {
+            time: milliseconds_to_time(range.start_ms),
+            track_id: Some(track_id),
+        },
+    );
+    match seeked {
+        Ok(position) if position.track_id == track_id => {
+            decoder.reset();
+            track_sample_rate
+                .map(|sample_rate| {
+                    timestamp_to_frame(track_time_base, position.actual_ts, sample_rate)
+                })
+                .unwrap_or(0)
+        }
+        Ok(_) => {
+            decoder.reset();
+            0
+        }
+        Err(_) => 0,
+    }
 }
 
 fn ensure_output_limit(
