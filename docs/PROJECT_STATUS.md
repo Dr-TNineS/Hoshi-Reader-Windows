@@ -107,6 +107,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - `HSW_HOSHIDICTS_DIR` can override the default local hoshidicts path.
   - Bookshelf has a minimal `Import Dictionary` entry for Yomitan `.zip` files.
   - Bookshelf has a minimal dictionary management panel for Term/Frequency/Pitch categories, refreshing status, enabling/disabling role entries, changing per-category order, deleting an imported dictionary from all categories, and editing HSA-style Lookup, Import, Collapse Dictionaries, and Behaviour settings.
+  - Bookshelf has a dedicated Dictionary search panel before Dictionaries. It keeps its query/results/history across sidebar switches, renders root lookup results as a page-level view with the shared popup presentation renderer, and uses reader-style floating popups only for nested glossary lookups within the results page.
   - Dictionary management uses one in-app delete confirmation that describes app-owned cleanup without touching the original zip; ordering buttons expose themed hover/focus tooltips. The probe and `npm run check:dictionary-management` cover empty/loading/error/ready states, category tab click/keyboard navigation, visible counts, enable switches, order controls and tooltip boundaries, delete confirmation/cancel/focus restoration, import/refresh actions, Escape dismissal, and narrow-window overflow.
   - Dictionary import uses zip content hash as stable `dict_id` and records successful imports in the manifest.
   - Dictionary import creates Term/Frequency/Pitch manifest role entries only when the native import reports positive `termCount`, `freqCount`, or `pitchCount`; imports with no detected roles fail with a clear dictionary-type detection error.
@@ -229,6 +230,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - AnkiConnect panel regression probe: `npm run check:anki-connect`
 - Bookshelf shell and confirmation regression probe: `npm run check:bookshelf`
 - Dictionary management regression probe: `npm run check:dictionary-management`
+- Dictionary search regression probe: `npm run check:dictionary-search`
 - Appearance ToggleGroup and Advanced settings controller probe: `npm run check:settings-state`
 - Lookup popup regression probe: `npm run check:lookup-popup`
 - Reader TOC regression probe: `npm run check:reader-toc`

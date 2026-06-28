@@ -1,6 +1,7 @@
 <script lang="ts">
   import BookshelfView from "./BookshelfView.svelte";
   import { defaultDictionarySettings } from "./dictionary-settings";
+  import { createDictionarySearchState } from "./state/dictionary-search-state.svelte";
   import type { BookRecord } from "./storage";
 
   const books: BookRecord[] = [
@@ -26,6 +27,7 @@
 
   let forgetEvents = $state<string[]>([]);
   let sasayakiEvents = $state<string[]>([]);
+  const dictionarySearchState = createDictionarySearchState();
 </script>
 
 <main class="probe" data-ui-portal-root>
@@ -36,6 +38,12 @@
     advancedSettings={{ reopenLastBookOnStartup: true }}
     lookupPopupSettings={{ width: 320, height: 250, scale: 1 }}
     dictionarySettings={defaultDictionarySettings}
+    {dictionarySearchState}
+    dictionarySearchActions={{
+      lookupStatus: async () => ({ status: "noDictionaries", message: "No probe dictionaries.", loadedCount: 0, importedCount: 0 }),
+      lookup: async () => [],
+      onImportDictionary: () => {},
+    }}
     onOpenBook={() => {}}
     onContinueBook={() => {}}
     onForgetBook={(book) => forgetEvents = [...forgetEvents, book.bookId ?? book.path ?? "unknown"]}

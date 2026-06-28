@@ -8,9 +8,11 @@
   import type { DictionarySettings } from "./dictionary-settings";
   import type { LookupPopupSettings } from "./lookup-popup-settings";
   import DictionaryManagementPanel from "./DictionaryManagementPanel.svelte";
+  import DictionarySearchView, { type DictionarySearchActions } from "./DictionarySearchView.svelte";
   import ShortcutsPanel from "./ShortcutsPanel.svelte";
   import AdvancedPanel from "./AdvancedPanel.svelte";
   import type { AdvancedSettings } from "./advanced-settings";
+  import type { DictionarySearchState } from "./state/dictionary-search-state.svelte";
   import { bookRecordKey, type BookRecord } from "./storage";
   import ConfirmDialog from "./ui/ConfirmDialog.svelte";
 
@@ -28,6 +30,8 @@
     dictionaryList = [],
     dictionaryListStatus = null,
     dictionaryListError = "",
+    dictionarySearchState,
+    dictionarySearchActions,
     ankiSettings = null,
     ankiEndpointDraft = "http://127.0.0.1:8765",
     ankiStatus = "",
@@ -92,6 +96,8 @@
     dictionaryList?: DictionaryManifestEntry[];
     dictionaryListStatus?: DictionaryStatus | null;
     dictionaryListError?: string;
+    dictionarySearchState: DictionarySearchState;
+    dictionarySearchActions: DictionarySearchActions;
     ankiSettings?: AnkiSettings | null;
     ankiEndpointDraft?: string;
     ankiStatus?: string;
@@ -144,7 +150,7 @@
     onClearSasayakiCorrection?: (book: BookRecord, cueId: string) => void;
   } = $props();
 
-  type ShelfPanel = "library" | "dictionaries" | "anki" | "appearance" | "advanced" | "shortcuts";
+  type ShelfPanel = "library" | "dictionary" | "dictionaries" | "anki" | "appearance" | "advanced" | "shortcuts";
 
   let activePanel = $state<ShelfPanel>("library");
   let failedCoverKeys = $state<Set<string>>(new Set());
@@ -152,6 +158,7 @@
 
   const navItems: { id: ShelfPanel; label: string; detail: string; marker: string }[] = [
     { id: "library", label: "Library", detail: "Recent EPUBs", marker: "LI" },
+    { id: "dictionary", label: "Dictionary", detail: "Search terms", marker: "DS" },
     { id: "dictionaries", label: "Dictionaries", detail: "Lookup imports", marker: "DI" },
     { id: "anki", label: "Anki", detail: "AnkiConnect", marker: "AN" },
     { id: "appearance", label: "Appearance", detail: "Reader theme", marker: "AP" },
@@ -193,6 +200,7 @@
 
   function ensurePanel(panel: ShelfPanel) {
     activePanel = panel;
+    if (panel === "dictionary") dictionarySearchState.requestFocus();
   }
 
   function showSasayaki(book: BookRecord) {
@@ -321,6 +329,14 @@
           {/if}
         </div>
       </section>
+    {:else if activePanel === "dictionary"}
+      <DictionarySearchView
+        searchState={dictionarySearchState}
+        actions={dictionarySearchActions}
+        {dictionarySettings}
+        {ankiSettings}
+        active={activePanel === "dictionary"}
+      />
     {:else if activePanel === "dictionaries"}
       <DictionaryManagementPanel
         dictionaries={dictionaryList}

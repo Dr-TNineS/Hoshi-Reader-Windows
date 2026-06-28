@@ -8,12 +8,13 @@
     readerThemeLabels,
   } from "./lib/appearance";
   import { clearDictionaryStyleCache, preloadCachedDictionaryStyles } from "./lib/dictionary-style-cache";
+  import { runDictionaryLookup } from "./lib/dictionary-lookup-executor";
   import { beginLookupPerformance, discardLookupPerformance, markLookupPerformance } from "./lib/lookup-performance";
   import { LookupResultCache } from "./lib/lookup-result-cache";
   import { dictionaryBatchStatusLabel } from "./lib/dictionary-import-status";
   import { resolveChapterAssets } from "./lib/epub-assets";
   import LookupPopupLayer, { type LookupPopupItem } from "./lib/LookupPopupLayer.svelte";
-  import { resultDictionaryLabel, type LookupState } from "./lib/lookup-popup";
+  import { resultDictionaryLabel } from "./lib/lookup-popup";
   import { clearLookupHighlight, READER_LOOKUP_HIGHLIGHT } from "./lib/lookup-highlight";
   import Reader from "./lib/reader/Reader.svelte";
   import ReaderControls from "./lib/ReaderControls.svelte";
@@ -28,6 +29,7 @@
   } from "./lib/sasayaki-playback";
   import { sasayakiShortcutAction } from "./lib/sasayaki-shortcuts";
   import { createSettingsState } from "./lib/state/settings.svelte";
+  import { createDictionarySearchState } from "./lib/state/dictionary-search-state.svelte";
   import {
     beginWordAudioCoordination,
     endWordAudioCoordination,
@@ -95,6 +97,7 @@
   let readerLookupHighlightSignal = $state(0);
   let lookupPopups = $state<LookupPopupItem[]>([]);
   const settings = createSettingsState();
+  const dictionarySearchState = createDictionarySearchState();
   let lookupRequestId = 0;
   let showToc = $state(false);
   let error = $state("");
@@ -1856,21 +1859,6 @@
     if (shouldResumeSasayaki) resumeSasayakiAfterLookup();
   }
 
-  function lookupStatusMessage(status: DictionaryStatus): string {
-    if (status.status === "noDictionaries") return status.message || "No dictionaries are imported yet.";
-    if (status.status === "engineUnavailable") {
-      return status.message || "Dictionary engine unavailable. Check CMake/C++ tooling and hoshidicts linkage.";
-    }
-    return status.message || "Dictionary status could not be read.";
-  }
-
-  function lookupStateForStatus(status: DictionaryStatus): LookupState {
-    if (status.status === "noDictionaries") return "noDictionaries";
-    if (status.status === "engineUnavailable") return "engineUnavailable";
-    if (status.status === "error") return "error";
-    return "ready";
-  }
-
   function invalidateDictionaryLookupCaches() {
     cachedReadyDictionaryStatus = null;
     lookupResultCache.clear();
@@ -2511,40 +2499,39 @@
     }
 
     try {
-      markLookupPerformance(requestId, "status-start");
-      const status = await lookupDictionaryStatus();
-      markLookupPerformance(requestId, "status-ready", { status: status.status });
-      if (!isCurrent()) return;
-      if (status.status !== "ready") {
-        updateLookupPopup(popupId, {
-          state: lookupStateForStatus(status),
-          error: lookupStatusMessage(status),
-          results: [],
-        });
-        return;
-      }
-
-      const lookupRequest = lookupResultCache.get(
-        selection.text,
-        (text) => invoke<DictResult[]>("dict_lookup", {
+      const lookup = await runDictionaryLookup({
+        text: selection.text,
+        requestId,
+        settings: settings.dictionarySettings,
+        isCurrent,
+        lookupStatus: lookupDictionaryStatus,
+        lookup: (text, nextRequestId, nextSettings) => invoke<DictResult[]>("dict_lookup", {
           text,
-          requestId,
-          maxResults: settings.dictionarySettings.maxResults,
-          scanLength: settings.dictionarySettings.scanLength,
+          requestId: nextRequestId,
+          maxResults: nextSettings.maxResults,
+          scanLength: nextSettings.scanLength,
         }),
-      );
-      markLookupPerformance(requestId, "invoke-start", { cacheHit: lookupRequest.cacheHit });
-      const results = await lookupRequest.promise;
-      markLookupPerformance(requestId, "invoke-end", { resultCount: results.length, cacheHit: lookupRequest.cacheHit });
-      if (!isCurrent()) return;
-      const highlightCount = firstLookupMatchCount(results);
+        cache: lookupResultCache,
+        onStatusStart: () => markLookupPerformance(requestId, "status-start"),
+        onStatusReady: (status) => markLookupPerformance(requestId, "status-ready", { status: status.status }),
+        onLookupStart: (cacheHit) => markLookupPerformance(requestId, "invoke-start", { cacheHit }),
+        onLookupEnd: (results, cacheHit) => markLookupPerformance(requestId, "invoke-end", { resultCount: results.length, cacheHit }),
+        onStatusInvalidated: () => cachedReadyDictionaryStatus = null,
+        fallbackStatus: async () => {
+          const status = await invoke<DictionaryStatus>("dict_status");
+          cacheReadyDictionaryStatus(status);
+          return status;
+        },
+      });
+      if (!lookup) return;
+      const highlightCount = firstLookupMatchCount(lookup.results);
       if (updateReaderHighlight) {
         readerLookupHighlightCount = highlightCount;
         readerLookupHighlightSignal += 1;
       }
       lookupPopups = lookupPopups.map((popup) => {
         if (popup.id === popupId) {
-          return { ...popup, state: results.length > 0 ? "ready" : "empty", error: "", results };
+          return { ...popup, state: lookup.state, error: lookup.error, results: lookup.results };
         }
         if (highlightOwnerId && popup.id === highlightOwnerId) {
           return {
@@ -2555,25 +2542,9 @@
         }
         return popup;
       });
-      markLookupPerformance(requestId, "state-committed", { resultCount: results.length });
+      markLookupPerformance(requestId, "state-committed", { resultCount: lookup.results.length });
     } catch (e) {
       if (!isCurrent()) return;
-      cachedReadyDictionaryStatus = null;
-      try {
-        const status = await invoke<DictionaryStatus>("dict_status");
-        if (!isCurrent()) return;
-        cacheReadyDictionaryStatus(status);
-        if (status.status !== "ready") {
-          updateLookupPopup(popupId, {
-            state: lookupStateForStatus(status),
-            error: lookupStatusMessage(status),
-            results: [],
-          });
-          return;
-        }
-      } catch {
-        cachedReadyDictionaryStatus = null;
-      }
       updateLookupPopup(popupId, {
         state: "error",
         error: String(e),
@@ -2610,6 +2581,7 @@
       {dictionaryList}
       {dictionaryListStatus}
       {dictionaryListError}
+      {dictionarySearchState}
       {ankiSettings}
       {ankiEndpointDraft}
       {ankiStatus}
@@ -2638,6 +2610,31 @@
       onSetDictionaryEnabled={setDictionaryEnabled}
       onMoveDictionary={moveDictionary}
       onRemoveDictionaryImport={removeDictionaryImport}
+      dictionarySearchActions={{
+        lookupStatus: lookupDictionaryStatus,
+        lookup: (text, requestId, nextSettings) => {
+          if (!isTauriRuntime()) throw new Error("Dictionary lookup requires Tauri runtime.");
+          return invoke<DictResult[]>("dict_lookup", {
+            text,
+            requestId,
+            maxResults: nextSettings.maxResults,
+            scanLength: nextSettings.scanLength,
+          });
+        },
+        fallbackStatus: async () => {
+          const status = await invoke<DictionaryStatus>("dict_status");
+          cacheReadyDictionaryStatus(status);
+          return status;
+        },
+        onStatusInvalidated: () => cachedReadyDictionaryStatus = null,
+        onImportDictionary: importDictionary,
+        cache: lookupResultCache,
+        onStoreAnkiMedia: storeAnkiMedia,
+        onStoreAnkiBookCover: storeAnkiBookCover,
+        onStoreAnkiWordAudio: storeAnkiWordAudio,
+        onPrepareWordAudio: prepareWordAudio,
+        onAddAnkiNote: addAnkiNote,
+      }}
       onAnkiEndpointChange={(endpoint) => ankiEndpointDraft = endpoint}
       onPingAnkiConnect={pingAnkiConnect}
       onFetchAnkiConfig={fetchAnkiConfig}

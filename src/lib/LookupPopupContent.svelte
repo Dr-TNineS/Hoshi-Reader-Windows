@@ -50,6 +50,7 @@
     sasayakiAvailable = false,
     onSasayakiAction,
     onAddAnkiNote,
+    presentation = "popup",
   }: {
     popupId: string;
     requestId?: number;
@@ -88,6 +89,7 @@
     sasayakiAvailable?: boolean;
     onSasayakiAction?: (popupId: string, action: SasayakiPopupAction) => void;
     onAddAnkiNote?: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
+    presentation?: "popup" | "page";
   } = $props();
 
   let shiftHoverPoint: { x: number; y: number } | null = null;
@@ -125,7 +127,7 @@
     harmonicFrequency: dictionarySettings.harmonicFrequency,
     deduplicatePitchAccents: dictionarySettings.deduplicatePitchAccents,
   }));
-  const canControlSasayaki = $derived(popupId === "root" && sasayakiAvailable && Boolean(sasayakiCue) && Boolean(onSasayakiAction));
+  const canControlSasayaki = $derived(presentation === "popup" && popupId === "root" && sasayakiAvailable && Boolean(sasayakiCue) && Boolean(onSasayakiAction));
 
   interface DictionaryMediaResource {
     mimeType: string;
@@ -713,6 +715,7 @@
 
 <div
   class="lookup-content"
+  class:page-presentation={presentation === "page"}
   class:compact-glossaries={dictionarySettings.compactGlossaries}
   class:compact-pitch={dictionarySettings.compactPitchAccents}
   bind:this={contentRoot}
@@ -729,7 +732,9 @@
     <div class="lookup-head-actions">
       <button aria-label="Back" title="Back" disabled={!canNavigateBack} onclick={() => onNavigateHistory(popupId, "back")}>&lt;</button>
       <button aria-label="Forward" title="Forward" disabled={!canNavigateForward} onclick={() => onNavigateHistory(popupId, "forward")}>&gt;</button>
-      <button aria-label="Close lookup" onclick={() => onClose(popupId)}>Close</button>
+      {#if presentation === "popup"}
+        <button aria-label="Close lookup" onclick={() => onClose(popupId)}>Close</button>
+      {/if}
     </div>
   </div>
   {#if lookupState === "loading"}
@@ -908,6 +913,9 @@
   .word-audio-status { margin: calc(2px * var(--popup-scale, 1)) 0 0; color: var(--app-status, #cce8d5); font-size: calc(11px * var(--popup-scale, 1)); line-height: 1.35; }
   .word-audio-status.error { color: var(--app-error, #ffb4ab); }
   .lookup-content { display: flex; flex: 1 1 auto; flex-direction: column; gap: 8px; width: 100%; height: 100%; min-width: 0; min-height: 0; font-family: "Yu Gothic UI", "Meiryo", "Segoe UI", sans-serif; }
+  .lookup-content.page-presentation { --popup-scale: 1; gap: 0; }
+  .lookup-content.page-presentation .lookup-head { flex: 0 0 auto; padding: 10px 0; border-bottom: 1px solid var(--app-border, #333333); }
+  .lookup-content.page-presentation .lookup-results { padding: 0 4px 24px 0; }
   .lookup-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; color: var(--app-muted, #999999); font-size: 11px; text-transform: uppercase; }
   .lookup-head-actions { display: flex; align-items: center; gap: 4px; }
   .lookup-sasayaki-controls { display: flex; flex: 1 1 auto; justify-content: center; gap: 4px; min-width: 0; }

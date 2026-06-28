@@ -70,6 +70,7 @@
     sasayakiAvailable = false,
     onSasayakiAction,
     onAddAnkiNote,
+    bounds = null,
   }: {
     popups?: LookupPopupItem[];
     ankiSettings?: AnkiSettings | null;
@@ -95,12 +96,14 @@
     sasayakiAvailable?: boolean;
     onSasayakiAction?: (popupId: string, action: SasayakiPopupAction) => void;
     onAddAnkiNote: (note: AnkiNoteRequest) => Promise<AnkiAddNoteResult>;
+    bounds?: { left: number; top: number; right: number; bottom: number } | null;
   } = $props();
 
   let viewportWidth = $state(window.innerWidth);
   let viewportHeight = $state(window.innerHeight);
 
   function readerBottomBoundary(): number {
+    if (bounds) return bounds.bottom;
     const controls = document.querySelector<HTMLElement>(".ctrls");
     const readerViewport = document.querySelector<HTMLElement>(".rv");
     const controlsTop = controls?.getBoundingClientRect().top ?? window.innerHeight;
@@ -115,13 +118,19 @@
 
   function popupStyle(selection: ReaderSelection): string {
     const bottom = Math.min(viewportHeight, readerBottomBoundary());
+    const left = bounds?.left ?? 0;
+    const right = bounds?.right ?? viewportWidth;
+    const top = bounds?.top;
     const size = {
-      width: Math.max(1, Math.min(popupSettings.width, viewportWidth - 24)),
-      height: Math.max(1, Math.min(popupSettings.height, bottom - 44)),
+      width: Math.max(1, Math.min(popupSettings.width, right - left - 24)),
+      height: Math.max(1, Math.min(popupSettings.height, bottom - (top ?? 44))),
     };
     const position = lookupPopupStyle(selection, size, {
       width: viewportWidth,
       bottom,
+      left,
+      right,
+      top,
     });
     return `${position};width:${size.width}px;height:${size.height}px;--popup-scale:${popupSettings.scale}`;
   }
