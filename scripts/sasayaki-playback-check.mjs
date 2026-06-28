@@ -65,6 +65,10 @@ async function presentation(page) {
     lifecycleSaveAttempts: await state.getAttribute("data-lifecycle-save-attempts"),
     lifecycleError: await state.getAttribute("data-lifecycle-error"),
     traceEvents: await state.getAttribute("data-trace-events"),
+    restorePending: await state.getAttribute("data-restore-pending"),
+    restoreAudioTime: await state.getAttribute("data-restore-audio-time"),
+    restoreSavedPositions: await state.getAttribute("data-restore-saved-positions"),
+    restoreTraceEvents: await state.getAttribute("data-restore-trace-events"),
   };
 }
 
@@ -240,6 +244,44 @@ async function main() {
     assert(
       lifecycle.traceEvents === "save.start:2:42.75,save.success:2:42.75,save.stale:1:0.00",
       "Sasayaki persistence should reject stale save attempts before they can overwrite a newer run.",
+      lifecycle,
+    );
+    await page.getByRole("button", { name: "Probe pre-metadata restore start", exact: true }).dispatchEvent("click");
+    await page.getByRole("button", { name: "Probe pre-metadata zero timeupdate", exact: true }).dispatchEvent("click");
+    lifecycle = await presentation(page);
+    assert(
+      lifecycle.lifecycleCurrentTime === "42.75" &&
+        lifecycle.restoreSavedPositions === "" &&
+        lifecycle.restorePending === "42.75",
+      "Pre-metadata zero timeupdate should not overwrite the restored Sasayaki position or save 0.",
+      lifecycle,
+    );
+    await page.getByRole("button", { name: "Probe pre-metadata stop", exact: true }).dispatchEvent("click");
+    lifecycle = await presentation(page);
+    assert(
+      lifecycle.restoreSavedPositions === "42.75",
+      "Stopping before metadata restore should flush the pending restored position instead of audio 0.",
+      lifecycle,
+    );
+    await page.getByRole("button", { name: "Probe metadata restore complete", exact: true }).dispatchEvent("click");
+    lifecycle = await presentation(page);
+    assert(
+      lifecycle.restorePending === "" &&
+        lifecycle.restoreAudioTime === "42.75" &&
+        lifecycle.lifecycleCurrentTime === "42.75",
+      "Loaded metadata should apply and clear the pending Sasayaki restore position.",
+      lifecycle,
+    );
+    await page.getByRole("button", { name: "Probe post-restore playback tick", exact: true }).dispatchEvent("click");
+    lifecycle = await presentation(page);
+    assert(
+      lifecycle.restoreSavedPositions === "42.75,43.20",
+      "After metadata restore, normal per-second Sasayaki persistence should resume.",
+      lifecycle,
+    );
+    assert(
+      lifecycle.restoreTraceEvents === "metadata.restore.pending:42.75,metadata.restore.skipPreRestoreSample:0.00,stop.sample:42.75,metadata.restore.success:42.75",
+      "Sasayaki restore trace should expose the pre-metadata skip, guarded stop sample, and metadata restore.",
       lifecycle,
     );
 

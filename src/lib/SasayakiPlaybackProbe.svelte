@@ -44,6 +44,11 @@
   let lifecycleFailNextSave = false;
   let probeCurrentRunId = 1;
   let traceEvents = $state<string[]>([]);
+  let restorePendingPosition = $state<number | null>(null);
+  let restoreAudioTime = $state(0);
+  let restoreLastPersistedSecond = -1;
+  let restoreSavedPositions = $state<number[]>([]);
+  let restoreTraceEvents = $state<string[]>([]);
   let session = $state<SasayakiPlaybackSession>({
     configured: true,
     audioPath: "C:/Books/audio.wav",
@@ -173,6 +178,53 @@
     }
     recordProbeTrace("save.start", staleSnapshot.runId, staleSnapshot.position);
     recordProbeTrace("save.success", staleSnapshot.runId, staleSnapshot.position);
+  }
+
+  function appendRestoreTrace(event: string, position: number) {
+    restoreTraceEvents = [...restoreTraceEvents, `${event}:${position.toFixed(2)}`];
+  }
+
+  function probeStartPreMetadataRestore() {
+    restorePendingPosition = 42.75;
+    restoreAudioTime = 0;
+    restoreLastPersistedSecond = Math.floor(restorePendingPosition);
+    restoreSavedPositions = [];
+    restoreTraceEvents = [];
+    currentTime = restorePendingPosition;
+    session = { ...session, lastPosition: restorePendingPosition };
+    appendRestoreTrace("metadata.restore.pending", restorePendingPosition);
+  }
+
+  function probePreMetadataZeroTimeUpdate() {
+    if (restorePendingPosition !== null) {
+      appendRestoreTrace("metadata.restore.skipPreRestoreSample", restoreAudioTime);
+      currentTime = restorePendingPosition;
+      return;
+    }
+    currentTime = restoreAudioTime;
+    restoreSavedPositions = [...restoreSavedPositions, restoreAudioTime];
+  }
+
+  function probePreMetadataStop() {
+    const position = restorePendingPosition ?? restoreAudioTime;
+    restoreSavedPositions = [...restoreSavedPositions, position];
+    appendRestoreTrace("stop.sample", position);
+  }
+
+  function probeMetadataRestoreComplete() {
+    if (restorePendingPosition === null) return;
+    restoreAudioTime = restorePendingPosition;
+    currentTime = restorePendingPosition;
+    appendRestoreTrace("metadata.restore.success", restorePendingPosition);
+    restorePendingPosition = null;
+  }
+
+  function probePostRestorePlaybackTick() {
+    restoreAudioTime = 43.2;
+    currentTime = restoreAudioTime;
+    if (!shouldPersistPlaybackSecond(restoreAudioTime, restoreLastPersistedSecond)) return;
+    restoreLastPersistedSecond = Math.floor(restoreAudioTime);
+    restoreSavedPositions = [...restoreSavedPositions, restoreAudioTime];
   }
 
   function restoreWordAudioCoordination(id = wordAudioCoordination?.id) {
@@ -315,6 +367,31 @@
     aria-label="Probe stale Sasayaki save trace"
     onclick={probeStaleSnapshotTrace}
   >Stale save trace</button>
+  <button
+    class="probe-action"
+    aria-label="Probe pre-metadata restore start"
+    onclick={probeStartPreMetadataRestore}
+  >Pre-metadata restore</button>
+  <button
+    class="probe-action"
+    aria-label="Probe pre-metadata zero timeupdate"
+    onclick={probePreMetadataZeroTimeUpdate}
+  >Pre-metadata zero tick</button>
+  <button
+    class="probe-action"
+    aria-label="Probe pre-metadata stop"
+    onclick={probePreMetadataStop}
+  >Pre-metadata stop</button>
+  <button
+    class="probe-action"
+    aria-label="Probe metadata restore complete"
+    onclick={probeMetadataRestoreComplete}
+  >Metadata restore complete</button>
+  <button
+    class="probe-action"
+    aria-label="Probe post-restore playback tick"
+    onclick={probePostRestorePlaybackTick}
+  >Post-restore tick</button>
   {#if readerView && open}
     <div id="sasayaki-player">
       <button
@@ -481,6 +558,10 @@
     data-lifecycle-save-attempts={lifecycleSaveAttempts}
     data-lifecycle-error={lifecycleError}
     data-trace-events={traceEvents.join(",")}
+    data-restore-pending={restorePendingPosition === null ? "" : restorePendingPosition.toFixed(2)}
+    data-restore-audio-time={restoreAudioTime.toFixed(2)}
+    data-restore-saved-positions={restoreSavedPositions.map((position) => position.toFixed(2)).join(",")}
+    data-restore-trace-events={restoreTraceEvents.join(",")}
   ></div>
 </main>
 

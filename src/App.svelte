@@ -136,6 +136,7 @@
   let sasayakiExitingReader = false;
   let sasayakiPlaybackRunId = 0;
   let sasayakiSaveSeq = 0;
+  let sasayakiPendingRestore: SasayakiPlaybackRestorePending | null = null;
   let sasayakiActiveCue = $state<SasayakiPlaybackCue | null>(null);
   let sasayakiCueReveal = $state(false);
   let sasayakiCueSignal = $state(0);
@@ -171,12 +172,22 @@
     runId: number;
     saveSeq: number;
     reason: string;
+    positionSource: SasayakiPlaybackPositionSource;
     lastPosition: number;
     delay: number;
     rate: number;
     autoScroll: boolean;
     autoPause: boolean;
     skipAction: SasayakiSkipAction;
+  }
+
+  type SasayakiPlaybackPositionSource = "audio" | "session-restore-pending" | "state";
+
+  interface SasayakiPlaybackRestorePending {
+    bookId: string;
+    runId: number;
+    audioPath: string;
+    lastPosition: number;
   }
 
   type SasayakiPersistenceTraceEntry = Record<string, unknown> & {
@@ -762,6 +773,84 @@
     });
   }
 
+  function currentSasayakiRestorePending(): SasayakiPlaybackRestorePending | null {
+    const pending = sasayakiPendingRestore;
+    const sessionPath = sasayakiPlayback?.audioPath ?? null;
+    if (
+      !pending
+      || pending.bookId !== sasayakiPlaybackBookId
+      || pending.runId !== sasayakiPlaybackRunId
+      || pending.audioPath !== sessionPath
+    ) {
+      return null;
+    }
+    return pending;
+  }
+
+  function clearSasayakiRestorePending(reason: string) {
+    const pending = sasayakiPendingRestore;
+    if (!pending) return;
+    recordSasayakiPersistence("metadata.restore.clear", {
+      reason,
+      pendingBookId: pending.bookId,
+      pendingRunId: pending.runId,
+      pendingLastPosition: pending.lastPosition,
+    });
+    sasayakiPendingRestore = null;
+  }
+
+  function trackSasayakiRestorePending(session: SasayakiPlaybackSession | null) {
+    const bookId = sasayakiPlaybackBookId;
+    const audioPath = session?.audioPath ?? null;
+    const lastPosition = clampPlaybackTime(session?.lastPosition ?? 0, 0);
+    if (!bookId || !audioPath || lastPosition <= 0) {
+      clearSasayakiRestorePending("audio-source");
+      return;
+    }
+    sasayakiPendingRestore = {
+      bookId,
+      runId: sasayakiPlaybackRunId,
+      audioPath,
+      lastPosition,
+    };
+    recordSasayakiPersistence("metadata.restore.pending", {
+      pendingBookId: bookId,
+      pendingRunId: sasayakiPlaybackRunId,
+      pendingLastPosition: lastPosition,
+    });
+  }
+
+  function sampleSasayakiPlaybackPosition(): { position: number; source: SasayakiPlaybackPositionSource } {
+    const pending = currentSasayakiRestorePending();
+    if (pending) {
+      return {
+        position: pending.lastPosition,
+        source: "session-restore-pending",
+      };
+    }
+    if (sasayakiAudio) {
+      return {
+        position: clampPlaybackTime(sasayakiAudio.currentTime, sasayakiDuration),
+        source: "audio",
+      };
+    }
+    return {
+      position: clampPlaybackTime(sasayakiCurrentTime, sasayakiDuration),
+      source: "state",
+    };
+  }
+
+  function skipSasayakiPreRestoreSample(reason: string, sampledTime: number | null = null): boolean {
+    const pending = currentSasayakiRestorePending();
+    if (!pending) return false;
+    recordSasayakiPersistence("metadata.restore.skipPreRestoreSample", {
+      reason,
+      sampledTime,
+      pendingLastPosition: pending.lastPosition,
+    });
+    return true;
+  }
+
   function setSasayakiAudioSource(session: SasayakiPlaybackSession | null) {
     const nextPath = session?.audioPath ?? null;
     sasayakiAudioSrc = nextPath ? convertFileSrc(nextPath) : "";
@@ -775,6 +864,7 @@
       hasPath: Boolean(nextPath),
       sessionLastPosition: session?.lastPosition ?? null,
     });
+    trackSasayakiRestorePending(session);
   }
 
   function restoreWordAudioCoordination(id: number | void = wordAudioCoordination?.id) {
@@ -865,6 +955,7 @@
     replaceWordAudioCoordination();
     clearSasayakiCueTimer();
     clearSasayakiReplayCleanup();
+    clearSasayakiRestorePending("teardown");
     if (sasayakiAudio) {
       sasayakiSuppressPauseSave = true;
       sasayakiAudio.pause();
@@ -881,6 +972,7 @@
   }
 
   function resetSasayakiPlaybackOwner(reason: string) {
+    clearSasayakiRestorePending(reason);
     recordSasayakiPersistence("owner.reset", { reason });
     sasayakiPlaybackRunId += 1;
     sasayakiPlaybackBookId = null;
@@ -960,6 +1052,7 @@
   function commitSasayakiAudioTime(forceReveal = false, forceCommit = false) {
     const audio = sasayakiAudio;
     if (!audio) return;
+    if (skipSasayakiPreRestoreSample("commit", Number.isFinite(audio.currentTime) ? audio.currentTime : null)) return;
     const nextTime = clampPlaybackTime(audio.currentTime, sasayakiDuration);
     const now = performance.now();
     if (shouldCommitPlaybackTime(nextTime, sasayakiCurrentTime, now, sasayakiLastTimeCommitAt, forceCommit)) {
@@ -978,18 +1071,27 @@
     sasayakiDuration = Number.isFinite(audio.duration) ? audio.duration : 0;
     const path = sasayakiPlayback?.audioPath ?? null;
     if (path && sasayakiLoadedAudioPath !== path) {
-      const restored = clampPlaybackTime(sasayakiPlayback?.lastPosition ?? 0, sasayakiDuration);
+      const pending = currentSasayakiRestorePending();
+      const restorePosition = pending?.lastPosition ?? sasayakiPlayback?.lastPosition ?? 0;
+      recordSasayakiPersistence("metadata.restore.start", {
+        pending: Boolean(pending),
+        restorePosition,
+        duration: sasayakiDuration,
+      });
+      const restored = clampPlaybackTime(restorePosition, sasayakiDuration);
       audio.currentTime = restored;
       sasayakiCurrentTime = restored;
       sasayakiLoadedAudioPath = path;
       sasayakiLastTimeCommitAt = performance.now();
       scheduleSasayakiCuePresentation(false, true);
       recordSasayakiDiagnostic("loadedmetadata", { restored });
-      recordSasayakiPersistence("metadata.restore", { restored, duration: sasayakiDuration });
+      recordSasayakiPersistence("metadata.restore.success", { restored, duration: sasayakiDuration });
+      if (pending) sasayakiPendingRestore = null;
     }
   }
 
   function handleSasayakiTimeUpdate() {
+    if (skipSasayakiPreRestoreSample("timeupdate", sasayakiAudio?.currentTime ?? null)) return;
     commitSasayakiAudioTime(false);
     if (sasayakiReplayCleanup) return;
     const position = clampPlaybackTime(sasayakiAudio?.currentTime ?? sasayakiCurrentTime, sasayakiDuration);
@@ -1011,6 +1113,10 @@
   function handleSasayakiPause() {
     const audio = sasayakiAudio;
     sasayakiPlaying = false;
+    if (skipSasayakiPreRestoreSample("pause", audio?.currentTime ?? null)) {
+      recordSasayakiDiagnostic("pause", { ignored: "restore-pending" });
+      return;
+    }
     if (audio) sasayakiCurrentTime = clampPlaybackTime(audio.currentTime, sasayakiDuration);
     if (!sasayakiAudioSrc) {
       recordSasayakiDiagnostic("pause", { ignored: "teardown" });
@@ -1077,13 +1183,14 @@
       });
       return null;
     }
-    const lastPosition = clampPlaybackTime(sasayakiAudio?.currentTime ?? sasayakiCurrentTime, sasayakiDuration);
+    const sample = sampleSasayakiPlaybackPosition();
     const snapshot = {
       bookId,
       runId: sasayakiPlaybackRunId,
       saveSeq: ++sasayakiSaveSeq,
       reason,
-      lastPosition,
+      positionSource: sample.source,
+      lastPosition: sample.position,
       delay: session.delay,
       rate: session.rate,
       autoScroll: session.autoScroll,
@@ -1094,6 +1201,7 @@
       reason,
       saveSeq: snapshot.saveSeq,
       snapshotLastPosition: snapshot.lastPosition,
+      positionSource: snapshot.positionSource,
     });
     return snapshot;
   }
@@ -1116,6 +1224,7 @@
               snapshotBookId: snapshot.bookId,
               currentBookId: sasayakiPlaybackBookId,
               snapshotLastPosition: snapshot.lastPosition,
+              positionSource: snapshot.positionSource,
               reason: snapshot.reason,
               skipped: true,
             });
@@ -1141,6 +1250,7 @@
       saveSeq: snapshot.saveSeq,
       snapshotRunId: snapshot.runId,
       snapshotLastPosition: snapshot.lastPosition,
+      positionSource: snapshot.positionSource,
       reason: snapshot.reason,
     });
     try {
@@ -1158,6 +1268,7 @@
           saveSeq: snapshot.saveSeq,
           snapshotRunId: snapshot.runId,
           snapshotLastPosition: snapshot.lastPosition,
+          positionSource: snapshot.positionSource,
           stale: true,
           returnedLastPosition: saved.lastPosition,
         });
@@ -1170,6 +1281,7 @@
         saveSeq: snapshot.saveSeq,
         snapshotRunId: snapshot.runId,
         snapshotLastPosition: snapshot.lastPosition,
+        positionSource: snapshot.positionSource,
         returnedLastPosition: saved.lastPosition,
       });
       recordSasayakiDiagnostic("save", { time: snapshot.lastPosition });
@@ -1180,6 +1292,7 @@
         saveSeq: snapshot.saveSeq,
         snapshotRunId: snapshot.runId,
         snapshotLastPosition: snapshot.lastPosition,
+        positionSource: snapshot.positionSource,
         reason: snapshot.reason,
         error: String(e),
       });
@@ -1199,9 +1312,16 @@
       clearTimeout(sasayakiSaveTimer);
       sasayakiSaveTimer = null;
     }
+    if (sasayakiAudio || currentSasayakiRestorePending()) {
+      const sample = sampleSasayakiPlaybackPosition();
+      sasayakiCurrentTime = sample.position;
+      recordSasayakiPersistence("stop.sample", {
+        sampledTime: sasayakiCurrentTime,
+        positionSource: sample.source,
+        reason,
+      });
+    }
     if (sasayakiAudio) {
-      sasayakiCurrentTime = sasayakiAudio.currentTime;
-      recordSasayakiPersistence("stop.sample", { sampledTime: sasayakiCurrentTime, reason });
       sasayakiSuppressPauseSave = true;
       sasayakiAudio.pause();
       sasayakiSuppressPauseSave = false;
@@ -1245,6 +1365,7 @@
 
   function seekSasayaki(seconds: number, revealCue = true, savePosition = true) {
     const target = clampPlaybackTime(seconds, sasayakiDuration);
+    clearSasayakiRestorePending("seek");
     const audio = sasayakiAudio;
     if (audio) audio.currentTime = target;
     sasayakiCurrentTime = target;
