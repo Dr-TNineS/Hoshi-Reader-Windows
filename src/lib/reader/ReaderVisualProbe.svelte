@@ -7,7 +7,10 @@
   const params = new URLSearchParams(window.location.search);
   const lookupHighlightMode = params.get("lookupHighlightMode") ?? "";
   const sasayakiMode = params.get("sasayakiMode") ?? "";
-  const appearancePalette = readerAppearancePalette({ theme: params.get("theme") === "light" ? "light" : "dark" });
+  const themeParam = params.get("theme");
+  const appearancePalette = readerAppearancePalette({
+    theme: themeParam === "light" || themeParam === "sepia" ? themeParam : "dark",
+  });
 
   const imageSvg = encodeURIComponent(`
     <svg xmlns="http://www.w3.org/2000/svg" width="360" height="520" viewBox="0 0 360 520">

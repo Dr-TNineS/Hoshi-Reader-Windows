@@ -67,7 +67,7 @@
   <BookshelfView
     {books}
     readerAppearance={{ theme: "dark" }}
-    readerThemeLabels={{ light: "Light", dark: "Dark" }}
+    readerThemeLabels={{ light: "Light", dark: "Dark", sepia: "Sepia" }}
     advancedSettings={{ reopenLastBookOnStartup: true }}
     lookupPopupSettings={{ width: 320, height: 250, scale: 1 }}
     {dictionarySettings}

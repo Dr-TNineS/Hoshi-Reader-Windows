@@ -1,4 +1,4 @@
-export type ReaderTheme = "light" | "dark";
+export type ReaderTheme = "light" | "dark" | "sepia";
 
 export type ReaderAppearance = {
   theme: ReaderTheme;
@@ -34,16 +34,21 @@ export const defaultReaderAppearance: ReaderAppearance = {
 };
 
 export const readerThemeLabels: Record<ReaderTheme, string> = {
-  light: "浅色",
-  dark: "深色",
+  light: "\u6d45\u8272",
+  dark: "\u6df1\u8272",
+  sepia: "Sepia",
 };
+
+function isReaderTheme(theme: unknown): theme is ReaderTheme {
+  return theme === "light" || theme === "dark" || theme === "sepia";
+}
 
 export function loadReaderAppearance(): ReaderAppearance {
   try {
     const raw = localStorage.getItem(APPEARANCE_KEY);
     const parsed = raw ? JSON.parse(raw) as Partial<ReaderAppearance> : {};
     return {
-      theme: parsed.theme === "light" || parsed.theme === "dark"
+      theme: isReaderTheme(parsed.theme)
         ? parsed.theme
         : defaultReaderAppearance.theme,
     };
@@ -78,6 +83,30 @@ export function readerAppearancePalette(appearance: ReaderAppearance): ReaderApp
       appError: "#b3261e",
       appStatus: "#4f6358",
       appShadow: "rgba(0, 0, 0, 0.18)",
+    };
+  }
+
+  if (appearance.theme === "sepia") {
+    return {
+      readerBackground: "#f2e2c9",
+      readerText: "#332a1b",
+      readerInfo: "#5c5448",
+      lookupHighlight: "rgba(160, 160, 160, 0.32)",
+      sasayakiHighlightText: "#000000",
+      sasayakiHighlightBackground: "rgba(135, 206, 235, 0.4)",
+      appBackground: "#f2e2c9",
+      appText: "#332a1b",
+      appMuted: "#5c5448",
+      appSurface: "#f8f0e2",
+      appSurfaceHover: "#ead9bd",
+      appBorder: "#d8c5a5",
+      appControl: "#f8f0e2",
+      appControlHover: "#ead9bd",
+      appPrimary: "#7a5d2d",
+      appPrimaryHover: "#6a5026",
+      appError: "#9a3412",
+      appStatus: "#5f6f3a",
+      appShadow: "rgba(80, 53, 22, 0.2)",
     };
   }
 

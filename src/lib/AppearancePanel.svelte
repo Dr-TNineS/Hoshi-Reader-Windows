@@ -26,14 +26,14 @@
   );
 
   function setTheme(theme: string) {
-    if (theme === "light" || theme === "dark") onThemeChange(theme);
+    if (theme === "light" || theme === "dark" || theme === "sepia") onThemeChange(theme);
   }
 </script>
 
 <section class="appearance-panel" aria-label="Reader appearance">
   <div class="appearance-head">
     <h2>Appearance</h2>
-    <p class="appearance-summary">HSA reader theme: white/black for Light, black/white for Dark.</p>
+    <p class="appearance-summary">HSA reader themes: white Light, black Dark, and warm Sepia.</p>
   </div>
   <UiToggleGroup value={appearance.theme} items={themeOptions} ariaLabel="Theme" onValueChange={setTheme} />
   <div class="popup-settings" aria-label="Dictionary popup settings">

@@ -109,6 +109,30 @@ async function readerMetrics(page) {
   });
 }
 
+async function readerThemeState(page) {
+  await page.locator(".rv.ready").waitFor({ timeout: 10000 });
+  return page.evaluate(() => {
+    const rc = document.querySelector(".rc");
+    const rv = document.querySelector(".rv");
+    const rct = document.querySelector(".rct");
+    const rh = document.querySelector(".rh");
+    if (!(rc instanceof HTMLElement) || !(rv instanceof HTMLElement) || !(rct instanceof HTMLElement) || !(rh instanceof HTMLElement)) {
+      throw new Error("Reader theme elements not found.");
+    }
+    const rootStyle = getComputedStyle(rc);
+    const viewportStyle = getComputedStyle(rv);
+    const contentStyle = getComputedStyle(rct);
+    const headerStyle = getComputedStyle(rh);
+    return {
+      rootBackground: rootStyle.backgroundColor,
+      viewportBackground: viewportStyle.backgroundColor,
+      contentBackground: contentStyle.backgroundColor,
+      contentColor: contentStyle.color,
+      headerColor: headerStyle.color,
+    };
+  });
+}
+
 async function probeChapterIndex(page) {
   const value = await page.locator(".probe-state").getAttribute("data-chapter-index");
   return Number(value);
@@ -1016,6 +1040,17 @@ async function main() {
     assert(narrow.totalPages >= desktop.totalPages, "Narrow reader should keep a paginated layout.", { desktop, narrow });
 
     await page.setViewportSize({ width: 1280, height: 720 });
+    await page.goto(`${url}&theme=sepia`);
+    const sepiaTheme = await readerThemeState(page);
+    assert(
+      sepiaTheme.rootBackground === "rgb(242, 226, 201)" &&
+        sepiaTheme.contentBackground === "rgb(242, 226, 201)" &&
+        sepiaTheme.contentColor === "rgb(51, 42, 27)" &&
+        sepiaTheme.headerColor === "rgb(92, 84, 72)",
+      "Sepia mode should expose the HSA reader content and info colors.",
+      sepiaTheme,
+    );
+
     await page.goto(`${url}&sasayakiMode=highlight&theme=light`);
     await page.locator(".rv.ready").waitFor({ timeout: 10000 });
     await page.waitForFunction(() => document.querySelectorAll(".sasayaki-highlight-rect").length > 0);

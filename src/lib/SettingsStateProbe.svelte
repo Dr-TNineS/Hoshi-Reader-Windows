@@ -30,7 +30,7 @@
 <main>
   <AppearancePanel
     appearance={settings.readerAppearance}
-    themeLabels={{ light: "Light", dark: "Dark" }}
+    themeLabels={{ light: "Light", dark: "Dark", sepia: "Sepia" }}
     onThemeChange={settings.setReaderTheme}
     popupSettings={settings.lookupPopupSettings}
     onPopupWidthChange={settings.setLookupPopupWidth}

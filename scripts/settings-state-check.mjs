@@ -90,17 +90,27 @@ async function main() {
 
     const lightTheme = page.getByRole("radio", { name: "Light", exact: true });
     const darkTheme = page.getByRole("radio", { name: "Dark", exact: true });
+    const sepiaTheme = page.getByRole("radio", { name: "Sepia", exact: true });
     assert(await darkTheme.getAttribute("aria-checked") === "true", "Loaded theme should be checked in the toggle group.");
+    assert(await sepiaTheme.count() === 1, "Sepia should be available as a reader theme option.");
     await darkTheme.click();
     current = await state(page);
     assert(current.savedAppearances === "dark", "Clicking the active theme should not deselect or persist it again.", current);
+
+    await sepiaTheme.click();
+    current = await state(page);
+    assert(current.theme === "sepia", "Clicking Sepia should update the selected theme.", current);
+    assert(current.savedAppearances === "dark,sepia", "Sepia selection should persist the next appearance.", current);
+    assert(current.appearanceVars?.includes("--reader-bg:#f2e2c9"), "Sepia should expose the HSA reader background.", current);
+    assert(current.appearanceVars?.includes("--reader-text:#332a1b"), "Sepia should expose the HSA reader text color.", current);
+    assert(await sepiaTheme.getAttribute("aria-checked") === "true", "Clicked Sepia theme should become checked.");
 
     await darkTheme.focus();
     await page.keyboard.press("ArrowLeft");
     await page.keyboard.press("Space");
     current = await state(page);
     assert(current.theme === "light", "Arrow navigation plus Space should update the selected theme.", current);
-    assert(current.savedAppearances === "dark,light", "Theme setter should persist the next appearance.", current);
+    assert(current.savedAppearances === "dark,sepia,light", "Theme setter should persist the next appearance.", current);
     assert(current.appearanceVars?.includes("--app-bg:#fff"), "Theme setter should recompute appearance CSS variables.", current);
     assert(await lightTheme.getAttribute("aria-checked") === "true", "Keyboard-selected theme should become checked.");
 
@@ -111,7 +121,7 @@ async function main() {
 
     await darkTheme.click();
     current = await state(page);
-    assert(current.savedAppearances === "dark,light,dark", "Repeated theme changes should persist in order.", current);
+    assert(current.savedAppearances === "dark,sepia,light,dark", "Repeated theme changes should persist in order.", current);
 
     await page.getByLabel("Popup width").evaluate((input) => {
       input.value = "684";
