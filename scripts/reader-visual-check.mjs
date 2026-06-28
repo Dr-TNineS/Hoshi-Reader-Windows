@@ -6,6 +6,11 @@ const port = Number(process.env.HSW_READER_VISUAL_PORT || 5174);
 const origin = `http://127.0.0.1:${port}`;
 const url = `${origin}/?readerVisualProbe=1`;
 
+function probeUrl(params = {}) {
+  const search = new URLSearchParams(params);
+  return search.size ? `${url}&${search}` : url;
+}
+
 function assert(condition, message, details = {}) {
   if (!condition) {
     const suffix = Object.keys(details).length ? `\n${JSON.stringify(details, null, 2)}` : "";
@@ -1040,7 +1045,29 @@ async function main() {
     assert(narrow.totalPages >= desktop.totalPages, "Narrow reader should keep a paginated layout.", { desktop, narrow });
 
     await page.setViewportSize({ width: 1280, height: 720 });
-    await page.goto(`${url}&theme=sepia`);
+    await page.goto(probeUrl({ theme: "light" }));
+    const lightTheme = await readerThemeState(page);
+    assert(
+      lightTheme.rootBackground === "rgb(255, 255, 255)" &&
+        lightTheme.contentBackground === "rgb(255, 255, 255)" &&
+        lightTheme.contentColor === "rgb(0, 0, 0)" &&
+        lightTheme.headerColor === "rgb(153, 153, 153)",
+      "Light mode should expose white reader content with dark text.",
+      lightTheme,
+    );
+
+    await page.goto(probeUrl({ theme: "dark" }));
+    const darkTheme = await readerThemeState(page);
+    assert(
+      darkTheme.rootBackground === "rgb(0, 0, 0)" &&
+        darkTheme.contentBackground === "rgb(0, 0, 0)" &&
+        darkTheme.contentColor === "rgb(255, 255, 255)" &&
+        darkTheme.headerColor === "rgb(153, 153, 153)",
+      "Dark mode should expose black reader content with light text.",
+      darkTheme,
+    );
+
+    await page.goto(probeUrl({ theme: "sepia" }));
     const sepiaTheme = await readerThemeState(page);
     assert(
       sepiaTheme.rootBackground === "rgb(242, 226, 201)" &&
@@ -1051,7 +1078,51 @@ async function main() {
       sepiaTheme,
     );
 
-    await page.goto(`${url}&sasayakiMode=highlight&theme=light`);
+    await page.goto(probeUrl({ theme: "sepia", systemDark: "true" }));
+    const sepiaDarkTheme = await readerThemeState(page);
+    assert(
+      sepiaDarkTheme.rootBackground === "rgb(23, 21, 15)" &&
+        sepiaDarkTheme.contentBackground === "rgb(23, 21, 15)" &&
+        sepiaDarkTheme.contentColor === "rgb(242, 226, 201)" &&
+        sepiaDarkTheme.headerColor === "rgb(194, 181, 161)",
+      "Sepia mode should invert reader content colors when the system is dark.",
+      sepiaDarkTheme,
+    );
+
+    await page.goto(probeUrl({
+      theme: "custom",
+      interface: "dark",
+      customBackgroundColor: "#112233",
+      customTextColor: "#445566",
+      customInfoColor: "#778899",
+    }));
+    const customTheme = await readerThemeState(page);
+    assert(
+      customTheme.rootBackground === "rgb(17, 34, 51)" &&
+        customTheme.contentBackground === "rgb(17, 34, 51)" &&
+        customTheme.contentColor === "rgb(68, 85, 102)" &&
+        customTheme.headerColor === "rgb(119, 136, 153)",
+      "Custom mode should expose configured reader content colors.",
+      customTheme,
+    );
+
+    await page.goto(probeUrl({
+      sasayakiMode: "highlight",
+      theme: "custom",
+      interface: "dark",
+      sasayakiDarkTextColor: "#010203",
+      sasayakiDarkBackgroundColor: "#0a0b0c",
+    }));
+    await page.locator(".rv.ready").waitFor({ timeout: 10000 });
+    await page.waitForFunction(() => document.querySelectorAll(".sasayaki-highlight-rect").length > 0);
+    const customDarkCue = await sasayakiHighlightState(page);
+    assert(
+      customDarkCue.textColor === "#010203" && customDarkCue.backgroundColor === "rgba(10, 11, 12, 0.4)",
+      "Custom dark interface should expose the configured dark Sasayaki cue colors.",
+      customDarkCue,
+    );
+
+    await page.goto(probeUrl({ sasayakiMode: "highlight", theme: "light" }));
     await page.locator(".rv.ready").waitFor({ timeout: 10000 });
     await page.waitForFunction(() => document.querySelectorAll(".sasayaki-highlight-rect").length > 0);
     const lightCue = await sasayakiHighlightState(page);
@@ -1072,7 +1143,7 @@ async function main() {
       lightCue,
     );
 
-    await page.goto(`${url}&sasayakiMode=reveal&theme=dark`);
+    await page.goto(probeUrl({ sasayakiMode: "reveal", theme: "dark" }));
     await page.locator(".rv.ready").waitFor({ timeout: 10000 });
     await page.waitForFunction(() => {
       const viewport = document.querySelector(".rv");

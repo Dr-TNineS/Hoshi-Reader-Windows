@@ -42,9 +42,19 @@ function stopServer(proc) {
 async function state(page) {
   return page.locator(".probe-state").evaluate((element) => ({
     theme: element.getAttribute("data-theme"),
+    interface: element.getAttribute("data-interface"),
+    systemDark: element.getAttribute("data-system-dark"),
+    customBackground: element.getAttribute("data-custom-background"),
+    customText: element.getAttribute("data-custom-text"),
+    customInfo: element.getAttribute("data-custom-info"),
+    sasayakiLightText: element.getAttribute("data-sasayaki-light-text"),
+    sasayakiLightBackground: element.getAttribute("data-sasayaki-light-background"),
+    sasayakiDarkText: element.getAttribute("data-sasayaki-dark-text"),
+    sasayakiDarkBackground: element.getAttribute("data-sasayaki-dark-background"),
     reopen: element.getAttribute("data-reopen"),
     appearanceVars: element.getAttribute("data-appearance-vars"),
     savedAppearances: element.getAttribute("data-saved-appearances"),
+    savedAppearanceJson: JSON.parse(element.getAttribute("data-saved-appearance-json") ?? "[]"),
     savedAdvanced: element.getAttribute("data-saved-advanced"),
     popupWidth: Number(element.getAttribute("data-popup-width")),
     popupHeight: Number(element.getAttribute("data-popup-height")),
@@ -74,12 +84,17 @@ async function main() {
     await waitForServer(vite);
     browser = await chromium.launch();
     const page = await browser.newPage();
+    await page.emulateMedia({ colorScheme: "light" });
     await page.goto(`${origin}/?settingsStateProbe=1`);
     await page.locator(".probe-state").waitFor({ state: "attached" });
 
     let current = await state(page);
     assert(current.theme === "dark" && current.reopen === "true", "Controller should expose loaded settings.", current);
     assert(current.savedAppearances === "dark", "Controller should preserve appearance startup normalization.", current);
+    assert(current.interface === "light", "Controller should preserve loaded custom interface settings.", current);
+    assert(current.customBackground === "#ffffff", "Invalid loaded custom background should fall back safely.", current);
+    assert(current.customText === "#abcdef", "Loaded custom text color should normalize to lowercase.", current);
+    assert(current.sasayakiLightBackground === "#87ceeb" && current.sasayakiDarkText === "#ffffff", "Missing Sasayaki colors should use HSA defaults.", current);
     assert(current.savedAdvanced === "", "Controller should not rewrite Advanced settings during startup.", current);
     assert(current.popupWidth === 320 && current.popupHeight === 250 && current.popupScale === 1, "Controller should expose loaded popup settings.", current);
     assert(current.savedPopup.length === 0, "Controller should not rewrite popup settings during startup.", current);
@@ -88,11 +103,14 @@ async function main() {
     assert(current.savedDictionary.length === 0, "Controller should not rewrite dictionary settings during startup.", current);
     assert(current.normalizedInvalidDictionary.maxResults === 50 && current.normalizedInvalidDictionary.scanLength === 1 && current.normalizedInvalidDictionary.compactGlossaries === false && current.normalizedInvalidDictionary.compactPitchAccents === false, "Invalid dictionary settings should clamp and preserve supported booleans.", current);
 
-    const lightTheme = page.getByRole("radio", { name: "Light", exact: true });
-    const darkTheme = page.getByRole("radio", { name: "Dark", exact: true });
-    const sepiaTheme = page.getByRole("radio", { name: "Sepia", exact: true });
+    const themeGroup = page.getByLabel("Theme", { exact: true });
+    const lightTheme = themeGroup.getByRole("radio", { name: "Light", exact: true });
+    const darkTheme = themeGroup.getByRole("radio", { name: "Dark", exact: true });
+    const sepiaTheme = themeGroup.getByRole("radio", { name: "Sepia", exact: true });
+    const customTheme = themeGroup.getByRole("radio", { name: "Custom", exact: true });
     assert(await darkTheme.getAttribute("aria-checked") === "true", "Loaded theme should be checked in the toggle group.");
     assert(await sepiaTheme.count() === 1, "Sepia should be available as a reader theme option.");
+    assert(await customTheme.count() === 1, "Custom should be available as a reader theme option.");
     await darkTheme.click();
     current = await state(page);
     assert(current.savedAppearances === "dark", "Clicking the active theme should not deselect or persist it again.", current);
@@ -103,7 +121,14 @@ async function main() {
     assert(current.savedAppearances === "dark,sepia", "Sepia selection should persist the next appearance.", current);
     assert(current.appearanceVars?.includes("--reader-bg:#f2e2c9"), "Sepia should expose the HSA reader background.", current);
     assert(current.appearanceVars?.includes("--reader-text:#332a1b"), "Sepia should expose the HSA reader text color.", current);
+    assert(current.appearanceVars?.includes("--app-bg:#f2e2c9"), "Sepia light mode should use Sepia light chrome.", current);
     assert(await sepiaTheme.getAttribute("aria-checked") === "true", "Clicked Sepia theme should become checked.");
+
+    await page.emulateMedia({ colorScheme: "dark" });
+    await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-system-dark") === "true");
+    current = await state(page);
+    assert(current.appearanceVars?.includes("--reader-bg:#17150f"), "Sepia should invert reader background in system dark mode.", current);
+    assert(current.appearanceVars?.includes("--app-bg:#17150f"), "Sepia should invert outer chrome in system dark mode.", current);
 
     await darkTheme.focus();
     await page.keyboard.press("ArrowLeft");
@@ -111,7 +136,8 @@ async function main() {
     current = await state(page);
     assert(current.theme === "light", "Arrow navigation plus Space should update the selected theme.", current);
     assert(current.savedAppearances === "dark,sepia,light", "Theme setter should persist the next appearance.", current);
-    assert(current.appearanceVars?.includes("--app-bg:#fff"), "Theme setter should recompute appearance CSS variables.", current);
+    assert(current.appearanceVars?.includes("--reader-bg:#fff"), "Theme setter should recompute reader CSS variables.", current);
+    assert(current.appearanceVars?.includes("--app-bg:#f2e2c9"), "Light preset should keep Sepia light outer chrome.", current);
     assert(await lightTheme.getAttribute("aria-checked") === "true", "Keyboard-selected theme should become checked.");
 
     await page.getByRole("button", { name: "Toggle startup", exact: true }).click();
@@ -119,9 +145,43 @@ async function main() {
     assert(current.reopen === "false", "Advanced setter should update reactive state.", current);
     assert(current.savedAdvanced === "false", "Advanced setter should persist the next settings value.", current);
 
+    await customTheme.click();
+    current = await state(page);
+    assert(current.savedAppearances === "dark,sepia,light,custom", "Custom theme selection should persist in order.", current);
+    const customSettings = page.locator(".custom-settings");
+    assert(await customSettings.getByRole("radio", { name: "Light", exact: true }).getAttribute("aria-checked") === "true", "Loaded custom interface should be checked.");
+    await customSettings.getByRole("radio", { name: "Dark", exact: true }).click();
+    await page.getByLabel("Reader background color", { exact: true }).evaluate((input) => {
+      input.value = "#112233";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.getByLabel("Reader text color", { exact: true }).evaluate((input) => {
+      input.value = "#445566";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.getByLabel("Reader info color", { exact: true }).evaluate((input) => {
+      input.value = "#778899";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.getByLabel("Sasayaki dark text color", { exact: true }).evaluate((input) => {
+      input.value = "#010203";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    await page.getByLabel("Sasayaki dark background color", { exact: true }).evaluate((input) => {
+      input.value = "#0a0b0c";
+      input.dispatchEvent(new Event("change", { bubbles: true }));
+    });
+    current = await state(page);
+    assert(current.interface === "dark", "Custom interface setter should update reactive state.", current);
+    assert(current.customBackground === "#112233" && current.customText === "#445566" && current.customInfo === "#778899", "Custom reader colors should persist normalized hex values.", current);
+    assert(current.sasayakiDarkText === "#010203" && current.sasayakiDarkBackground === "#0a0b0c", "Custom Sasayaki dark colors should persist normalized hex values.", current);
+    assert(current.appearanceVars?.includes("--reader-bg:#112233") && current.appearanceVars?.includes("--reader-text:#445566") && current.appearanceVars?.includes("--reader-info:#778899"), "Custom reader CSS variables should use configured colors.", current);
+    assert(current.appearanceVars?.includes("--sasayaki-highlight-text:#010203") && current.appearanceVars?.includes("--sasayaki-highlight-background:rgba(10, 11, 12, 0.4)"), "Custom dark interface should select the dark Sasayaki color group.", current);
+    assert(current.savedAppearanceJson.at(-1)?.sasayakiDarkBackgroundColor === "#0a0b0c", "Saved appearance snapshots should include custom Sasayaki colors.", current);
+
     await darkTheme.click();
     current = await state(page);
-    assert(current.savedAppearances === "dark,sepia,light,dark", "Repeated theme changes should persist in order.", current);
+    assert(current.savedAppearances === "dark,sepia,light,custom,custom,custom,custom,custom,custom,custom,dark", "Repeated theme and custom changes should persist in order.", current);
 
     await page.getByLabel("Popup width").evaluate((input) => {
       input.value = "684";

@@ -2625,6 +2625,8 @@
       onContinueBook={continueBook}
       onForgetBook={forgetBook}
       onSetReaderTheme={settings.setReaderTheme}
+      onSetReaderInterface={settings.setReaderInterface}
+      onSetReaderAppearanceColor={settings.setReaderAppearanceColor}
       onSetReopenLastBookOnStartup={settings.setReopenLastBookOnStartup}
       onSetLookupPopupWidth={settings.setLookupPopupWidth}
       onSetLookupPopupHeight={settings.setLookupPopupHeight}

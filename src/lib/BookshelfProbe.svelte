@@ -1,5 +1,6 @@
 <script lang="ts">
   import BookshelfView from "./BookshelfView.svelte";
+  import { defaultReaderAppearance } from "./appearance";
   import { defaultDictionarySettings } from "./dictionary-settings";
   import { createDictionarySearchState } from "./state/dictionary-search-state.svelte";
   import type { BookRecord } from "./storage";
@@ -33,8 +34,8 @@
 <main class="probe" data-ui-portal-root>
   <BookshelfView
     {books}
-    readerAppearance={{ theme: "dark" }}
-    readerThemeLabels={{ light: "Light", dark: "Dark", sepia: "Sepia" }}
+    readerAppearance={{ ...defaultReaderAppearance, theme: "dark" }}
+    readerThemeLabels={{ light: "Light", dark: "Dark", sepia: "Sepia", custom: "Custom" }}
     advancedSettings={{ reopenLastBookOnStartup: true }}
     lookupPopupSettings={{ width: 320, height: 250, scale: 1 }}
     dictionarySettings={defaultDictionarySettings}
@@ -109,6 +110,8 @@
     onCorrectSasayakiCue={(book, cueId, chapter, start, length) => sasayakiEvents = [...sasayakiEvents, `correct:${book.bookId}:${cueId}:${chapter}:${start}:${length}`]}
     onClearSasayakiCorrection={(book, cueId) => sasayakiEvents = [...sasayakiEvents, `clear:${book.bookId}:${cueId}`]}
     onSetReaderTheme={() => {}}
+    onSetReaderInterface={() => {}}
+    onSetReaderAppearanceColor={() => {}}
     onSetReopenLastBookOnStartup={() => {}}
     onSetLookupPopupWidth={() => {}}
     onSetLookupPopupHeight={() => {}}

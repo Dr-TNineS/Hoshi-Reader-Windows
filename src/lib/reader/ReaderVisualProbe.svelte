@@ -1,16 +1,32 @@
 <script lang="ts">
   import Reader from "./Reader.svelte";
   import { countChars } from "../reader";
-  import { readerAppearancePalette } from "../appearance";
+  import { defaultReaderAppearance, normalizeReaderAppearance, readerAppearancePalette } from "../appearance";
   import type { ReaderProgress, ReaderSelection, SasayakiPlaybackCue } from "../types";
 
   const params = new URLSearchParams(window.location.search);
   const lookupHighlightMode = params.get("lookupHighlightMode") ?? "";
   const sasayakiMode = params.get("sasayakiMode") ?? "";
   const themeParam = params.get("theme");
-  const appearancePalette = readerAppearancePalette({
-    theme: themeParam === "light" || themeParam === "sepia" ? themeParam : "dark",
-  });
+  const interfaceParam = params.get("interface");
+  const theme = themeParam === "light" || themeParam === "dark" || themeParam === "sepia" || themeParam === "custom"
+    ? themeParam
+    : "dark";
+  const readerInterface = interfaceParam === "system" || interfaceParam === "light" || interfaceParam === "dark"
+    ? interfaceParam
+    : defaultReaderAppearance.interface;
+  const appearancePalette = readerAppearancePalette(normalizeReaderAppearance({
+    ...defaultReaderAppearance,
+    theme,
+    interface: readerInterface,
+    customBackgroundColor: params.get("customBackgroundColor") ?? defaultReaderAppearance.customBackgroundColor,
+    customTextColor: params.get("customTextColor") ?? defaultReaderAppearance.customTextColor,
+    customInfoColor: params.get("customInfoColor") ?? defaultReaderAppearance.customInfoColor,
+    sasayakiLightTextColor: params.get("sasayakiLightTextColor") ?? defaultReaderAppearance.sasayakiLightTextColor,
+    sasayakiLightBackgroundColor: params.get("sasayakiLightBackgroundColor") ?? defaultReaderAppearance.sasayakiLightBackgroundColor,
+    sasayakiDarkTextColor: params.get("sasayakiDarkTextColor") ?? defaultReaderAppearance.sasayakiDarkTextColor,
+    sasayakiDarkBackgroundColor: params.get("sasayakiDarkBackgroundColor") ?? defaultReaderAppearance.sasayakiDarkBackgroundColor,
+  }), params.get("systemDark") === "true");
 
   const imageSvg = encodeURIComponent(`
     <svg xmlns="http://www.w3.org/2000/svg" width="360" height="520" viewBox="0 0 360 520">

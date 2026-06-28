@@ -44,7 +44,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - `BookshelfView.activePanel` is the single source of truth for Library, Dictionaries, Anki, Appearance, Advanced, and Shortcuts panel selection; App no longer mirrors panel visibility booleans.
   - Recent books render as a cover grid with EPUB cover, progress bar, percent, and title when cover data is available.
   - EPUB import entry.
-  - Minimal Appearance panel with HSA-aligned Light, Dark, and Sepia reader themes using a single-select Bits UI ToggleGroup with roving keyboard focus.
+  - Minimal Appearance panel with HSA-aligned Light, Dark, Sepia, and Custom reader themes using single-select Bits UI ToggleGroups, roving keyboard focus, custom reader colors, and separate light/dark Sasayaki cue colors.
   - Advanced panel with a default-on option to reopen the last reading session at startup.
   - Bits UI provides the first headless UI primitives for the Advanced switch and dictionary Tabs, enabled switches, and delete confirmation dialog; shared CSS variables define non-invasive control tokens without changing Reader layout styles.
   - Appearance and Advanced settings state is coordinated by a Svelte 5 runes controller in `src/lib/state/settings.svelte.ts`; persistence remains delegated to the existing appearance and Advanced storage modules.

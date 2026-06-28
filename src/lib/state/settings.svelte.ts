@@ -8,7 +8,11 @@ import {
   readerAppearanceCssVars,
   readerAppearancePalette,
   saveReaderAppearance,
+  normalizeReaderAppearance,
+  normalizeHexColor,
   type ReaderAppearance,
+  type ReaderAppearanceColorField,
+  type ReaderInterfaceTheme,
   type ReaderTheme,
 } from "../appearance";
 import {
@@ -47,20 +51,44 @@ const browserSettingsPersistence: SettingsPersistence = {
 };
 
 export function createSettingsState(persistence: SettingsPersistence = browserSettingsPersistence) {
-  const initialReaderAppearance = persistence.loadReaderAppearance();
+  const initialReaderAppearance = normalizeReaderAppearance(persistence.loadReaderAppearance());
   let readerAppearance = $state<ReaderAppearance>(initialReaderAppearance);
+  let systemDark = $state(false);
   let advancedSettings = $state<AdvancedSettings>(persistence.loadAdvancedSettings());
   let lookupPopupSettings = $state<LookupPopupSettings>(persistence.loadLookupPopupSettings());
   let dictionarySettings = $state<DictionarySettings>(persistence.loadDictionarySettings());
-  let appearancePalette = $derived(readerAppearancePalette(readerAppearance));
+  let appearancePalette = $derived(readerAppearancePalette(readerAppearance, systemDark));
   let appearanceVars = $derived(readerAppearanceCssVars(appearancePalette));
 
   // Preserve the existing startup normalization behavior from App.svelte.
   persistence.saveReaderAppearance(initialReaderAppearance);
 
-  function setReaderTheme(theme: ReaderTheme) {
-    readerAppearance = { ...readerAppearance, theme };
+  $effect(() => {
+    if (typeof window === "undefined" || typeof window.matchMedia !== "function") return;
+    const media = window.matchMedia("(prefers-color-scheme: dark)");
+    const update = () => {
+      systemDark = media.matches;
+    };
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  });
+
+  function updateReaderAppearance(update: Partial<ReaderAppearance>) {
+    readerAppearance = normalizeReaderAppearance({ ...readerAppearance, ...update });
     persistence.saveReaderAppearance(readerAppearance);
+  }
+
+  function setReaderTheme(theme: ReaderTheme) {
+    updateReaderAppearance({ theme });
+  }
+
+  function setReaderInterface(theme: ReaderInterfaceTheme) {
+    updateReaderAppearance({ interface: theme });
+  }
+
+  function setReaderAppearanceColor(field: ReaderAppearanceColorField, color: string) {
+    updateReaderAppearance({ [field]: normalizeHexColor(color, readerAppearance[field]) });
   }
 
   function setReopenLastBookOnStartup(enabled: boolean) {
@@ -97,7 +125,10 @@ export function createSettingsState(persistence: SettingsPersistence = browserSe
     get dictionarySettings() { return dictionarySettings; },
     get appearancePalette() { return appearancePalette; },
     get appearanceVars() { return appearanceVars; },
+    get systemDark() { return systemDark; },
     setReaderTheme,
+    setReaderInterface,
+    setReaderAppearanceColor,
     setReopenLastBookOnStartup,
     setLookupPopupWidth,
     setLookupPopupHeight,

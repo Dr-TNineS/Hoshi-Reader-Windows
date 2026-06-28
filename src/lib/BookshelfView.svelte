@@ -4,7 +4,7 @@
   import SasayakiBookPanel from "./SasayakiBookPanel.svelte";
   import type { AnkiAudioSource, AnkiSettings, DictionaryManifestEntry, DictionaryStatus, LocalAudioStatus, SasayakiCueItem, SasayakiStatus } from "./types";
   import AppearancePanel from "./AppearancePanel.svelte";
-  import type { ReaderAppearance, ReaderTheme } from "./appearance";
+  import type { ReaderAppearance, ReaderAppearanceColorField, ReaderInterfaceTheme, ReaderTheme } from "./appearance";
   import type { DictionarySettings } from "./dictionary-settings";
   import type { LookupPopupSettings } from "./lookup-popup-settings";
   import DictionaryManagementPanel from "./DictionaryManagementPanel.svelte";
@@ -43,6 +43,8 @@
     onContinueBook,
     onForgetBook,
     onSetReaderTheme,
+    onSetReaderInterface,
+    onSetReaderAppearanceColor,
     onSetReopenLastBookOnStartup,
     onSetLookupPopupWidth,
     onSetLookupPopupHeight,
@@ -110,6 +112,8 @@
     onContinueBook: (book: BookRecord) => void;
     onForgetBook: (book: BookRecord) => void;
     onSetReaderTheme: (theme: ReaderTheme) => void;
+    onSetReaderInterface: (theme: ReaderInterfaceTheme) => void;
+    onSetReaderAppearanceColor: (field: ReaderAppearanceColorField, color: string) => void;
     onSetReopenLastBookOnStartup: (enabled: boolean) => void;
     onSetLookupPopupWidth: (width: number) => void;
     onSetLookupPopupHeight: (height: number) => void;
@@ -386,6 +390,8 @@
         appearance={readerAppearance}
         themeLabels={readerThemeLabels}
         onThemeChange={onSetReaderTheme}
+        onInterfaceChange={onSetReaderInterface}
+        onAppearanceColorChange={onSetReaderAppearanceColor}
         popupSettings={lookupPopupSettings}
         onPopupWidthChange={onSetLookupPopupWidth}
         onPopupHeightChange={onSetLookupPopupHeight}
