@@ -6,6 +6,7 @@
     sasayakiSkipTarget,
     shouldAutoPauseSasayaki,
     shouldCommitPlaybackTime,
+    shouldPersistPlaybackSecond,
   } from "./sasayaki-playback";
   import { sasayakiShortcutAction } from "./sasayaki-shortcuts";
   import {
@@ -30,6 +31,11 @@
   let coordinationRun = 0;
   let wordAudioCoordination = $state<WordAudioCoordinationState | null>(null);
   let sasayakiVolume = $state(1);
+  let lastPersistedSecond = -1;
+  let pendingSave = $state<number | null>(null);
+  let saveWorkerRunning = $state(false);
+  let savedPositions = $state<number[]>([]);
+  let blockedSaveRelease: (() => void) | null = null;
   let session = $state<SasayakiPlaybackSession>({
     configured: true,
     audioPath: "C:/Books/audio.wav",
@@ -78,6 +84,40 @@
       return;
     }
     events = [...events, "audio-throttled"];
+  }
+
+  function resetProbeSaves() {
+    lastPersistedSecond = -1;
+    pendingSave = null;
+    saveWorkerRunning = false;
+    savedPositions = [];
+    blockedSaveRelease = null;
+  }
+
+  function queueProbeSave(position: number, force = false) {
+    if (!shouldPersistPlaybackSecond(position, lastPersistedSecond, force)) return;
+    lastPersistedSecond = Math.floor(Math.max(0, position));
+    pendingSave = position;
+    drainProbeSaves();
+  }
+
+  function drainProbeSaves() {
+    if (saveWorkerRunning) return;
+    saveWorkerRunning = true;
+    void (async () => {
+      while (pendingSave !== null) {
+        const snapshot = pendingSave;
+        pendingSave = null;
+        savedPositions = [...savedPositions, snapshot];
+        if (blockedSaveRelease === null && snapshot === 1) {
+          await new Promise<void>((resolve) => {
+            blockedSaveRelease = resolve;
+          });
+        }
+      }
+      saveWorkerRunning = false;
+      if (pendingSave !== null) drainProbeSaves();
+    })();
   }
 
   function restoreWordAudioCoordination(id = wordAudioCoordination?.id) {
@@ -215,6 +255,40 @@
       >Audio tick committed</button>
       <button
         class="probe-action"
+        aria-label="Probe persisted second ticks"
+        onclick={() => {
+          resetProbeSaves();
+          queueProbeSave(1.1);
+          queueProbeSave(1.4);
+          queueProbeSave(2);
+          queueProbeSave(3.2);
+        }}
+      >Persist seconds</button>
+      <button
+        class="probe-action"
+        aria-label="Probe overlapping Sasayaki saves"
+        onclick={() => {
+          resetProbeSaves();
+          queueProbeSave(1);
+          queueProbeSave(2);
+          queueProbeSave(3);
+        }}
+      >Overlap saves</button>
+      <button
+        class="probe-action"
+        aria-label="Probe release overlapping Sasayaki save"
+        onclick={() => blockedSaveRelease?.()}
+      >Release overlap</button>
+      <button
+        class="probe-action"
+        aria-label="Probe exit Sasayaki flush"
+        onclick={() => {
+          resetProbeSaves();
+          queueProbeSave(42.75, true);
+        }}
+      >Exit flush</button>
+      <button
+        class="probe-action"
         aria-label="Probe word interrupt"
         onclick={() => {
           const id = beginWordAudio("interrupt");
@@ -301,6 +375,9 @@
     data-repaint-sentinel={repaintSentinel}
     data-word-coordination-active={Boolean(wordAudioCoordination)}
     data-sasayaki-volume={sasayakiVolume}
+    data-saved-positions={savedPositions.map((position) => position.toFixed(2)).join(",")}
+    data-save-running={saveWorkerRunning}
+    data-pending-save={pendingSave ?? ""}
   ></div>
 </main>
 

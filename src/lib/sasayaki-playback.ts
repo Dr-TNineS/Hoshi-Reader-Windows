@@ -20,6 +20,16 @@ export function shouldCommitPlaybackTime(
     || Math.abs(currentTime - lastCommittedTime) >= SASAYAKI_TIME_UI_INTERVAL_MS / 1000;
 }
 
+export function shouldPersistPlaybackSecond(
+  currentTime: number,
+  lastPersistedSecond: number,
+  force = false,
+): boolean {
+  if (!Number.isFinite(currentTime) || currentTime < 0) return false;
+  if (force) return true;
+  return Math.floor(currentTime) !== lastPersistedSecond;
+}
+
 export function nextCueTime(cues: SasayakiPlaybackCue[], currentTime: number, delay: number): number | null {
   const playbackTime = Math.max(0, currentTime - delay);
   const current = cues.find((cue) => playbackTime >= cue.startTime && playbackTime < cue.endTime);

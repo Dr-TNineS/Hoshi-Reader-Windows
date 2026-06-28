@@ -24,6 +24,7 @@
     sasayakiSkipTarget,
     shouldAutoPauseSasayaki,
     shouldCommitPlaybackTime,
+    shouldPersistPlaybackSecond,
   } from "./lib/sasayaki-playback";
   import { sasayakiShortcutAction } from "./lib/sasayaki-shortcuts";
   import { createSettingsState } from "./lib/state/settings.svelte";
@@ -126,10 +127,12 @@
   let sasayakiAudioSrc = $state("");
   let sasayakiRepaintSentinel = $state(0);
   let sasayakiPlaybackBookId: string | null = null;
-  let sasayakiLastSavedAt = 0;
   let sasayakiSaveTimer: ReturnType<typeof setTimeout> | null = null;
   let sasayakiSuppressPauseSave = false;
-  let sasayakiSaveChain: Promise<void> = Promise.resolve();
+  let sasayakiSaveWorkerRunning = false;
+  let sasayakiPendingSave: SasayakiPlaybackSnapshot | null = null;
+  let sasayakiSaveWaiters: Array<() => void> = [];
+  let sasayakiLastPersistedSecond = -1;
   let sasayakiActiveCue = $state<SasayakiPlaybackCue | null>(null);
   let sasayakiCueReveal = $state(false);
   let sasayakiCueSignal = $state(0);
@@ -159,6 +162,16 @@
   let tocEntries = $derived(meta ? flattenToc(meta.toc, meta) : []);
   let chapterBookInfo = $derived(meta?.book_info.chapter_info[chapterIndex] ?? null);
   let ankiTemplateOptions = $derived(ankiHandlebarOptions(dictionaryList.map((dictionary) => dictionary.title)));
+
+  interface SasayakiPlaybackSnapshot {
+    bookId: string;
+    lastPosition: number;
+    delay: number;
+    rate: number;
+    autoScroll: boolean;
+    autoPause: boolean;
+    skipAction: SasayakiSkipAction;
+  }
 
   // Initialize persisted reading state once. Returning to the shelf should stay
   // on the shelf, so session restore remains intentionally one-shot.
@@ -209,14 +222,14 @@
   $effect(() => {
     if (!isTauriRuntime()) return;
     const handleUnload = () => {
-      void stopSasayakiPlayback(false);
+      void stopSasayakiPlayback(true);
     };
     globalThis.addEventListener("pagehide", handleUnload);
     globalThis.addEventListener("beforeunload", handleUnload);
     return () => {
       globalThis.removeEventListener("pagehide", handleUnload);
       globalThis.removeEventListener("beforeunload", handleUnload);
-      teardownSasayakiAudio();
+      void stopSasayakiPlayback(true);
     };
   });
 
@@ -682,6 +695,9 @@
     sasayakiAudioSrc = nextPath ? convertFileSrc(nextPath) : "";
     sasayakiLoadedAudioPath = null;
     sasayakiLastTimeCommitAt = 0;
+    sasayakiLastPersistedSecond = Number.isFinite(session?.lastPosition ?? NaN)
+      ? Math.floor(Math.max(0, session?.lastPosition ?? 0))
+      : -1;
     recordSasayakiDiagnostic("audio-source", { path: nextPath });
   }
 
@@ -882,7 +898,10 @@
   function handleSasayakiTimeUpdate() {
     commitSasayakiAudioTime(false);
     if (sasayakiReplayCleanup) return;
-    if (Date.now() - sasayakiLastSavedAt >= 5000) scheduleSasayakiPlaybackSave();
+    const position = clampPlaybackTime(sasayakiAudio?.currentTime ?? sasayakiCurrentTime, sasayakiDuration);
+    if (shouldPersistPlaybackSecond(position, sasayakiLastPersistedSecond)) {
+      scheduleSasayakiPlaybackSave(true);
+    }
   }
 
   function handleSasayakiPlay() {
@@ -937,31 +956,71 @@
   }
 
   function saveSasayakiPlayback(): Promise<void> {
-    const next = sasayakiSaveChain.then(() => persistSasayakiPlayback());
-    sasayakiSaveChain = next.catch(() => {});
-    return next;
+    const snapshot = captureSasayakiPlaybackSnapshot();
+    if (!snapshot) return Promise.resolve();
+    sasayakiPendingSave = snapshot;
+    const saveDone = new Promise<void>((resolve) => {
+      sasayakiSaveWaiters.push(resolve);
+    });
+    drainSasayakiPlaybackSaves();
+    return saveDone;
   }
 
-  async function persistSasayakiPlayback() {
+  function captureSasayakiPlaybackSnapshot(): SasayakiPlaybackSnapshot | null {
     const bookId = sasayakiPlaybackBookId;
     const session = sasayakiPlayback;
-    if (!bookId || !session?.configured || !isTauriRuntime()) return;
+    if (!bookId || !session?.configured || !isTauriRuntime()) return null;
     const lastPosition = clampPlaybackTime(sasayakiAudio?.currentTime ?? sasayakiCurrentTime, sasayakiDuration);
+    return {
+      bookId,
+      lastPosition,
+      delay: session.delay,
+      rate: session.rate,
+      autoScroll: session.autoScroll,
+      autoPause: session.autoPause,
+      skipAction: session.skipAction,
+    };
+  }
+
+  function drainSasayakiPlaybackSaves() {
+    if (sasayakiSaveWorkerRunning) return;
+    sasayakiSaveWorkerRunning = true;
+    void (async () => {
+      try {
+        while (sasayakiPendingSave) {
+          const snapshot = sasayakiPendingSave;
+          sasayakiPendingSave = null;
+          await persistSasayakiPlaybackSnapshot(snapshot);
+        }
+      } finally {
+        sasayakiSaveWorkerRunning = false;
+        if (sasayakiPendingSave) {
+          drainSasayakiPlaybackSaves();
+          return;
+        }
+        const waiters = sasayakiSaveWaiters;
+        sasayakiSaveWaiters = [];
+        waiters.forEach((resolve) => resolve());
+      }
+    })();
+  }
+
+  async function persistSasayakiPlaybackSnapshot(snapshot: SasayakiPlaybackSnapshot) {
     try {
       const saved = await invoke<SasayakiPlaybackSession>("sasayaki_save_playback", {
-        bookId,
-        lastPosition,
-        delay: session.delay,
-        rate: session.rate,
-        autoScroll: session.autoScroll,
-        autoPause: session.autoPause,
-        skipAction: session.skipAction,
+        bookId: snapshot.bookId,
+        lastPosition: snapshot.lastPosition,
+        delay: snapshot.delay,
+        rate: snapshot.rate,
+        autoScroll: snapshot.autoScroll,
+        autoPause: snapshot.autoPause,
+        skipAction: snapshot.skipAction,
       });
-      if (sasayakiPlaybackBookId !== bookId) return;
+      if (sasayakiPlaybackBookId !== snapshot.bookId) return;
       sasayakiPlayback = saved;
-      sasayakiLastSavedAt = Date.now();
+      sasayakiLastPersistedSecond = Math.floor(Math.max(0, snapshot.lastPosition));
     } catch (e) {
-      if (sasayakiPlaybackBookId === bookId) sasayakiPlaybackError = String(e);
+      if (sasayakiPlaybackBookId === snapshot.bookId) sasayakiPlaybackError = String(e);
     }
   }
 

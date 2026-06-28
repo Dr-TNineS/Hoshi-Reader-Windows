@@ -55,6 +55,9 @@ async function presentation(page) {
     repaintSentinel: await state.getAttribute("data-repaint-sentinel"),
     wordCoordinationActive: await state.getAttribute("data-word-coordination-active"),
     sasayakiVolume: await state.getAttribute("data-sasayaki-volume"),
+    savedPositions: await state.getAttribute("data-saved-positions"),
+    saveRunning: await state.getAttribute("data-save-running"),
+    pendingSave: await state.getAttribute("data-pending-save"),
   };
 }
 
@@ -90,6 +93,34 @@ async function main() {
       audioTick.audioTimeCommits === "1" && audioTick.repaintSentinel === "2",
       "Probe audio time updates should throttle low-value ticks and commit after the UI interval.",
       audioTick,
+    );
+    await page.getByRole("button", { name: "Probe persisted second ticks", exact: true }).dispatchEvent("click");
+    await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-saved-positions") === "1.10,2.00,3.20");
+    assert(
+      (await presentation(page)).savedPositions === "1.10,2.00,3.20",
+      "Sasayaki playback should persist once per crossed playback second.",
+      await presentation(page),
+    );
+    await page.getByRole("button", { name: "Probe overlapping Sasayaki saves", exact: true }).dispatchEvent("click");
+    await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-saved-positions") === "1.00");
+    assert(
+      (await presentation(page)).pendingSave === "3",
+      "Overlapping Sasayaki saves should keep only the latest pending position.",
+      await presentation(page),
+    );
+    await page.getByRole("button", { name: "Probe release overlapping Sasayaki save", exact: true }).dispatchEvent("click");
+    await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-saved-positions") === "1.00,3.00");
+    assert(
+      (await presentation(page)).saveRunning === "false",
+      "Overlapping Sasayaki save worker should drain and stop after the latest snapshot is saved.",
+      await presentation(page),
+    );
+    await page.getByRole("button", { name: "Probe exit Sasayaki flush", exact: true }).dispatchEvent("click");
+    await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-saved-positions") === "42.75");
+    assert(
+      (await presentation(page)).savedPositions === "42.75",
+      "Sasayaki exit flush should persist the current audio position immediately.",
+      await presentation(page),
     );
     await page.getByRole("button", { name: "Probe open lookup", exact: true }).dispatchEvent("click");
     await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-playing") === "false");
