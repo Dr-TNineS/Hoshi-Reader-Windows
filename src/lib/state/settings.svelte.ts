@@ -30,6 +30,7 @@ import {
 import type { ShortcutBinding } from "../global-lookup-settings";
 import {
   conflictingKeyboardShortcutAction,
+  defaultKeyboardShortcutBindings,
   defaultKeyboardShortcutSettings,
   loadKeyboardShortcutSettings,
   normalizeKeyboardShortcutSettings,
@@ -146,11 +147,18 @@ export function createSettingsState(persistence: SettingsPersistence = browserSe
     return "";
   }
 
-  function resetKeyboardShortcut(actionId: KeyboardShortcutActionId) {
+  function resetKeyboardShortcut(actionId: KeyboardShortcutActionId): string {
+    const conflict = conflictingKeyboardShortcutAction(
+      keyboardShortcutSettings,
+      actionId,
+      defaultKeyboardShortcutBindings[actionId],
+    );
+    if (conflict) return conflict;
     const bindings = { ...keyboardShortcutSettings.bindings };
     delete bindings[actionId];
     keyboardShortcutSettings = { version: 1, bindings };
     persistence.saveKeyboardShortcutSettings?.(keyboardShortcutSettings);
+    return "";
   }
 
   return {
