@@ -1,6 +1,6 @@
 # Hoshi Reader Windows Project Status
 
-Last updated: 2026-06-27
+Last updated: 2026-06-29
 
 This file records current implementation facts for `hoshi-reader-windows`. It is not an agent rule file, product roadmap, or substitute for checking the current code.
 
@@ -50,7 +50,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Appearance and Advanced settings state is coordinated by a Svelte 5 runes controller in `src/lib/state/settings.svelte.ts`; persistence remains delegated to the existing appearance and Advanced storage modules.
   - Dictionaries settings persist HSA core options in the same settings controller: scan non-Japanese text, max results, scan length, low-RAM dictionary import, collapse mode, expand-first dictionary, collapsed dictionaries, compact glossaries, expression tags, harmonic frequency, deduplicate pitch accents, and compact pitch accents.
   - The Advanced startup preference is stored locally in browser `localStorage`.
-  - Shortcuts panel lists implemented global, Reader, and Sasayaki keyboard/mouse shortcuts by feature group; the global selected-text lookup shortcut is editable and resettable from Shortcuts and Advanced, while Reader and Sasayaki shortcuts remain informational.
+  - Shortcuts panel lists implemented global, Reader, and Sasayaki keyboard/mouse shortcuts by feature group; global, Reader, and Sasayaki keyboard shortcuts are editable and resettable, while wheel, Shift-hover, and click gestures remain informational fixed bindings.
   - Resume from saved progress.
   - Tauri startup attempts to restore the last reader session when the Advanced startup option is enabled; disabling it leaves startup on the bookshelf without clearing the saved session.
   - Importing an EPUB without opening it does not replace the saved reader session used by Advanced startup restore.
@@ -229,6 +229,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
 - Frontend production build: `npm run build`
 - AnkiConnect panel regression probe: `npm run check:anki-connect`
 - Bookshelf shell and confirmation regression probe: `npm run check:bookshelf`
+- Keyboard shortcut settings regression probe: `npm run check:keyboard-shortcuts`
 - Dictionary management regression probe: `npm run check:dictionary-management`
 - Dictionary search regression probe: `npm run check:dictionary-search`
 - Appearance ToggleGroup and Advanced settings controller probe: `npm run check:settings-state`
