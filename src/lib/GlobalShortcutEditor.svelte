@@ -1,19 +1,24 @@
 <script lang="ts">
   import {
-    defaultGlobalLookupShortcut,
-    shortcutFromKeyboardEvent,
     shortcutTokens,
     type ShortcutBinding,
   } from "./global-lookup-settings";
+  import { shortcutFromKeyboardEvent } from "./keyboard-shortcuts";
 
   let {
     shortcut,
+    defaultShortcut = shortcut,
+    requireCommandModifier = true,
+    externalError = "",
     ariaLabel = "Global selected-text lookup shortcut",
     align = "end",
     onShortcutChange,
     onShortcutReset,
   }: {
     shortcut: ShortcutBinding;
+    defaultShortcut?: ShortcutBinding;
+    requireCommandModifier?: boolean;
+    externalError?: string;
     ariaLabel?: string;
     align?: "start" | "end";
     onShortcutChange: (shortcut: ShortcutBinding) => void;
@@ -44,7 +49,7 @@
     if (!recordingShortcut) return;
     event.preventDefault();
     event.stopPropagation();
-    const result = shortcutFromKeyboardEvent(event);
+    const result = shortcutFromKeyboardEvent(event, { requireCommandModifier });
     if (result.status === "cancel") {
       finishRecording();
       return;
@@ -84,10 +89,10 @@
     </button>
     <button type="button" onclick={resetShortcut}>Reset</button>
   </div>
-  {#if recordingError}
-    <p class="shortcut-message shortcut-error">{recordingError}</p>
+  {#if recordingError || externalError}
+    <p class="shortcut-message shortcut-error">{recordingError || externalError}</p>
   {:else if recordingShortcut}
-    <p class="shortcut-message">Press a shortcut. Esc cancels, Backspace resets to {defaultGlobalLookupShortcut.displayLabel}.</p>
+    <p class="shortcut-message">Press a shortcut. Esc cancels, Backspace resets to {defaultShortcut.displayLabel}.</p>
   {/if}
 </div>
 

@@ -7,12 +7,18 @@
     type GlobalLookupSettings,
     type ShortcutBinding,
   } from "./global-lookup-settings";
+  import {
+    defaultKeyboardShortcutSettings,
+    normalizeKeyboardShortcutSettings,
+    type KeyboardShortcutActionId,
+  } from "./keyboard-shortcuts";
 
   let advancedSettings = $state({ reopenLastBookOnStartup: true });
   let globalLookupSettings = $state<GlobalLookupSettings>({
     ...defaultGlobalLookupSettings,
     registration: { registered: true, error: null },
   });
+  let keyboardShortcutSettings = $state(defaultKeyboardShortcutSettings);
   let events = $state<string[]>([]);
 
   function save(next: GlobalLookupSettings, event: string) {
@@ -30,6 +36,22 @@
 
   function resetShortcut() {
     save({ ...globalLookupSettings, enabled: true, shortcut: defaultGlobalLookupShortcut, registration: { registered: true, error: null } }, "reset");
+  }
+
+  function setKeyboardShortcut(actionId: KeyboardShortcutActionId, shortcut: ShortcutBinding) {
+    keyboardShortcutSettings = normalizeKeyboardShortcutSettings({
+      ...keyboardShortcutSettings,
+      bindings: { ...keyboardShortcutSettings.bindings, [actionId]: shortcut },
+    });
+    events = [...events, `local:${actionId}:${shortcut.displayLabel}`];
+    return "";
+  }
+
+  function resetKeyboardShortcut(actionId: KeyboardShortcutActionId) {
+    const bindings = { ...keyboardShortcutSettings.bindings };
+    delete bindings[actionId];
+    keyboardShortcutSettings = { version: 1, bindings };
+    events = [...events, `local-reset:${actionId}`];
   }
 
   function simulateRegistrationError() {
@@ -51,8 +73,11 @@
   />
   <ShortcutsPanel
     {globalLookupSettings}
+    {keyboardShortcutSettings}
     onGlobalLookupShortcutChange={setShortcut}
     onGlobalLookupShortcutReset={resetShortcut}
+    onKeyboardShortcutChange={setKeyboardShortcut}
+    onKeyboardShortcutReset={resetKeyboardShortcut}
   />
   <div class="probe-controls">
     <button onclick={simulateRegistrationError}>registration error</button>

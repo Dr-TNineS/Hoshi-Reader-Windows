@@ -27,6 +27,16 @@ import {
   saveDictionarySettings,
   type DictionarySettings,
 } from "../dictionary-settings";
+import type { ShortcutBinding } from "../global-lookup-settings";
+import {
+  conflictingKeyboardShortcutAction,
+  defaultKeyboardShortcutSettings,
+  loadKeyboardShortcutSettings,
+  normalizeKeyboardShortcutSettings,
+  saveKeyboardShortcutSettings,
+  type KeyboardShortcutActionId,
+  type KeyboardShortcutSettings,
+} from "../keyboard-shortcuts";
 
 export type SettingsPersistence = {
   loadReaderAppearance: () => ReaderAppearance;
@@ -37,6 +47,8 @@ export type SettingsPersistence = {
   saveLookupPopupSettings: (settings: LookupPopupSettings) => void;
   loadDictionarySettings: () => DictionarySettings;
   saveDictionarySettings: (settings: DictionarySettings) => void;
+  loadKeyboardShortcutSettings?: () => KeyboardShortcutSettings;
+  saveKeyboardShortcutSettings?: (settings: KeyboardShortcutSettings) => void;
 };
 
 const browserSettingsPersistence: SettingsPersistence = {
@@ -48,6 +60,8 @@ const browserSettingsPersistence: SettingsPersistence = {
   saveLookupPopupSettings,
   loadDictionarySettings,
   saveDictionarySettings,
+  loadKeyboardShortcutSettings,
+  saveKeyboardShortcutSettings,
 };
 
 export function createSettingsState(persistence: SettingsPersistence = browserSettingsPersistence) {
@@ -57,6 +71,9 @@ export function createSettingsState(persistence: SettingsPersistence = browserSe
   let advancedSettings = $state<AdvancedSettings>(persistence.loadAdvancedSettings());
   let lookupPopupSettings = $state<LookupPopupSettings>(persistence.loadLookupPopupSettings());
   let dictionarySettings = $state<DictionarySettings>(persistence.loadDictionarySettings());
+  let keyboardShortcutSettings = $state<KeyboardShortcutSettings>(
+    normalizeKeyboardShortcutSettings(persistence.loadKeyboardShortcutSettings?.() ?? defaultKeyboardShortcutSettings),
+  );
   let appearancePalette = $derived(readerAppearancePalette(readerAppearance, systemDark));
   let appearanceVars = $derived(readerAppearanceCssVars(appearancePalette));
 
@@ -118,11 +135,30 @@ export function createSettingsState(persistence: SettingsPersistence = browserSe
     persistence.saveDictionarySettings(dictionarySettings);
   }
 
+  function setKeyboardShortcut(actionId: KeyboardShortcutActionId, shortcut: ShortcutBinding): string {
+    const conflict = conflictingKeyboardShortcutAction(keyboardShortcutSettings, actionId, shortcut);
+    if (conflict) return conflict;
+    keyboardShortcutSettings = normalizeKeyboardShortcutSettings({
+      ...keyboardShortcutSettings,
+      bindings: { ...keyboardShortcutSettings.bindings, [actionId]: shortcut },
+    });
+    persistence.saveKeyboardShortcutSettings?.(keyboardShortcutSettings);
+    return "";
+  }
+
+  function resetKeyboardShortcut(actionId: KeyboardShortcutActionId) {
+    const bindings = { ...keyboardShortcutSettings.bindings };
+    delete bindings[actionId];
+    keyboardShortcutSettings = { version: 1, bindings };
+    persistence.saveKeyboardShortcutSettings?.(keyboardShortcutSettings);
+  }
+
   return {
     get readerAppearance() { return readerAppearance; },
     get advancedSettings() { return advancedSettings; },
     get lookupPopupSettings() { return lookupPopupSettings; },
     get dictionarySettings() { return dictionarySettings; },
+    get keyboardShortcutSettings() { return keyboardShortcutSettings; },
     get appearancePalette() { return appearancePalette; },
     get appearanceVars() { return appearanceVars; },
     get systemDark() { return systemDark; },
@@ -134,6 +170,8 @@ export function createSettingsState(persistence: SettingsPersistence = browserSe
     setLookupPopupHeight,
     setLookupPopupScale,
     updateDictionarySettings,
+    setKeyboardShortcut,
+    resetKeyboardShortcut,
   };
 }
 

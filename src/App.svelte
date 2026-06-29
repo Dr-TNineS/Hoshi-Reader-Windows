@@ -2664,6 +2664,7 @@
       {readerThemeLabels}
       advancedSettings={settings.advancedSettings}
       {globalLookupSettings}
+      keyboardShortcutSettings={settings.keyboardShortcutSettings}
       lookupPopupSettings={settings.lookupPopupSettings}
       dictionarySettings={settings.dictionarySettings}
       {dictionaryList}
@@ -2693,6 +2694,8 @@
       onSetGlobalLookupEnabled={setGlobalLookupEnabled}
       onSetGlobalLookupShortcut={setGlobalLookupShortcut}
       onResetGlobalLookupShortcut={resetGlobalLookupShortcut}
+      onSetKeyboardShortcut={settings.setKeyboardShortcut}
+      onResetKeyboardShortcut={settings.resetKeyboardShortcut}
       onSetLookupPopupWidth={settings.setLookupPopupWidth}
       onSetLookupPopupHeight={settings.setLookupPopupHeight}
       onSetLookupPopupScale={settings.setLookupPopupScale}

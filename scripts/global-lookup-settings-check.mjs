@@ -130,7 +130,8 @@ async function main() {
     assert(current.events?.endsWith("reset"), "Reset should call the reset handler.", current);
 
     const shortcutsRegion = page.getByRole("region", { name: "Keyboard shortcuts", exact: true });
-    await shortcutsRegion.getByRole("button", { name: "Record", exact: true }).click();
+    const shortcutsGlobalEditor = shortcutsRegion.locator('[aria-label="Global selected-text lookup shortcut"]');
+    await shortcutsGlobalEditor.getByRole("button", { name: "Record", exact: true }).click();
     await page.keyboard.down("Control");
     await page.keyboard.down("Alt");
     await page.keyboard.down("Shift");
@@ -142,7 +143,7 @@ async function main() {
     assert(current.shortcut === "Ctrl + Alt + Shift + K", "Shortcuts panel recorder should save combined global shortcuts.", current);
     assert(current.events?.includes("shortcut:Ctrl + Alt + Shift + K"), "Shortcuts panel recorder should call the save handler.", current);
 
-    await shortcutsRegion.getByRole("button", { name: "Reset", exact: true }).click();
+    await shortcutsGlobalEditor.getByRole("button", { name: "Reset", exact: true }).click();
     current = await state(page);
     assert(current.shortcut === "Ctrl + Alt + H", "Shortcuts panel reset should restore the default global shortcut.", current);
 
