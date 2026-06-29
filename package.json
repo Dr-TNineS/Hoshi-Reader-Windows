@@ -11,6 +11,7 @@
     "check:bookshelf": "node scripts/bookshelf-check.mjs",
     "check:dictionary-management": "node scripts/dictionary-management-check.mjs",
     "check:dictionary-search": "node scripts/dictionary-search-check.mjs",
+    "check:global-lookup-settings": "node scripts/global-lookup-settings-check.mjs",
     "check:lookup-popup": "node scripts/lookup-popup-check.mjs",
     "check:lookup-performance": "node scripts/lookup-performance-check.mjs",
     "check:reader-visual": "node scripts/reader-visual-check.mjs",

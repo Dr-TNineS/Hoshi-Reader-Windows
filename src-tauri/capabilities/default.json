@@ -3,10 +3,13 @@
   "identifier": "default",
   "description": "enables the default permissions",
   "windows": [
-    "main"
+    "main",
+    "global-lookup"
   ],
   "permissions": [
     "core:default",
+    "core:window:allow-set-position",
+    "core:window:allow-set-size",
     "dialog:allow-open"
   ]
 }
