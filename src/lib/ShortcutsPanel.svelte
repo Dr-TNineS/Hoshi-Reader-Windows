@@ -1,14 +1,22 @@
 <script lang="ts">
-  import type { GlobalLookupSettings } from "./global-lookup-settings";
+  import type { GlobalLookupSettings, ShortcutBinding as GlobalShortcutBinding } from "./global-lookup-settings";
+  import GlobalShortcutEditor from "./GlobalShortcutEditor.svelte";
   import { shortcutGroups } from "./shortcuts";
 
   let {
     globalLookupSettings = null,
+    onGlobalLookupShortcutChange = null,
+    onGlobalLookupShortcutReset = null,
   }: {
     globalLookupSettings?: GlobalLookupSettings | null;
+    onGlobalLookupShortcutChange?: ((shortcut: GlobalShortcutBinding) => void) | null;
+    onGlobalLookupShortcutReset?: (() => void) | null;
   } = $props();
 
   const groups = $derived(shortcutGroups(globalLookupSettings));
+  const canEditGlobalShortcut = $derived(Boolean(
+    globalLookupSettings && onGlobalLookupShortcutChange && onGlobalLookupShortcutReset,
+  ));
 </script>
 
 <section class="shortcuts-panel" aria-label="Keyboard shortcuts">
@@ -19,22 +27,30 @@
       <h2 id={`shortcut-group-${group.id}`}>{group.label}</h2>
       <div class="shortcut-card">
         {#each group.actions as action}
-          <div class="shortcut-row">
+          <div class="shortcut-row" class:editable={canEditGlobalShortcut && action.id === "global-selected-text-lookup"}>
             <div class="action-copy">
               <span class="action-label">{action.label}</span>
               {#if action.detail}<span class="action-detail">{action.detail}</span>{/if}
             </div>
-            <div class="bindings" aria-label={`${action.label} shortcuts`}>
-              {#each action.bindings as binding, bindingIndex}
-                {#if bindingIndex > 0}<span class="binding-or">or</span>{/if}
-                <span class="binding">
-                  {#each binding.tokens as token, tokenIndex}
-                    {#if tokenIndex > 0}<span class="binding-plus">+</span>{/if}
-                    <kbd>{token}</kbd>
-                  {/each}
-                </span>
-              {/each}
-            </div>
+            {#if canEditGlobalShortcut && action.id === "global-selected-text-lookup" && globalLookupSettings && onGlobalLookupShortcutChange && onGlobalLookupShortcutReset}
+              <GlobalShortcutEditor
+                shortcut={globalLookupSettings.shortcut}
+                onShortcutChange={onGlobalLookupShortcutChange}
+                onShortcutReset={onGlobalLookupShortcutReset}
+              />
+            {:else}
+              <div class="bindings" aria-label={`${action.label} shortcuts`}>
+                {#each action.bindings as binding, bindingIndex}
+                  {#if bindingIndex > 0}<span class="binding-or">or</span>{/if}
+                  <span class="binding">
+                    {#each binding.tokens as token, tokenIndex}
+                      {#if tokenIndex > 0}<span class="binding-plus">+</span>{/if}
+                      <kbd>{token}</kbd>
+                    {/each}
+                  </span>
+                {/each}
+              </div>
+            {/if}
           </div>
         {/each}
       </div>
@@ -49,6 +65,7 @@
   h2 { color: var(--app-muted); font-size: 13px; font-weight: 650; letter-spacing: 0.02em; text-transform: uppercase; }
   .shortcut-card { min-width: 0; overflow: hidden; background: var(--app-surface); border: 1px solid var(--app-border); border-radius: 8px; }
   .shortcut-row { min-width: 0; display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 24px; align-items: center; padding: 13px 14px; }
+  .shortcut-row.editable { align-items: start; }
   .shortcut-row + .shortcut-row { border-top: 1px solid var(--app-border); }
   .action-copy { min-width: 0; display: flex; flex-direction: column; gap: 3px; }
   .action-label { color: var(--app-text); font-size: 14px; font-weight: 600; line-height: 1.35; }

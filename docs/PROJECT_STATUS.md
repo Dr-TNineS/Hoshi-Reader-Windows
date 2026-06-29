@@ -50,7 +50,7 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Appearance and Advanced settings state is coordinated by a Svelte 5 runes controller in `src/lib/state/settings.svelte.ts`; persistence remains delegated to the existing appearance and Advanced storage modules.
   - Dictionaries settings persist HSA core options in the same settings controller: scan non-Japanese text, max results, scan length, low-RAM dictionary import, collapse mode, expand-first dictionary, collapsed dictionaries, compact glossaries, expression tags, harmonic frequency, deduplicate pitch accents, and compact pitch accents.
   - The Advanced startup preference is stored locally in browser `localStorage`.
-  - Read-only Shortcuts panel listing the currently implemented Reader keyboard and mouse shortcuts by feature group.
+  - Shortcuts panel lists implemented global, Reader, and Sasayaki keyboard/mouse shortcuts by feature group; the global selected-text lookup shortcut is editable and resettable from Shortcuts and Advanced, while Reader and Sasayaki shortcuts remain informational.
   - Resume from saved progress.
   - Tauri startup attempts to restore the last reader session when the Advanced startup option is enabled; disabling it leaves startup on the bookshelf without clearing the saved session.
   - Importing an EPUB without opening it does not replace the saved reader session used by Advanced startup restore.
