@@ -425,9 +425,47 @@ function scopeCssRules(css: string, scope: string): string {
       .filter(Boolean)
       .join(", ");
     if (!scopedSelector) continue;
-    output += `${scopedSelector}{${body}}\n`;
+    const safeBody = sanitizeDictionaryCssBody(body);
+    if (!safeBody) continue;
+    output += `${scopedSelector}{${safeBody}}\n`;
   }
   return output;
+}
+
+function sanitizeDictionaryCssBody(body: string): string {
+  return body
+    .split(";")
+    .map((declaration) => declaration.trim())
+    .filter((declaration) => {
+      const separator = declaration.indexOf(":");
+      if (separator <= 0) return false;
+      const property = declaration.slice(0, separator).trim().toLowerCase();
+      return !isUnsafeDictionaryCssProperty(property);
+    })
+    .join(";");
+}
+
+function isUnsafeDictionaryCssProperty(property: string): boolean {
+  return property === "font-size"
+    || property === "width"
+    || property === "height"
+    || property === "min-width"
+    || property === "min-height"
+    || property === "max-width"
+    || property === "max-height"
+    || property === "position"
+    || property === "inset"
+    || property === "top"
+    || property === "right"
+    || property === "bottom"
+    || property === "left"
+    || property === "transform"
+    || property === "translate"
+    || property === "scale"
+    || property === "rotate"
+    || property === "zoom"
+    || property === "writing-mode"
+    || property === "line-height";
 }
 
 function matchingBrace(css: string, open: number): number {

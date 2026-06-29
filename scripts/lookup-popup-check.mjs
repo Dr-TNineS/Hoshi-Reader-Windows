@@ -77,6 +77,9 @@ async function openProbe(page, state, options = {}) {
   if (options.popupWidth) params.set("popupWidth", String(options.popupWidth));
   if (options.popupHeight) params.set("popupHeight", String(options.popupHeight));
   if (options.popupScale) params.set("popupScale", String(options.popupScale));
+  if (options.importPopupWidth) params.set("importPopupWidth", String(options.importPopupWidth));
+  if (options.importPopupHeight) params.set("importPopupHeight", String(options.importPopupHeight));
+  if (options.importPopupScale) params.set("importPopupScale", String(options.importPopupScale));
   if (options.showReading) params.set("showReading", "1");
   if (options.scanLength) params.set("scanLength", String(options.scanLength));
   if (options.scanNonJapaneseText === false) params.set("scanNonJapaneseText", "disabled");
@@ -236,6 +239,9 @@ async function popupMetrics(page) {
       expressionTags: Array.from(document.querySelectorAll(".lookup-glossary-group > .lookup-tags .lookup-tag")).map((node) => node.textContent ?? ""),
       pitchPositions: Array.from(document.querySelectorAll(".pitch-position")).map((node) => node.textContent ?? ""),
       dictionarySettings: JSON.parse(state?.getAttribute("data-dictionary-settings") ?? "{}"),
+      importPopupSettings: JSON.parse(state?.getAttribute("data-import-popup-settings") ?? "{}"),
+      renderPopupSettings: JSON.parse(state?.getAttribute("data-render-popup-settings") ?? "{}"),
+      importedDictionaryRecords: JSON.parse(state?.getAttribute("data-imported-dictionary-records") ?? "[]"),
       redirectLinks: document.querySelectorAll(".lookup-glossary-content a[data-lookup-redirect]").length,
       canGoBack: !document.querySelector(".lookup-pop[data-popup-id='root'] button[aria-label='Back']")?.hasAttribute("disabled"),
       canGoForward: !document.querySelector(".lookup-pop[data-popup-id='root'] button[aria-label='Forward']")?.hasAttribute("disabled"),
@@ -245,6 +251,13 @@ async function popupMetrics(page) {
       dictionaryStyledColor: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).color : "",
       dictionaryStyledPosition: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).position : "",
       dictionaryStyledBackgroundImage: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).backgroundImage : "",
+      dictionaryStyledFontSize: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).fontSize : "",
+      dictionaryStyledLineHeight: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).lineHeight : "",
+      dictionaryStyledWidth: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).width : "",
+      dictionaryStyledHeight: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).height : "",
+      dictionaryStyledMaxHeight: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).maxHeight : "",
+      dictionaryStyledTransform: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).transform : "",
+      dictionaryStyledZoom: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).zoom : "",
       structuredInlineColor: safeInlineStyle instanceof HTMLElement ? getComputedStyle(safeInlineStyle).color : "",
       structuredInlineFontWeight: safeInlineStyle instanceof HTMLElement ? getComputedStyle(safeInlineStyle).fontWeight : "",
       structuredInlineFontSize: safeInlineStyle instanceof HTMLElement ? getComputedStyle(safeInlineStyle).fontSize : "",
@@ -456,6 +469,7 @@ async function main() {
     assert(ready.actionSlotWidth === "28px", "Scale 1 should keep result-level action slots at 28 px.", ready);
     assert(ready.lookupResultRows >= 5 && ready.text.includes("extra rendered lookup result 5"), "Ready popup should render all backend lookup results, not only the first three.", ready);
     assert(ready.text.includes("Jitendex.org [probe]"), "Ready popup should render dictionary source.", ready);
+    assert(ready.text.includes("No CSS Dictionary [probe]") && ready.text.includes("plain dictionary entry without imported CSS"), "Ready popup should render dictionaries that have no imported CSS.", ready);
     assert(ready.lookupTextRows === 0, "Ready popup should not render the original selected text row.", ready);
     assert(ready.lookupMetaRows === 0, "Ready popup should not render the dictionary source meta row.", ready);
     assert(ready.text.includes("classroom school room"), "Ready popup should render structured glossary as readable text.", ready);
@@ -476,6 +490,10 @@ async function main() {
     assert(ready.dictionaryStyledColor === "rgb(123, 210, 145)", "Dictionary CSS should affect glossary content.", ready);
     assert(ready.dictionaryStyledPosition !== "fixed", "Dictionary CSS sanitizer should block fixed positioning.", ready);
     assert(ready.dictionaryStyledBackgroundImage === "none", "Dictionary CSS sanitizer should block remote image URLs.", ready);
+    assert(ready.dictionaryStyledFontSize !== "42px" && ready.dictionaryStyledFontSize === ready.glossaryFontSize, "Dictionary CSS sanitizer should block imported font-size overrides.", ready);
+    assert(ready.dictionaryStyledLineHeight !== "126px", "Dictionary CSS sanitizer should block imported line-height overrides.", ready);
+    assert(ready.dictionaryStyledWidth !== "640px" && ready.dictionaryStyledHeight !== "480px" && ready.dictionaryStyledMaxHeight !== "900px", "Dictionary CSS sanitizer should block imported box-size overrides.", ready);
+    assert(ready.dictionaryStyledTransform === "none" && ready.dictionaryStyledZoom === "1", "Dictionary CSS sanitizer should block imported transform and zoom overrides.", ready);
     assert(ready.structuredInlineColor === "rgb(30, 144, 255)", "Structured glossary inline color should be preserved for Yomitan style objects.", ready);
     assert(Number.parseInt(ready.structuredInlineFontWeight, 10) >= 700, "Structured glossary inline font weight should be preserved.", ready);
     assert(ready.structuredInlineFontSize === "16.8px", "Structured glossary inline font size should be preserved.", ready);
@@ -488,6 +506,8 @@ async function main() {
     assert(ready.bodyBackground !== "rgb(255, 0, 0)", "Dictionary CSS should not style the page body.", ready);
     assert(ready.text.includes("education") && ready.text.includes("place"), "Ready popup should render glossary definition tags.", ready);
     assert(ready.headerActions >= 1, "Ready popup should render HSA-style header actions.", ready);
+    assert(ready.importPopupSettings.width === ready.renderPopupSettings.width && ready.importPopupSettings.scale === ready.renderPopupSettings.scale, "Default probe import and render popup settings should match.", ready);
+    assert(ready.importedDictionaryRecords.length === 2 && ready.importedDictionaryRecords.some((record) => record.styleSource === ""), "Probe import metadata should include CSS and no-CSS dictionaries.", ready);
     assert(ready.audioButtons >= 1 && ready.audioDisabled, "Word audio button should render as a disabled boundary.", ready);
     assert(ready.audioTitle.includes("No enabled"), "Disabled audio affordance should describe missing configuration.", ready);
     assert(ready.frequencyGroups >= 1 && ready.frequencyDictLabels.includes("Freq Probe") && ready.text.includes("120"), "Ready popup should render frequency as dictionary pills.", ready);
@@ -1004,6 +1024,49 @@ async function main() {
     assert(scaled.popup.width === 320 && scaled.popup.height === 250, "Content scale should not change the popup outer frame.", scaled);
     assert(scaled.expressionFontSize === "39px" && scaled.readingFontSize === "19.5px" && scaled.glossaryFontSize === "21px", "Scale 1.5 should multiply the compact popup type sizes.", scaled);
     assert(scaled.actionSlotWidth === "42px" && scaled.mediaImageMaxHeight === "270px", "Scale 1.5 should multiply result actions and media limits.", scaled);
+
+    await openProbe(page, "ready", {
+      longResult: true,
+      showReading: true,
+      popupWidth: 320,
+      popupHeight: 250,
+      popupScale: 1,
+      importPopupWidth: 700,
+      importPopupHeight: 800,
+      importPopupScale: 1.5,
+    });
+    const largeImportSmallRender = await popupMetrics(page);
+    await openProbe(page, "ready", {
+      longResult: true,
+      showReading: true,
+      popupWidth: 320,
+      popupHeight: 250,
+      popupScale: 1,
+      importPopupWidth: 100,
+      importPopupHeight: 100,
+      importPopupScale: 0.8,
+    });
+    const smallImportSmallRender = await popupMetrics(page);
+    assert(
+      JSON.stringify(largeImportSmallRender.importedDictionaryRecords) === JSON.stringify(smallImportSmallRender.importedDictionaryRecords),
+      "Simulated import metadata and style identities should not depend on popup settings active during import.",
+      { largeImportSmallRender, smallImportSmallRender },
+    );
+    assert(
+      largeImportSmallRender.expressionFontSize === smallImportSmallRender.expressionFontSize
+        && largeImportSmallRender.glossaryFontSize === smallImportSmallRender.glossaryFontSize
+        && largeImportSmallRender.dictionaryStyledFontSize === smallImportSmallRender.dictionaryStyledFontSize,
+      "Rendered dictionary size should depend on current popup scale, not simulated import-time popup settings.",
+      { largeImportSmallRender, smallImportSmallRender },
+    );
+    assert(
+      largeImportSmallRender.importPopupSettings.scale === 1.5
+        && smallImportSmallRender.importPopupSettings.scale === 0.8
+        && largeImportSmallRender.renderPopupSettings.scale === 1
+        && smallImportSmallRender.renderPopupSettings.scale === 1,
+      "Probe should distinguish import-time popup settings from render-time popup settings.",
+      { largeImportSmallRender, smallImportSmallRender },
+    );
 
     await page.setViewportSize({ width: 1280, height: 720 });
     await openProbe(page, "ready", { longResult: true, popupWidth: 700, popupHeight: 800 });

@@ -38,6 +38,15 @@
     height: params.has("popupHeight") ? Number(params.get("popupHeight")) : 250,
     scale: params.has("popupScale") ? Number(params.get("popupScale")) : 1,
   });
+  const importPopupSettings = normalizeLookupPopupSettings({
+    width: params.has("importPopupWidth") ? Number(params.get("importPopupWidth")) : popupSettings.width,
+    height: params.has("importPopupHeight") ? Number(params.get("importPopupHeight")) : popupSettings.height,
+    scale: params.has("importPopupScale") ? Number(params.get("importPopupScale")) : popupSettings.scale,
+  });
+  const importedDictionaryRecords = [
+    { dictId: "jitendex-probe", title: "Jitendex.org [probe]", styleSource: "probe:jank-css" },
+    { dictId: "nocss-probe", title: "No CSS Dictionary [probe]", styleSource: "" },
+  ];
   const dictionarySettings = normalizeDictionarySettings({
     ...defaultDictionarySettings,
     scanLength: params.has("scanLength") ? Number(params.get("scanLength")) : defaultDictionarySettings.scanLength,
@@ -154,6 +163,7 @@
     glossary: [
       { dict: "Jitendex.org [probe]", text: structuredGlossaryText, termTags: "n common", definitionTags: "education" },
       { dict: "Jitendex.org [probe]", text: "academy; lesson context", definitionTags: "place" },
+      { dict: "No CSS Dictionary [probe]", text: "plain dictionary entry without imported CSS", definitionTags: "plain" },
       { dict: "JMdict [probe]", text: glossaryText, termTags: "n" },
     ],
     matched: "school",
@@ -582,6 +592,12 @@
   }
 
   async function loadDictionaryStyles(dictionary: string) {
+    if (dictionary === "No CSS Dictionary [probe]") {
+      return {
+        source: "probe:nocss",
+        css: "",
+      };
+    }
     if (dictionary === "JMdict [probe]") {
       return {
         source: "probe",
@@ -596,7 +612,18 @@
         body { background: rgb(255, 0, 0); }
         .lookup-head { color: rgb(255, 0, 0); }
         .lookup-anki { display: none; }
-        .gloss-sc-div { color: rgb(123, 210, 145); position: fixed; background-image: url("https://example.invalid/bad.png"); }
+        .gloss-sc-div {
+          color: rgb(123, 210, 145);
+          position: fixed;
+          font-size: 42px;
+          line-height: 3;
+          width: 640px;
+          height: 480px;
+          max-height: 900px;
+          transform: scale(2);
+          zoom: 2;
+          background-image: url("https://example.invalid/bad.png");
+        }
       `,
     };
   }
@@ -698,6 +725,9 @@
     data-sasayaki-action-count={sasayakiActions.length}
     data-sasayaki-last-action={JSON.stringify(sasayakiActions[sasayakiActions.length - 1] ?? null)}
     data-sasayaki-playing={sasayakiPlaying}
+    data-import-popup-settings={JSON.stringify(importPopupSettings)}
+    data-render-popup-settings={JSON.stringify(popupSettings)}
+    data-imported-dictionary-records={JSON.stringify(importedDictionaryRecords)}
     data-dictionary-settings={JSON.stringify(dictionarySettings)}
     data-state={lookupState}
     aria-hidden="true"
