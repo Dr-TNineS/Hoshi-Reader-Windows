@@ -66,6 +66,27 @@ pub struct ReadingStateResponse {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 #[serde(rename_all = "camelCase")]
+pub struct ReadingStatistics {
+    pub title: String,
+    pub date_key: String,
+    #[serde(default)]
+    pub characters_read: i32,
+    #[serde(default)]
+    pub reading_time: f64,
+    #[serde(default)]
+    pub min_reading_speed: i32,
+    #[serde(default)]
+    pub alt_min_reading_speed: i32,
+    #[serde(default)]
+    pub last_reading_speed: i32,
+    #[serde(default)]
+    pub max_reading_speed: i32,
+    #[serde(default)]
+    pub last_statistic_modified: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
 struct ReadingState {
     version: u32,
     books: Vec<BookRecord>,
@@ -157,6 +178,27 @@ pub fn reading_import_legacy_state(
     Ok(state.into())
 }
 
+#[tauri::command]
+pub fn reading_load_statistics(
+    book_id: String,
+    app: AppHandle,
+) -> Result<Vec<ReadingStatistics>, String> {
+    let book_dir = crate::library::library_book_dir(&app, &book_id)?;
+    read_statistics(&book_dir)
+}
+
+#[tauri::command]
+pub fn reading_save_statistics(
+    book_id: String,
+    statistics: Vec<ReadingStatistics>,
+    app: AppHandle,
+) -> Result<Vec<ReadingStatistics>, String> {
+    let book_dir = crate::library::library_book_dir(&app, &book_id)?;
+    let next = deduplicate_statistics(statistics);
+    write_statistics(&book_dir, &next)?;
+    Ok(next)
+}
+
 fn reading_root(app: &AppHandle) -> Result<PathBuf, String> {
     let root = app
         .path()
@@ -169,6 +211,10 @@ fn reading_root(app: &AppHandle) -> Result<PathBuf, String> {
 
 fn state_path(root: &Path) -> PathBuf {
     root.join("state.json")
+}
+
+fn statistics_path(book_dir: &Path) -> PathBuf {
+    book_dir.join("statistics.json")
 }
 
 fn read_state(root: &Path) -> Result<ReadingState, String> {
@@ -201,6 +247,59 @@ fn write_state(root: &Path, state: &ReadingState) -> Result<(), String> {
         fs::remove_file(&path).map_err(|e| format!("Cannot replace old reading state: {e}"))?;
     }
     fs::rename(&temp_path, &path).map_err(|e| format!("Cannot replace reading state: {e}"))
+}
+
+fn read_statistics(book_dir: &Path) -> Result<Vec<ReadingStatistics>, String> {
+    let path = statistics_path(book_dir);
+    if !path.exists() {
+        return Ok(Vec::new());
+    }
+
+    let raw =
+        fs::read_to_string(&path).map_err(|e| format!("Cannot read reading statistics: {e}"))?;
+    let statistics: Vec<ReadingStatistics> = serde_json::from_str(&raw)
+        .map_err(|e| format!("Cannot parse reading statistics: {e}"))?;
+    Ok(deduplicate_statistics(statistics))
+}
+
+fn write_statistics(book_dir: &Path, statistics: &[ReadingStatistics]) -> Result<(), String> {
+    fs::create_dir_all(book_dir).map_err(|e| format!("Cannot create book statistics dir: {e}"))?;
+    let path = statistics_path(book_dir);
+    let temp_path = book_dir.join("statistics.json.tmp");
+    let json = serde_json::to_string_pretty(statistics)
+        .map_err(|e| format!("Cannot serialize reading statistics: {e}"))?;
+
+    {
+        let mut file = fs::File::create(&temp_path)
+            .map_err(|e| format!("Cannot create temporary reading statistics: {e}"))?;
+        file.write_all(json.as_bytes())
+            .map_err(|e| format!("Cannot write temporary reading statistics: {e}"))?;
+        file.sync_all()
+            .map_err(|e| format!("Cannot flush temporary reading statistics: {e}"))?;
+    }
+
+    if path.exists() {
+        fs::remove_file(&path)
+            .map_err(|e| format!("Cannot replace old reading statistics: {e}"))?;
+    }
+    fs::rename(&temp_path, &path).map_err(|e| format!("Cannot replace reading statistics: {e}"))
+}
+
+fn deduplicate_statistics(statistics: Vec<ReadingStatistics>) -> Vec<ReadingStatistics> {
+    let mut grouped: Vec<ReadingStatistics> = Vec::new();
+    for statistic in statistics {
+        if let Some(existing) = grouped
+            .iter_mut()
+            .find(|existing| existing.date_key == statistic.date_key)
+        {
+            if statistic.last_statistic_modified > existing.last_statistic_modified {
+                *existing = statistic;
+            }
+        } else {
+            grouped.push(statistic);
+        }
+    }
+    grouped
 }
 
 fn upsert_book(books: Vec<BookRecord>, record: BookRecord) -> Vec<BookRecord> {
@@ -322,6 +421,20 @@ mod tests {
             book_read_chars: Some(10),
             total_characters: Some(40),
             percent: Some(25.0),
+        }
+    }
+
+    fn statistic(date_key: &str, characters_read: i32, modified: u64) -> ReadingStatistics {
+        ReadingStatistics {
+            title: "Book".into(),
+            date_key: date_key.into(),
+            characters_read,
+            reading_time: 0.0,
+            min_reading_speed: 0,
+            alt_min_reading_speed: 0,
+            last_reading_speed: 0,
+            max_reading_speed: 0,
+            last_statistic_modified: modified,
         }
     }
 
@@ -447,6 +560,65 @@ mod tests {
         let final_state = read_state(&root).unwrap();
         assert_eq!(final_state.books.len(), 1);
         assert_eq!(final_state.books[0].path.as_deref(), Some("first.epub"));
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn missing_statistics_reads_empty() {
+        let root = temp_root("statistics_missing");
+
+        let statistics = read_statistics(&root).unwrap();
+
+        assert!(statistics.is_empty());
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn statistics_json_matches_hsa_sidecar_shape() {
+        let json = serde_json::to_string(&vec![statistic("2026-05-13", 0, 0)]).unwrap();
+
+        assert_eq!(
+            json,
+            r#"[{"title":"Book","dateKey":"2026-05-13","charactersRead":0,"readingTime":0.0,"minReadingSpeed":0,"altMinReadingSpeed":0,"lastReadingSpeed":0,"maxReadingSpeed":0,"lastStatisticModified":0}]"#
+        );
+    }
+
+    #[test]
+    fn statistics_dedupes_by_date_key_keeping_latest_modified() {
+        let statistics = deduplicate_statistics(vec![
+            statistic("2026-05-13", 10, 100),
+            statistic("2026-05-13", 20, 200),
+            statistic("2026-05-14", 30, 150),
+        ]);
+
+        assert_eq!(statistics.len(), 2);
+        assert_eq!(
+            statistics
+                .iter()
+                .find(|statistic| statistic.date_key == "2026-05-13")
+                .unwrap()
+                .characters_read,
+            20
+        );
+        assert_eq!(
+            statistics
+                .iter()
+                .find(|statistic| statistic.date_key == "2026-05-14")
+                .unwrap()
+                .characters_read,
+            30
+        );
+    }
+
+    #[test]
+    fn statistics_save_load_round_trip() {
+        let root = temp_root("statistics_round_trip");
+
+        write_statistics(&root, &[statistic("2026-05-13", 12, 100)]).unwrap();
+        let loaded = read_statistics(&root).unwrap();
+
+        assert_eq!(loaded, vec![statistic("2026-05-13", 12, 100)]);
+        assert!(statistics_path(&root).is_file());
         let _ = fs::remove_dir_all(root);
     }
 }

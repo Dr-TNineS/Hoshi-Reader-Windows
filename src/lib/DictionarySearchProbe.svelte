@@ -70,7 +70,7 @@
     {books}
     readerAppearance={{ ...defaultReaderAppearance, theme: "dark" }}
     readerThemeLabels={{ light: "Light", dark: "Dark", sepia: "Sepia", custom: "Custom" }}
-    advancedSettings={{ reopenLastBookOnStartup: true }}
+    advancedSettings={{ reopenLastBookOnStartup: true, enableReadingStatistics: false, readingStatisticsAutostartMode: "off", showReadingStatisticsToggle: false }}
     {lookupPopupSettings}
     {dictionarySettings}
     {dictionarySearchState}
@@ -83,6 +83,7 @@
     onSetReaderInterface={() => {}}
     onSetReaderAppearanceColor={() => {}}
     onSetReopenLastBookOnStartup={() => {}}
+    onAdvancedSettingsChange={() => {}}
     onSetLookupPopupWidth={(width) => lookupPopupSettings = { ...lookupPopupSettings, width }}
     onSetLookupPopupHeight={(height) => lookupPopupSettings = { ...lookupPopupSettings, height }}
     onSetLookupPopupScale={(scale) => lookupPopupSettings = { ...lookupPopupSettings, scale }}

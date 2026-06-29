@@ -1,6 +1,9 @@
 <script lang="ts">
   import Reader from "./Reader.svelte";
+  import ReaderControls from "../ReaderControls.svelte";
+  import ReaderStatisticsPanel from "../ReaderStatisticsPanel.svelte";
   import { countChars } from "../reader";
+  import type { ReaderStatisticsState } from "../reading-statistics";
   import { defaultReaderAppearance, normalizeReaderAppearance, readerAppearancePalette } from "../appearance";
   import type { ReaderProgress, ReaderSelection, SasayakiPlaybackCue } from "../types";
 
@@ -119,6 +122,8 @@
   let visibleSelectionText = $state("");
   let renderedLookupHighlightText = $state("");
   let renderedSasayakiHighlightText = $state("");
+  let statisticsOpen = $state(false);
+  let statisticsTracking = $state(true);
   let selectionCount = $state(0);
   let lookupGeneration = 0;
   const sasayakiCue: SasayakiPlaybackCue | null = sasayakiMode
@@ -181,6 +186,43 @@
     chapterIndex -= 1;
   }
 
+  const statisticsState = $derived<ReaderStatisticsState>({
+    isTracking: statisticsTracking,
+    session: {
+      title: "Probe",
+      dateKey: "2026-06-30",
+      charactersRead: lastProgress?.bookReadChars ?? 0,
+      readingTime: 65,
+      minReadingSpeed: 1200,
+      altMinReadingSpeed: 1200,
+      lastReadingSpeed: 3600,
+      maxReadingSpeed: 3600,
+      lastStatisticModified: 1,
+    },
+    today: {
+      title: "Probe",
+      dateKey: "2026-06-30",
+      charactersRead: lastProgress?.bookReadChars ?? 0,
+      readingTime: 65,
+      minReadingSpeed: 1200,
+      altMinReadingSpeed: 1200,
+      lastReadingSpeed: 3600,
+      maxReadingSpeed: 3600,
+      lastStatisticModified: 1,
+    },
+    allTime: {
+      title: "Probe",
+      dateKey: "2026-06-30",
+      charactersRead: lastProgress?.bookReadChars ?? 0,
+      readingTime: 65,
+      minReadingSpeed: 1200,
+      altMinReadingSpeed: 1200,
+      lastReadingSpeed: 3600,
+      maxReadingSpeed: 3600,
+      lastStatisticModified: 1,
+    },
+  });
+
   $effect(() => {
     lastSelection;
     const waitForHighlight = lookupHighlightText.length > 0;
@@ -224,6 +266,33 @@
   sasayakiReveal={sasayakiMode === "reveal"}
   sasayakiCueSignal={sasayakiMode ? 1 : 0}
 />
+
+{#if params.has("statisticsControls")}
+  <ReaderControls
+    onPrevChapter={previousChapterDirect}
+    onNextChapter={nextChapter}
+    onToggleToc={() => {}}
+    onBackToShelf={() => {}}
+    onToggleSasayaki={() => {}}
+    onToggleStatisticsPanel={() => statisticsOpen = !statisticsOpen}
+    onToggleStatisticsTracking={() => statisticsTracking = !statisticsTracking}
+    statisticsOpen={statisticsOpen}
+    statisticsEnabled={true}
+    statisticsTracking={statisticsTracking}
+    showStatisticsToggle={true}
+    statisticsText="3,600 chars/h 0:01"
+  />
+  {#if statisticsOpen}
+    <ReaderStatisticsPanel
+      state={statisticsState}
+      currentCharacter={lastProgress?.bookReadChars ?? 0}
+      currentChapterEndCharacter={chapters[chapterIndex].startChars + chapters[chapterIndex].charCount}
+      totalCharacters={totalBookChars}
+      onToggleTracking={() => statisticsTracking = !statisticsTracking}
+      onClose={() => statisticsOpen = false}
+    />
+  {/if}
+{/if}
 
 <div
   class="probe-state"

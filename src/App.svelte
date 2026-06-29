@@ -19,7 +19,17 @@
   import { clearLookupHighlight, READER_LOOKUP_HIGHLIGHT } from "./lib/lookup-highlight";
   import Reader from "./lib/reader/Reader.svelte";
   import ReaderControls from "./lib/ReaderControls.svelte";
+  import ReaderStatisticsPanel from "./lib/ReaderStatisticsPanel.svelte";
   import SasayakiPlayerPanel from "./lib/SasayakiPlayerPanel.svelte";
+  import {
+    formatBottomStatisticsTime,
+    formatReadingSpeed,
+    loadReadingStatistics,
+    ReaderStatisticsTracker,
+    saveReadingStatistics,
+    type ReaderStatisticsState,
+    type ReadingStatistic,
+  } from "./lib/reading-statistics";
   import {
     clampPlaybackTime,
     cuePresentationAtTime,
@@ -97,6 +107,11 @@
   let readerSelection = $state<ReaderSelection | null>(null);
   let readerLookupHighlightCount = $state(0);
   let readerLookupHighlightSignal = $state(0);
+  let readingStatisticsTracker = $state<ReaderStatisticsTracker | null>(null);
+  let readingStatisticsState = $state<ReaderStatisticsState | null>(null);
+  let readingStatisticsOpen = $state(false);
+  let readingStatisticsLoadId = 0;
+  let readingStatisticsSaveId = 0;
   let lookupPopups = $state<LookupPopupItem[]>([]);
   const settings = createSettingsState();
   const dictionarySearchState = createDictionarySearchState();
@@ -171,6 +186,14 @@
   let tocEntries = $derived(meta ? flattenToc(meta.toc, meta) : []);
   let chapterBookInfo = $derived(meta?.book_info.chapter_info[chapterIndex] ?? null);
   let ankiTemplateOptions = $derived(ankiHandlebarOptions(dictionaryList.map((dictionary) => dictionary.title)));
+  let readingStatisticsBottomText = $derived(
+    settings.advancedSettings.enableReadingStatistics && readingStatisticsState
+      ? [
+          formatReadingSpeed(readingStatisticsState.session.lastReadingSpeed),
+          formatBottomStatisticsTime(readingStatisticsState.session.readingTime),
+        ].join(" ")
+      : "",
+  );
 
   interface SasayakiPlaybackSnapshot {
     bookId: string;
@@ -258,6 +281,7 @@
   $effect(() => {
     if (!isTauriRuntime()) return;
     const handleUnload = () => {
+      flushReadingStatistics("window-unload", true);
       void stopSasayakiPlayback(true, "window-unload");
     };
     globalThis.addEventListener("pagehide", handleUnload);
@@ -265,8 +289,29 @@
     return () => {
       globalThis.removeEventListener("pagehide", handleUnload);
       globalThis.removeEventListener("beforeunload", handleUnload);
+      flushReadingStatistics("effect-cleanup", true);
       void stopSasayakiPlayback(true, "effect-cleanup");
     };
+  });
+
+  $effect(() => {
+    if (!settings.advancedSettings.enableReadingStatistics || !readingStatisticsTracker) return;
+    if (!readingStatisticsTracker.state.isTracking) return;
+    const timer = setInterval(() => {
+      const currentCharacter = currentReaderProgress?.bookReadChars ?? 0;
+      readingStatisticsTracker?.update(currentCharacter);
+      syncReadingStatisticsState();
+    }, 1000);
+    return () => clearInterval(timer);
+  });
+
+  $effect(() => {
+    if (settings.advancedSettings.enableReadingStatistics) return;
+    if (!readingStatisticsTracker && !readingStatisticsState) return;
+    flushReadingStatistics("statistics-disabled", true);
+    readingStatisticsTracker = null;
+    readingStatisticsState = null;
+    readingStatisticsOpen = false;
   });
 
   $effect(() => {
@@ -312,6 +357,86 @@
       });
   }
 
+  function syncReadingStatisticsState() {
+    readingStatisticsState = readingStatisticsTracker
+      ? {
+          isTracking: readingStatisticsTracker.state.isTracking,
+          session: { ...readingStatisticsTracker.state.session },
+          today: { ...readingStatisticsTracker.state.today },
+          allTime: { ...readingStatisticsTracker.state.allTime },
+        }
+      : null;
+  }
+
+  async function prepareReadingStatistics(locator: BookLocator, bookMeta: EpubMeta) {
+    const loadId = ++readingStatisticsLoadId;
+    readingStatisticsTracker = null;
+    readingStatisticsState = null;
+    readingStatisticsOpen = false;
+    if (!settings.advancedSettings.enableReadingStatistics) return;
+
+    let initialStatistics: ReadingStatistic[] = [];
+    try {
+      initialStatistics = await loadReadingStatistics(locator, bookMeta.title || "Untitled", isTauriRuntime());
+    } catch (e) {
+      if (loadId === readingStatisticsLoadId) error = String(e);
+      initialStatistics = [];
+    }
+    if (loadId !== readingStatisticsLoadId) return;
+
+    readingStatisticsTracker = new ReaderStatisticsTracker(
+      bookMeta.title || "Untitled",
+      initialStatistics,
+      settings.advancedSettings.enableReadingStatistics,
+    );
+    syncReadingStatisticsState();
+    if (settings.advancedSettings.readingStatisticsAutostartMode === "on") {
+      readingStatisticsTracker.start(currentReaderProgress?.bookReadChars ?? 0);
+      syncReadingStatisticsState();
+    }
+  }
+
+  function flushReadingStatistics(reason: string, pauseTracking = false) {
+    const tracker = readingStatisticsTracker;
+    const locator = currentBookLocator;
+    if (!tracker || !locator) return;
+    if (tracker.state.isTracking) {
+      tracker.update(currentReaderProgress?.bookReadChars ?? 0);
+      if (pauseTracking) tracker.pause(currentReaderProgress?.bookReadChars ?? 0);
+    }
+    syncReadingStatisticsState();
+    const statistics = tracker.statisticsForPersistenceOrNull();
+    if (!statistics) return;
+    const saveId = ++readingStatisticsSaveId;
+    void saveReadingStatistics(locator, statistics, isTauriRuntime())
+      .then(() => {
+        if (saveId !== readingStatisticsSaveId || readingStatisticsTracker !== tracker) return;
+        tracker.statisticsForPersistence();
+      })
+      .catch((e) => {
+        error = `Cannot save reading statistics after ${reason}: ${String(e)}`;
+      });
+  }
+
+  function toggleReadingStatisticsTracking() {
+    const tracker = readingStatisticsTracker;
+    if (!tracker) return;
+    const currentCharacter = currentReaderProgress?.bookReadChars ?? 0;
+    if (tracker.state.isTracking) {
+      tracker.pause(currentCharacter);
+      void saveReadingStatistics(currentBookLocator ?? {}, tracker.statisticsForPersistence(), isTauriRuntime())
+        .catch((e) => error = String(e));
+    } else {
+      tracker.start(currentCharacter);
+    }
+    syncReadingStatisticsState();
+  }
+
+  function toggleReadingStatisticsPanel() {
+    if (!settings.advancedSettings.enableReadingStatistics || !readingStatisticsState) return;
+    readingStatisticsOpen = !readingStatisticsOpen;
+  }
+
   async function openBookLocator(locator: BookLocator, chapter = 0, status = "Opening...", chapterProgress = 0) {
     error = "";
     debug = status;
@@ -338,6 +463,7 @@
     await loadChapter(safeChapter, chapterProgress);
     saveProgress(locator, meta, safeChapter, null, chapterProgress);
     view = "reader";
+    await prepareReadingStatistics(locator, meta);
     await prepareSasayakiPlayback(locator.bookId ?? null);
   }
 
@@ -1504,6 +1630,7 @@
     if (!meta || !isTauriRuntime()) return;
 
     try {
+      flushReadingStatistics("chapter-change");
       if (!options.preserveLookup) closeReaderSelection();
       const safeIndex = clampChapter(idx, meta.spine.length);
       readerInitialProgress = clampUnit(chapterProgress);
@@ -1515,6 +1642,15 @@
       if (!shouldCommit()) return;
       chapterHtml = resolveChapterAssets(rawHtml, chapterPath);
       chapterIndex = safeIndex;
+      if (readingStatisticsTracker) {
+        const nextChapterInfo = meta.book_info.chapter_info[safeIndex];
+        const nextCharacter = Math.round(
+          (nextChapterInfo?.current_total ?? 0) +
+          (nextChapterInfo?.chapter_count ?? 0) * readerInitialProgress,
+        );
+        readingStatisticsTracker.resetBaseline(nextCharacter);
+        syncReadingStatisticsState();
+      }
       if (currentBookLocator) saveProgress(currentBookLocator, meta, safeIndex, null, readerInitialProgress);
       debug = `Ch${safeIndex + 1}/${meta.spine.length}`;
     } catch (e) {
@@ -1569,6 +1705,13 @@
   function handleReaderProgress(progress: ReaderProgress) {
     if (!meta || !currentBookLocator || progress.chapterIndex !== chapterIndex) return;
     currentReaderProgress = progress;
+    if (readingStatisticsTracker && settings.advancedSettings.enableReadingStatistics) {
+      if (settings.advancedSettings.readingStatisticsAutostartMode === "pageTurn") {
+        readingStatisticsTracker.startForPageTurnIfNeeded(progress.bookReadChars);
+      }
+      readingStatisticsTracker.update(progress.bookReadChars);
+      syncReadingStatisticsState();
+    }
     saveProgress(currentBookLocator, meta, chapterIndex, progress);
   }
 
@@ -2149,6 +2292,7 @@
     recordSasayakiPersistence("backToShelf.start");
     sasayakiExitingReader = true;
     closeReaderSelection();
+    flushReadingStatistics("back-to-shelf", true);
     try {
       const stopped = await stopSasayakiPlayback(true, "back-to-shelf");
       if (!stopped) {
@@ -2195,6 +2339,11 @@
     }
     if (showToc) {
       closeToc();
+      return;
+    }
+    if (readingStatisticsOpen) {
+      readingStatisticsOpen = false;
+      requestAnimationFrame(() => document.getElementById("reader-statistics-trigger")?.focus());
       return;
     }
     void backToShelf();
@@ -2628,6 +2777,7 @@
       onSetReaderInterface={settings.setReaderInterface}
       onSetReaderAppearanceColor={settings.setReaderAppearanceColor}
       onSetReopenLastBookOnStartup={settings.setReopenLastBookOnStartup}
+      onAdvancedSettingsChange={settings.updateAdvancedSettings}
       onSetLookupPopupWidth={settings.setLookupPopupWidth}
       onSetLookupPopupHeight={settings.setLookupPopupHeight}
       onSetLookupPopupScale={settings.setLookupPopupScale}
@@ -2745,15 +2895,32 @@
         onJumpToChapter={jumpToChapter}
       />
     {/if}
+    {#if readingStatisticsOpen && readingStatisticsState}
+      <ReaderStatisticsPanel
+        state={readingStatisticsState}
+        currentCharacter={currentReaderProgress?.bookReadChars ?? chapterBookInfo?.current_total ?? 0}
+        currentChapterEndCharacter={(chapterBookInfo?.current_total ?? 0) + (chapterBookInfo?.chapter_count ?? 0)}
+        totalCharacters={meta?.book_info.character_count ?? 0}
+        onToggleTracking={toggleReadingStatisticsTracking}
+        onClose={() => readingStatisticsOpen = false}
+      />
+    {/if}
     <ReaderControls
       onPrevChapter={prevChapterDirect}
       onNextChapter={nextChapter}
       onToggleToc={toggleToc}
       onBackToShelf={backToShelf}
       onToggleSasayaki={() => sasayakiPlaybackOpen = !sasayakiPlaybackOpen}
+      onToggleStatisticsPanel={toggleReadingStatisticsPanel}
+      onToggleStatisticsTracking={toggleReadingStatisticsTracking}
       tocOpen={showToc}
       sasayakiOpen={sasayakiPlaybackOpen}
       sasayakiAvailable={Boolean(sasayakiPlayback?.configured)}
+      statisticsOpen={readingStatisticsOpen}
+      statisticsEnabled={settings.advancedSettings.enableReadingStatistics && Boolean(readingStatisticsState)}
+      statisticsTracking={readingStatisticsState?.isTracking ?? false}
+      showStatisticsToggle={settings.advancedSettings.showReadingStatisticsToggle}
+      statisticsText={readingStatisticsBottomText}
     />
     {#if sasayakiAudioSrc}
       <audio

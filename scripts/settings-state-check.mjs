@@ -52,6 +52,9 @@ async function state(page) {
     sasayakiDarkText: element.getAttribute("data-sasayaki-dark-text"),
     sasayakiDarkBackground: element.getAttribute("data-sasayaki-dark-background"),
     reopen: element.getAttribute("data-reopen"),
+    statisticsEnabled: element.getAttribute("data-statistics-enabled"),
+    statisticsAutostart: element.getAttribute("data-statistics-autostart"),
+    statisticsToggle: element.getAttribute("data-statistics-toggle"),
     appearanceVars: element.getAttribute("data-appearance-vars"),
     savedAppearances: element.getAttribute("data-saved-appearances"),
     savedAppearanceJson: JSON.parse(element.getAttribute("data-saved-appearance-json") ?? "[]"),
@@ -90,6 +93,7 @@ async function main() {
 
     let current = await state(page);
     assert(current.theme === "dark" && current.reopen === "true", "Controller should expose loaded settings.", current);
+    assert(current.statisticsEnabled === "false" && current.statisticsAutostart === "off" && current.statisticsToggle === "false", "Reading statistics should default to HSA-disabled settings.", current);
     assert(current.savedAppearances === "dark", "Controller should preserve appearance startup normalization.", current);
     assert(current.interface === "light", "Controller should preserve loaded custom interface settings.", current);
     assert(current.customBackground === "#ffffff", "Invalid loaded custom background should fall back safely.", current);
@@ -143,7 +147,14 @@ async function main() {
     await page.getByRole("button", { name: "Toggle startup", exact: true }).click();
     current = await state(page);
     assert(current.reopen === "false", "Advanced setter should update reactive state.", current);
-    assert(current.savedAdvanced === "false", "Advanced setter should persist the next settings value.", current);
+    assert(current.savedAdvanced === "false:false:off:false", "Advanced setter should persist the next settings value.", current);
+
+    await page.getByRole("button", { name: "Enable statistics", exact: true }).click();
+    current = await state(page);
+    assert(current.statisticsEnabled === "true" && current.statisticsToggle === "true", "Enabling reading statistics should also enable the reader toggle.", current);
+    await page.getByRole("button", { name: "Page turn statistics", exact: true }).click();
+    current = await state(page);
+    assert(current.statisticsAutostart === "pageTurn", "Statistics autostart setter should persist Page Turn mode.", current);
 
     await customTheme.click();
     current = await state(page);

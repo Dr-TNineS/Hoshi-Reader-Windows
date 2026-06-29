@@ -16,6 +16,7 @@
     "check:reader-visual": "node scripts/reader-visual-check.mjs",
     "check:reader-toc": "node scripts/reader-toc-check.mjs",
     "check:settings-state": "node scripts/settings-state-check.mjs",
+    "check:reading-statistics": "node scripts/reading-statistics-check.mjs",
     "check:sasayaki-playback": "node scripts/sasayaki-playback-check.mjs",
     "check:tauri-linked": "scripts\\vs-x64-cargo.cmd check",
     "test:dict-linked": "scripts\\vs-x64-cargo.cmd test --lib dict::commands",
