@@ -13,6 +13,12 @@
   import { LookupResultCache } from "./lib/lookup-result-cache";
   import { dictionaryBatchStatusLabel } from "./lib/dictionary-import-status";
   import { dictionaryUpdateStatusLabel } from "./lib/dictionary-update-status";
+  import {
+    defaultGlobalLookupSettings,
+    defaultGlobalLookupShortcut,
+    type GlobalLookupSettings,
+    type ShortcutBinding,
+  } from "./lib/global-lookup-settings";
   import { resolveChapterAssets } from "./lib/epub-assets";
   import LookupPopupLayer, { type LookupPopupItem } from "./lib/LookupPopupLayer.svelte";
   import { resultDictionaryLabel } from "./lib/lookup-popup";
@@ -108,6 +114,7 @@
   let dictionaryListStatus = $state<DictionaryStatus | null>(null);
   let dictionaryListError = $state("");
   let dictionaryBusy = $state(false);
+  let globalLookupSettings = $state<GlobalLookupSettings>(defaultGlobalLookupSettings);
   let ankiSettings = $state<AnkiSettings | null>(null);
   let ankiEndpointDraft = $state("http://127.0.0.1:8765");
   let ankiStatus = $state("");
@@ -162,6 +169,7 @@
   let debug = $state("");
   let triedStartup = false;
   let triedDictionaryList = false;
+  let triedGlobalLookupSettings = false;
   let triedAnkiSettings = false;
   let progressSaveVersion = 0;
   let cachedReadyDictionaryStatus: DictionaryStatus | null = null;
@@ -245,6 +253,13 @@
     triedDictionaryList = true;
     if (!isTauriRuntime()) return;
     void refreshDictionaries();
+  });
+
+  $effect(() => {
+    if (triedGlobalLookupSettings) return;
+    triedGlobalLookupSettings = true;
+    if (!isTauriRuntime()) return;
+    void loadGlobalLookupSettings();
   });
 
   $effect(() => {
@@ -1597,6 +1612,52 @@
     }
   }
 
+  async function loadGlobalLookupSettings() {
+    try {
+      globalLookupSettings = await invoke<GlobalLookupSettings>("global_lookup_load_settings");
+    } catch (e) {
+      globalLookupSettings = {
+        ...globalLookupSettings,
+        registration: { registered: false, error: String(e) },
+      };
+    }
+  }
+
+  async function saveGlobalLookupSettings(next: GlobalLookupSettings) {
+    if (!isTauriRuntime()) {
+      globalLookupSettings = next;
+      return;
+    }
+    try {
+      globalLookupSettings = await invoke<GlobalLookupSettings>("global_lookup_save_settings", { settings: next });
+    } catch (e) {
+      globalLookupSettings = {
+        ...globalLookupSettings,
+        registration: { ...globalLookupSettings.registration, error: String(e) },
+      };
+    }
+  }
+
+  function setGlobalLookupEnabled(enabled: boolean) {
+    void saveGlobalLookupSettings({ ...globalLookupSettings, enabled });
+  }
+
+  function setGlobalLookupShortcut(shortcut: ShortcutBinding) {
+    void saveGlobalLookupSettings({
+      ...globalLookupSettings,
+      enabled: true,
+      shortcut,
+    });
+  }
+
+  function resetGlobalLookupShortcut() {
+    void saveGlobalLookupSettings({
+      ...globalLookupSettings,
+      enabled: true,
+      shortcut: defaultGlobalLookupShortcut,
+    });
+  }
+
   function defaultAnkiSettings(): AnkiSettings {
     return {
       version: 1,
@@ -2602,6 +2663,7 @@
       readerAppearance={settings.readerAppearance}
       {readerThemeLabels}
       advancedSettings={settings.advancedSettings}
+      {globalLookupSettings}
       lookupPopupSettings={settings.lookupPopupSettings}
       dictionarySettings={settings.dictionarySettings}
       {dictionaryList}
@@ -2628,6 +2690,9 @@
       onSetReaderInterface={settings.setReaderInterface}
       onSetReaderAppearanceColor={settings.setReaderAppearanceColor}
       onSetReopenLastBookOnStartup={settings.setReopenLastBookOnStartup}
+      onSetGlobalLookupEnabled={setGlobalLookupEnabled}
+      onSetGlobalLookupShortcut={setGlobalLookupShortcut}
+      onResetGlobalLookupShortcut={resetGlobalLookupShortcut}
       onSetLookupPopupWidth={settings.setLookupPopupWidth}
       onSetLookupPopupHeight={settings.setLookupPopupHeight}
       onSetLookupPopupScale={settings.setLookupPopupScale}
