@@ -90,7 +90,7 @@
     onSetGlobalLookupShortcut={() => {}}
     onResetGlobalLookupShortcut={() => {}}
     onSetKeyboardShortcut={() => ""}
-    onResetKeyboardShortcut={() => {}}
+    onResetKeyboardShortcut={() => ""}
     onSetLookupPopupWidth={() => {}}
     onSetLookupPopupHeight={() => {}}
     onSetLookupPopupScale={() => {}}

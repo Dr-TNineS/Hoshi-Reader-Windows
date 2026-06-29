@@ -60,6 +60,8 @@
         shortcut={globalLookupSettings.shortcut}
         defaultShortcut={defaultGlobalLookupShortcut}
         requireCommandModifier={true}
+        recordLabel="Record Global selected-text lookup shortcut"
+        resetLabel="Reset Global selected-text lookup shortcut"
         onShortcutChange={onGlobalLookupShortcutChange}
         onShortcutReset={onGlobalLookupShortcutReset}
       />

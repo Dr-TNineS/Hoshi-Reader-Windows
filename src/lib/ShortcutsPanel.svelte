@@ -15,17 +15,18 @@
     onGlobalLookupShortcutChange = null,
     onGlobalLookupShortcutReset = null,
     onKeyboardShortcutChange = (_actionId: KeyboardShortcutActionId, _shortcut: GlobalShortcutBinding) => "",
-    onKeyboardShortcutReset = (_actionId: KeyboardShortcutActionId) => {},
+    onKeyboardShortcutReset = (_actionId: KeyboardShortcutActionId) => "",
   }: {
     globalLookupSettings?: GlobalLookupSettings | null;
     keyboardShortcutSettings?: KeyboardShortcutSettings;
     onGlobalLookupShortcutChange?: ((shortcut: GlobalShortcutBinding) => void) | null;
     onGlobalLookupShortcutReset?: (() => void) | null;
     onKeyboardShortcutChange?: (actionId: KeyboardShortcutActionId, shortcut: GlobalShortcutBinding) => string;
-    onKeyboardShortcutReset?: (actionId: KeyboardShortcutActionId) => void;
+    onKeyboardShortcutReset?: (actionId: KeyboardShortcutActionId) => string;
   } = $props();
 
   let shortcutErrors = $state<Record<string, string>>({});
+  let activeShortcutEditor = $state<string | null>(null);
 
   const groups = $derived(shortcutGroups(globalLookupSettings, keyboardShortcutSettings));
   const canEditGlobalShortcut = $derived(Boolean(
@@ -44,8 +45,11 @@
   }
 
   function resetLocalShortcut(actionId: KeyboardShortcutActionId) {
-    onKeyboardShortcutReset(actionId);
-    shortcutErrors = { ...shortcutErrors, [actionId]: "" };
+    const conflict = onKeyboardShortcutReset(actionId);
+    shortcutErrors = {
+      ...shortcutErrors,
+      [actionId]: conflict ? `Already used by ${actionLabels.get(conflict) ?? conflict}.` : "",
+    };
   }
 </script>
 
@@ -63,23 +67,38 @@
               {#if action.detail}<span class="action-detail">{action.detail}</span>{/if}
             </div>
             {#if action.editableActionId === "global-selected-text-lookup" && canEditGlobalShortcut && globalLookupSettings && onGlobalLookupShortcutChange && onGlobalLookupShortcutReset}
+              {@const editorLabel = `${action.label} shortcut`}
+              {@const editorOwner = `shortcut:${action.id}`}
               <GlobalShortcutEditor
                 shortcut={globalLookupSettings.shortcut}
                 defaultShortcut={defaultGlobalLookupShortcut}
                 requireCommandModifier={true}
+                ariaLabel={editorLabel}
+                recordLabel={`Record ${editorLabel}`}
+                resetLabel={`Reset ${editorLabel}`}
+                recordingOwner={editorOwner}
+                activeRecordingOwner={activeShortcutEditor}
+                onRecordingOwnerChange={(owner) => activeShortcutEditor = owner}
                 onShortcutChange={onGlobalLookupShortcutChange}
                 onShortcutReset={onGlobalLookupShortcutReset}
               />
             {:else if action.editableActionId && action.editableActionId !== "global-selected-text-lookup"}
               {@const localActionId = action.editableActionId}
               {@const editable = action.bindings.find((binding) => binding.editable)?.shortcut}
+              {@const editorLabel = `${action.label} shortcut`}
+              {@const editorOwner = `shortcut:${localActionId}`}
               {#if editable}
                 <div class="editable-bindings">
                   <GlobalShortcutEditor
                     shortcut={editable}
-                    ariaLabel={`${action.label} shortcut`}
+                    ariaLabel={editorLabel}
+                    recordLabel={`Record ${editorLabel}`}
+                    resetLabel={`Reset ${editorLabel}`}
                     defaultShortcut={defaultKeyboardShortcutBindings[localActionId]}
                     requireCommandModifier={false}
+                    recordingOwner={editorOwner}
+                    activeRecordingOwner={activeShortcutEditor}
+                    onRecordingOwnerChange={(owner) => activeShortcutEditor = owner}
                     externalError={shortcutErrors[localActionId] ?? ""}
                     onShortcutChange={(shortcut) => setLocalShortcut(localActionId, shortcut)}
                     onShortcutReset={() => resetLocalShortcut(localActionId)}

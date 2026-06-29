@@ -20,6 +20,11 @@ function keyboardEvent(init) {
 const server = await createServer({ server: { middlewareMode: true } });
 try {
   const shortcuts = await server.ssrLoadModule("/src/lib/keyboard-shortcuts.ts");
+  const settingsState = await server.ssrLoadModule("/src/lib/state/settings.svelte.ts");
+  const appearance = await server.ssrLoadModule("/src/lib/appearance.ts");
+  const advanced = await server.ssrLoadModule("/src/lib/advanced-settings.ts");
+  const popupSettings = await server.ssrLoadModule("/src/lib/lookup-popup-settings.ts");
+  const dictionarySettings = await server.ssrLoadModule("/src/lib/dictionary-settings.ts");
 
   assert(shortcuts.defaultKeyboardShortcutBindings["reader-next-page"].displayLabel === "Left", "Reader next page default should be Left.");
   assert(shortcuts.defaultKeyboardShortcutBindings["reader-previous-page"].displayLabel === "Right", "Reader previous page default should be Right.");
@@ -54,6 +59,34 @@ try {
     { modifiers: [], keyCode: "KeyN", displayLabel: "N" },
   );
   assert(conflict === "reader-next-page", "Conflict detector should name the existing local action.", { conflict });
+
+  const savedKeyboardShortcutSettings = [];
+  const settings = settingsState.createSettingsState({
+    loadReaderAppearance: () => appearance.defaultReaderAppearance,
+    saveReaderAppearance: () => {},
+    loadAdvancedSettings: () => advanced.defaultAdvancedSettings,
+    saveAdvancedSettings: () => {},
+    loadLookupPopupSettings: () => popupSettings.defaultLookupPopupSettings,
+    saveLookupPopupSettings: () => {},
+    loadDictionarySettings: () => dictionarySettings.defaultDictionarySettings,
+    saveDictionarySettings: () => {},
+    loadKeyboardShortcutSettings: () => shortcuts.defaultKeyboardShortcutSettings,
+    saveKeyboardShortcutSettings: (next) => savedKeyboardShortcutSettings.push(next),
+  });
+  const nextPageOverride = { modifiers: [], keyCode: "KeyN", displayLabel: "N" };
+  assert(settings.setKeyboardShortcut("reader-next-page", nextPageOverride) === "", "Moving an action off its default should succeed.");
+  assert(
+    settings.setKeyboardShortcut("reader-previous-page", shortcuts.defaultKeyboardShortcutBindings["reader-next-page"]) === "",
+    "Assigning another action to the now-unused default should succeed.",
+  );
+  const resetConflict = settings.resetKeyboardShortcut("reader-next-page");
+  assert(resetConflict === "reader-previous-page", "Reset should report the action that currently uses the default shortcut.", { resetConflict });
+  assert(
+    settings.keyboardShortcutSettings.bindings["reader-next-page"]?.displayLabel === "N",
+    "Reset conflict should preserve the existing override.",
+    settings.keyboardShortcutSettings,
+  );
+  assert(savedKeyboardShortcutSettings.length === 2, "Reset conflict should not persist duplicate local shortcuts.", savedKeyboardShortcutSettings);
 
   const normalized = shortcuts.normalizeKeyboardShortcutSettings({
     version: 99,

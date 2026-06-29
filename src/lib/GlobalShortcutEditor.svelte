@@ -11,7 +11,12 @@
     requireCommandModifier = true,
     externalError = "",
     ariaLabel = "Global selected-text lookup shortcut",
+    recordLabel = undefined,
+    resetLabel = undefined,
     align = "end",
+    recordingOwner = null,
+    activeRecordingOwner = null,
+    onRecordingOwnerChange = null,
     onShortcutChange,
     onShortcutReset,
   }: {
@@ -20,7 +25,12 @@
     requireCommandModifier?: boolean;
     externalError?: string;
     ariaLabel?: string;
+    recordLabel?: string;
+    resetLabel?: string;
     align?: "start" | "end";
+    recordingOwner?: string | null;
+    activeRecordingOwner?: string | null;
+    onRecordingOwnerChange?: ((owner: string | null) => void) | null;
     onShortcutChange: (shortcut: ShortcutBinding) => void;
     onShortcutReset: () => void;
   } = $props();
@@ -29,14 +39,26 @@
   let recordingError = $state("");
 
   const shortcutTokensList = $derived(shortcutTokens(shortcut));
+  const controlledRecording = $derived(Boolean(recordingOwner && onRecordingOwnerChange));
+  const recordingShortcutActive = $derived(controlledRecording
+    ? activeRecordingOwner === recordingOwner
+    : recordingShortcut);
+
+  function setRecordingShortcut(active: boolean) {
+    if (controlledRecording && recordingOwner && onRecordingOwnerChange) {
+      onRecordingOwnerChange(active ? recordingOwner : null);
+      return;
+    }
+    recordingShortcut = active;
+  }
 
   function beginRecording() {
     recordingError = "";
-    recordingShortcut = true;
+    setRecordingShortcut(true);
   }
 
   function finishRecording() {
-    recordingShortcut = false;
+    setRecordingShortcut(false);
   }
 
   function resetShortcut() {
@@ -46,7 +68,7 @@
   }
 
   function handleRecordingKeydown(event: KeyboardEvent) {
-    if (!recordingShortcut) return;
+    if (!recordingShortcutActive) return;
     event.preventDefault();
     event.stopPropagation();
     const result = shortcutFromKeyboardEvent(event, { requireCommandModifier });
@@ -80,18 +102,19 @@
   <div class="shortcut-actions">
     <button
       type="button"
-      aria-pressed={recordingShortcut}
-      class:recording={recordingShortcut}
+      aria-label={recordLabel}
+      aria-pressed={recordingShortcutActive}
+      class:recording={recordingShortcutActive}
       onclick={beginRecording}
       onkeydown={handleRecordingKeydown}
     >
-      {recordingShortcut ? "Recording" : "Record"}
+      {recordingShortcutActive ? "Recording" : "Record"}
     </button>
-    <button type="button" onclick={resetShortcut}>Reset</button>
+    <button type="button" aria-label={resetLabel} onclick={resetShortcut}>Reset</button>
   </div>
   {#if recordingError || externalError}
     <p class="shortcut-message shortcut-error">{recordingError || externalError}</p>
-  {:else if recordingShortcut}
+  {:else if recordingShortcutActive}
     <p class="shortcut-message">Press a shortcut. Esc cancels, Backspace resets to {defaultShortcut.displayLabel}.</p>
   {/if}
 </div>

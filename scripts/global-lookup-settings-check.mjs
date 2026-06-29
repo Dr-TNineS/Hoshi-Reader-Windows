@@ -101,7 +101,7 @@ async function main() {
     assert(current.text.includes("Look up selected text") && current.text.includes("Disabled in Advanced settings."), "Shortcuts panel should describe the disabled global lookup shortcut.", current);
 
     const advancedRegion = page.getByRole("region", { name: "Advanced settings", exact: true });
-    await advancedRegion.getByRole("button", { name: "Record", exact: true }).click();
+    await advancedRegion.getByRole("button", { name: "Record Global selected-text lookup shortcut", exact: true }).click();
     await page.keyboard.down("Shift");
     await page.keyboard.press("l");
     await page.keyboard.up("Shift");
@@ -119,12 +119,12 @@ async function main() {
     assert(current.enabled === "false", "Recording the shortcut should not enable global lookup.", current);
     assert(current.events?.includes("shortcut:Ctrl + Alt + J"), "Shortcut recorder should call the save handler.", current);
 
-    await advancedRegion.getByRole("button", { name: "Record", exact: true }).click();
+    await advancedRegion.getByRole("button", { name: "Record Global selected-text lookup shortcut", exact: true }).click();
     await page.keyboard.press("Escape");
     current = await state(page);
     assert(current.shortcut === "Ctrl + Alt + J", "Escape should cancel recording without changing the shortcut.", current);
 
-    await advancedRegion.getByRole("button", { name: "Record", exact: true }).click();
+    await advancedRegion.getByRole("button", { name: "Record Global selected-text lookup shortcut", exact: true }).click();
     await page.keyboard.press("Backspace");
     current = await state(page);
     assert(current.shortcut === "Ctrl + Alt + H", "Backspace during recording should reset to the default shortcut.", current);
@@ -132,8 +132,17 @@ async function main() {
     assert(current.events?.endsWith("reset"), "Reset should call the reset handler.", current);
 
     const shortcutsRegion = page.getByRole("region", { name: "Keyboard shortcuts", exact: true });
-    const shortcutsGlobalEditor = shortcutsRegion.locator('[aria-label="Global selected-text lookup shortcut"]');
-    await shortcutsGlobalEditor.getByRole("button", { name: "Record", exact: true }).click();
+    const shortcutRecordButtons = shortcutsRegion.getByRole("button", { name: /^Record .+ shortcut$/ });
+    const shortcutResetButtons = shortcutsRegion.getByRole("button", { name: /^Reset .+ shortcut$/ });
+    const shortcutRecordLabels = await shortcutRecordButtons.evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim() ?? ""));
+    const shortcutResetLabels = await shortcutResetButtons.evaluateAll((buttons) => buttons.map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim() ?? ""));
+    assert(shortcutRecordLabels.length >= 9, "Shortcuts panel should expose named Record controls for Global, Reader, and Sasayaki keyboard shortcuts.", { shortcutRecordLabels });
+    assert(shortcutResetLabels.length >= 9, "Shortcuts panel should expose named Reset controls for Global, Reader, and Sasayaki keyboard shortcuts.", { shortcutResetLabels });
+    assert(new Set(shortcutRecordLabels).size === shortcutRecordLabels.length, "Shortcut Record controls should have unique accessible names.", { shortcutRecordLabels });
+    assert(new Set(shortcutResetLabels).size === shortcutResetLabels.length, "Shortcut Reset controls should have unique accessible names.", { shortcutResetLabels });
+
+    const shortcutsGlobalEditor = shortcutsRegion.locator('[aria-label="Look up selected text shortcut"]');
+    await shortcutsGlobalEditor.getByRole("button", { name: "Record Look up selected text shortcut", exact: true }).click();
     await page.keyboard.down("Control");
     await page.keyboard.down("Alt");
     await page.keyboard.down("Shift");
@@ -145,9 +154,24 @@ async function main() {
     assert(current.shortcut === "Ctrl + Alt + Shift + K", "Shortcuts panel recorder should save combined global shortcuts.", current);
     assert(current.events?.includes("shortcut:Ctrl + Alt + Shift + K"), "Shortcuts panel recorder should call the save handler.", current);
 
-    await shortcutsGlobalEditor.getByRole("button", { name: "Reset", exact: true }).click();
+    await shortcutsGlobalEditor.getByRole("button", { name: "Reset Look up selected text shortcut", exact: true }).click();
     current = await state(page);
     assert(current.shortcut === "Ctrl + Alt + H", "Shortcuts panel reset should restore the default global shortcut.", current);
+
+    const nextPageEditor = shortcutsRegion.locator('[aria-label="Next page shortcut"]');
+    const previousPageEditor = shortcutsRegion.locator('[aria-label="Previous page shortcut"]');
+    await nextPageEditor.getByRole("button", { name: "Record Next page shortcut", exact: true }).click();
+    await previousPageEditor.getByRole("button", { name: "Record Previous page shortcut", exact: true }).click();
+    assert(await nextPageEditor.getByRole("button", { name: "Record Next page shortcut", exact: true }).getAttribute("aria-pressed") === "false", "Starting another shortcut recorder should stop the previous one.");
+    assert(await previousPageEditor.getByRole("button", { name: "Record Previous page shortcut", exact: true }).getAttribute("aria-pressed") === "true", "The most recently started shortcut recorder should be active.");
+    await page.keyboard.press("n");
+    current = await state(page);
+    const localNEvents = current.events?.split("|").filter((event) => event.endsWith(":N")) ?? [];
+    assert(
+      localNEvents.length === 1 && localNEvents[0] === "local:reader-previous-page:N",
+      "Only the active shortcut recorder should consume and save the next key press.",
+      { localNEvents, events: current.events },
+    );
 
     await page.locator("#global-selected-lookup").click();
     current = await state(page);

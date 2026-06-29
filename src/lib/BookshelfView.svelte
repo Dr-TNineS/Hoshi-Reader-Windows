@@ -58,7 +58,7 @@
     onSetGlobalLookupShortcut,
     onResetGlobalLookupShortcut,
     onSetKeyboardShortcut = (_actionId: KeyboardShortcutActionId, _shortcut: ShortcutBinding) => "",
-    onResetKeyboardShortcut = (_actionId: KeyboardShortcutActionId) => {},
+    onResetKeyboardShortcut = (_actionId: KeyboardShortcutActionId) => "",
     onSetLookupPopupWidth,
     onSetLookupPopupHeight,
     onSetLookupPopupScale,
@@ -134,7 +134,7 @@
     onSetGlobalLookupShortcut: (shortcut: ShortcutBinding) => void;
     onResetGlobalLookupShortcut: () => void;
     onSetKeyboardShortcut?: (actionId: KeyboardShortcutActionId, shortcut: ShortcutBinding) => string;
-    onResetKeyboardShortcut?: (actionId: KeyboardShortcutActionId) => void;
+    onResetKeyboardShortcut?: (actionId: KeyboardShortcutActionId) => string;
     onSetLookupPopupWidth: (width: number) => void;
     onSetLookupPopupHeight: (height: number) => void;
     onSetLookupPopupScale: (scale: number) => void;

@@ -55,11 +55,12 @@
     return "";
   }
 
-  function resetKeyboardShortcut(actionId: KeyboardShortcutActionId) {
+  function resetKeyboardShortcut(actionId: KeyboardShortcutActionId): string {
     const bindings = { ...keyboardShortcutSettings.bindings };
     delete bindings[actionId];
     keyboardShortcutSettings = { version: 1, bindings };
     events = [...events, `local-reset:${actionId}`];
+    return "";
   }
 
   function simulateRegistrationError() {
