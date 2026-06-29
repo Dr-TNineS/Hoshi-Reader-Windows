@@ -157,6 +157,18 @@ async function probeProgressState(page) {
   };
 }
 
+async function keyboardShortcutState(page) {
+  return page.evaluate(() => {
+    const state = document.querySelector(".probe-state");
+    const viewport = document.querySelector(".rv");
+    return {
+      chapter: state?.getAttribute("data-chapter-index") ?? null,
+      page: viewport instanceof HTMLElement ? String(Math.round(viewport.scrollTop / viewport.clientHeight)) : null,
+      backEvents: state?.getAttribute("data-back-events") ?? null,
+    };
+  });
+}
+
 async function waitForProbeChapter(page, chapterIndex) {
   await page.waitForFunction(
     (expected) => document.querySelector(".probe-state")?.getAttribute("data-chapter-index") === String(expected),
@@ -584,6 +596,37 @@ async function dispatchReaderPointerMove(page, point, shiftKey = false) {
       shiftKey: shift,
     }));
   }, { x: point.x, y: point.y, shift: shiftKey });
+}
+
+async function verifyCustomReaderShortcuts(browser, origin) {
+  const page = await browser.newPage({ viewport: { width: 900, height: 720 } });
+  await page.goto(`${origin}/?readerVisualProbe=1&customShortcuts=reader`);
+  await page.locator(".rv.ready").waitFor();
+
+  const before = await keyboardShortcutState(page);
+  await page.keyboard.press("ArrowLeft");
+  const afterOld = await keyboardShortcutState(page);
+  assert(
+    afterOld.page === before.page && afterOld.chapter === before.chapter,
+    "Default ArrowLeft should not advance when next page is customized.",
+    { before, afterOld },
+  );
+
+  await page.keyboard.press("n");
+  const afterNext = await keyboardShortcutState(page);
+  assert(
+    afterNext.page !== before.page || afterNext.chapter !== before.chapter,
+    "Custom N shortcut should advance reader paging.",
+    { before, afterNext },
+  );
+
+  await page.keyboard.press("Alt+n");
+  const afterChapter = await keyboardShortcutState(page);
+  assert(afterChapter.chapter === "1", "Custom Alt+N shortcut should advance to the next chapter.", afterChapter);
+
+  await page.keyboard.press("q");
+  const afterClose = await keyboardShortcutState(page);
+  assert(afterClose.backEvents === "1", "Custom Q shortcut should trigger reader close/back behavior.", afterClose);
 }
 
 async function main() {
@@ -1164,6 +1207,8 @@ async function main() {
       "Dark mode should expose the HSA-aligned Sasayaki cue colors.",
       darkCue,
     );
+
+    await verifyCustomReaderShortcuts(browser, origin);
 
     console.log(JSON.stringify({ desktop, narrow, lightCue, darkCue }, null, 2));
   } finally {

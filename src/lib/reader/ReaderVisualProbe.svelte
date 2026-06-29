@@ -2,11 +2,28 @@
   import Reader from "./Reader.svelte";
   import { countChars } from "../reader";
   import { defaultReaderAppearance, normalizeReaderAppearance, readerAppearancePalette } from "../appearance";
+  import {
+    defaultKeyboardShortcutSettings,
+    normalizeKeyboardShortcutSettings,
+  } from "../keyboard-shortcuts";
   import type { ReaderProgress, ReaderSelection, SasayakiPlaybackCue } from "../types";
 
   const params = new URLSearchParams(window.location.search);
   const lookupHighlightMode = params.get("lookupHighlightMode") ?? "";
   const sasayakiMode = params.get("sasayakiMode") ?? "";
+  const customShortcuts = params.get("customShortcuts") === "reader";
+  const keyboardShortcutSettings = customShortcuts
+    ? normalizeKeyboardShortcutSettings({
+        version: 1,
+        bindings: {
+          "reader-next-page": { modifiers: [], keyCode: "KeyN", displayLabel: "N" },
+          "reader-previous-page": { modifiers: [], keyCode: "KeyB", displayLabel: "B" },
+          "reader-next-chapter": { modifiers: ["Alt"], keyCode: "KeyN", displayLabel: "Alt + N" },
+          "reader-previous-chapter": { modifiers: ["Alt"], keyCode: "KeyB", displayLabel: "Alt + B" },
+          "reader-close": { modifiers: [], keyCode: "KeyQ", displayLabel: "Q" },
+        },
+      })
+    : defaultKeyboardShortcutSettings;
   const themeParam = params.get("theme");
   const interfaceParam = params.get("interface");
   const theme = themeParam === "light" || themeParam === "dark" || themeParam === "sepia" || themeParam === "custom"
@@ -120,6 +137,7 @@
   let renderedLookupHighlightText = $state("");
   let renderedSasayakiHighlightText = $state("");
   let selectionCount = $state(0);
+  let backEvents = $state(0);
   let lookupGeneration = 0;
   const sasayakiCue: SasayakiPlaybackCue | null = sasayakiMode
     ? {
@@ -216,6 +234,8 @@
   onNextChapter={nextChapter}
   onPrevChapter={previousChapterAtEnd}
   onPrevChapterDirect={previousChapterDirect}
+  onBackToShelf={() => backEvents += 1}
+  {keyboardShortcutSettings}
   onProgressChange={recordProgress}
   onSelectionChange={recordSelection}
   lookupHighlightCount={Array.from(lookupHighlightText).length}
@@ -244,6 +264,7 @@
   data-sentence={lastSelection?.sentence ?? ""}
   data-sentence-offset={lastSelection?.sentenceOffset ?? -1}
   data-selection-count={selectionCount}
+  data-back-events={backEvents}
   data-anchor-x={lastSelection?.anchorRect?.x ?? lastSelection?.rect.x ?? -1}
   data-anchor-y={lastSelection?.anchorRect?.y ?? lastSelection?.rect.y ?? -1}
 >

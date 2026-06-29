@@ -2773,6 +2773,7 @@
       {sasayakiCueSignal}
       scanLength={settings.dictionarySettings.scanLength}
       scanNonJapaneseText={settings.dictionarySettings.scanNonJapaneseText}
+      keyboardShortcutSettings={settings.keyboardShortcutSettings}
       onProgressChange={handleReaderProgress}
       onSelectionChange={handleReaderSelection}
       {startAtEnd}
