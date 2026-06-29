@@ -1645,7 +1645,6 @@
   function setGlobalLookupShortcut(shortcut: ShortcutBinding) {
     void saveGlobalLookupSettings({
       ...globalLookupSettings,
-      enabled: true,
       shortcut,
     });
   }
@@ -1653,7 +1652,6 @@
   function resetGlobalLookupShortcut() {
     void saveGlobalLookupSettings({
       ...globalLookupSettings,
-      enabled: true,
       shortcut: defaultGlobalLookupShortcut,
     });
   }

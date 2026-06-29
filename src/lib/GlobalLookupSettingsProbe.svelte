@@ -25,11 +25,19 @@
   }
 
   function setShortcut(shortcut: ShortcutBinding) {
-    save({ ...globalLookupSettings, enabled: true, shortcut, registration: { registered: true, error: null } }, `shortcut:${shortcut.displayLabel}`);
+    save({
+      ...globalLookupSettings,
+      shortcut,
+      registration: { registered: globalLookupSettings.enabled, error: null },
+    }, `shortcut:${shortcut.displayLabel}`);
   }
 
   function resetShortcut() {
-    save({ ...globalLookupSettings, enabled: true, shortcut: defaultGlobalLookupShortcut, registration: { registered: true, error: null } }, "reset");
+    save({
+      ...globalLookupSettings,
+      shortcut: defaultGlobalLookupShortcut,
+      registration: { registered: globalLookupSettings.enabled, error: null },
+    }, "reset");
   }
 
   function simulateRegistrationError() {

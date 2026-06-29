@@ -24,7 +24,7 @@ export const defaultGlobalLookupShortcut: ShortcutBinding = {
 
 export const defaultGlobalLookupSettings: GlobalLookupSettings = {
   version: 1,
-  enabled: true,
+  enabled: false,
   shortcut: defaultGlobalLookupShortcut,
   registration: { registered: false, error: null },
 };

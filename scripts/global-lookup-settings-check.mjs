@@ -97,8 +97,8 @@ async function main() {
     await page.locator(".probe-state").waitFor({ state: "attached" });
 
     let current = await state(page);
-    assert(current.enabled === "true" && current.shortcut === "Ctrl + Alt + H", "Default global shortcut should be visible.", current);
-    assert(current.text.includes("Look up selected text") && current.text.includes("Works in Windows apps that expose selected text through UI Automation."), "Shortcuts panel should describe the global lookup shortcut.", current);
+    assert(current.enabled === "false" && current.shortcut === "Ctrl + Alt + H", "Default global shortcut should be visible but opt-in disabled.", current);
+    assert(current.text.includes("Look up selected text") && current.text.includes("Disabled in Advanced settings."), "Shortcuts panel should describe the disabled global lookup shortcut.", current);
 
     await page.getByRole("button", { name: "Record", exact: true }).click();
     await page.keyboard.down("Shift");
@@ -115,6 +115,7 @@ async function main() {
     await page.keyboard.up("Control");
     current = await state(page);
     assert(current.shortcut === "Ctrl + Alt + J", "Recorder should save a valid Ctrl+Alt shortcut.", current);
+    assert(current.enabled === "false", "Recording the shortcut should not enable global lookup.", current);
     assert(current.events?.includes("shortcut:Ctrl + Alt + J"), "Shortcut recorder should call the save handler.", current);
 
     await page.getByRole("button", { name: "Record", exact: true }).click();
@@ -126,12 +127,13 @@ async function main() {
     await page.keyboard.press("Backspace");
     current = await state(page);
     assert(current.shortcut === "Ctrl + Alt + H", "Backspace during recording should reset to the default shortcut.", current);
+    assert(current.enabled === "false", "Resetting the shortcut should not enable global lookup.", current);
     assert(current.events?.endsWith("reset"), "Reset should call the reset handler.", current);
 
     await page.locator("#global-selected-lookup").click();
     current = await state(page);
-    assert(current.enabled === "false" && current.events?.includes("enabled:false"), "Switch should disable global lookup.", current);
-    assert(current.text.includes("Disabled in Advanced settings."), "Shortcuts panel should reflect disabled global lookup.", current);
+    assert(current.enabled === "true" && current.events?.includes("enabled:true"), "Switch should enable global lookup.", current);
+    assert(current.text.includes("Works in Windows apps that expose selected text through UI Automation."), "Shortcuts panel should reflect enabled global lookup.", current);
 
     await page.getByRole("button", { name: "registration error", exact: true }).click();
     current = await state(page);

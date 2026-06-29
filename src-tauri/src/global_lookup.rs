@@ -114,7 +114,7 @@ impl Default for ShortcutBinding {
 impl Default for GlobalShortcutRegistration {
     fn default() -> Self {
         Self {
-            registered: true,
+            registered: false,
             error: None,
         }
     }
@@ -124,7 +124,7 @@ impl Default for GlobalLookupSettings {
     fn default() -> Self {
         Self {
             version: SETTINGS_VERSION,
-            enabled: true,
+            enabled: false,
             shortcut: ShortcutBinding::default(),
             registration: GlobalShortcutRegistration::default(),
         }
@@ -819,13 +819,13 @@ mod tests {
     }
 
     #[test]
-    fn default_settings_enable_ctrl_alt_h() {
+    fn default_settings_keep_lookup_disabled_until_opt_in() {
         let settings = GlobalLookupSettings::default();
-        assert!(settings.enabled);
+        assert!(!settings.enabled);
         assert_eq!(settings.shortcut.display_label, "Ctrl + Alt + H");
         assert_eq!(settings.shortcut.key_code, "KeyH");
         assert_eq!(settings.shortcut.modifiers, vec!["Ctrl", "Alt"]);
-        assert!(settings.registration.registered);
+        assert!(!settings.registration.registered);
         assert_eq!(settings.registration.error, None);
     }
 
