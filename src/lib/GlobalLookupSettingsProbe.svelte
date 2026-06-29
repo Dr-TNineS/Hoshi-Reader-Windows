@@ -49,7 +49,11 @@
     onGlobalLookupShortcutChange={setShortcut}
     onGlobalLookupShortcutReset={resetShortcut}
   />
-  <ShortcutsPanel {globalLookupSettings} />
+  <ShortcutsPanel
+    {globalLookupSettings}
+    onGlobalLookupShortcutChange={setShortcut}
+    onGlobalLookupShortcutReset={resetShortcut}
+  />
   <div class="probe-controls">
     <button onclick={simulateRegistrationError}>registration error</button>
   </div>

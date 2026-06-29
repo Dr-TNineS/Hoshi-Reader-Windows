@@ -50,7 +50,7 @@ There is not yet a fully verified public release pipeline. You can build the app
 - Configurable popup width, height, and content scale
 - Light and dark reader themes
 - Optional startup restore for the last reading session
-- Built-in reference panel for current reader keyboard and mouse shortcuts
+- Built-in shortcuts panel with editable global selected-text lookup shortcut and read-only reader/Sasayaki shortcut reference
 - AnkiConnect configuration, deck and note-type selection, field templates, field preview, duplicate handling, and note creation from lookup results
 - Initial support for dictionary media, book-cover media, local word audio, and ordered remote word-audio sources during Anki export
 
@@ -118,8 +118,9 @@ The dictionary backend requires the bundled `hoshidicts` native dependency to bu
 | Chapter navigation             | `Ctrl` / `Meta` + arrow keys                                 |
 | Close selection / TOC / reader | `Esc`                                                        |
 | Hover / Click lookup           | Hold `Shift` / Left Click over reader text or popup glossary text |
+| Global selected-text lookup    | `Ctrl` + `Alt` + `H`                                         |
 
-The current Shortcuts panel is informational. Shortcut customization is not implemented yet.
+The global selected-text lookup shortcut can be recorded and reset from the Shortcuts or Advanced panel. Reader and Sasayaki shortcuts are still informational.
 
 ## Current Limitations
 

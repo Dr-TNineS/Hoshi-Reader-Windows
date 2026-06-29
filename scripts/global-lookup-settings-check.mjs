@@ -100,7 +100,8 @@ async function main() {
     assert(current.enabled === "true" && current.shortcut === "Ctrl + Alt + H", "Default global shortcut should be visible.", current);
     assert(current.text.includes("Look up selected text") && current.text.includes("Works in Windows apps that expose selected text through UI Automation."), "Shortcuts panel should describe the global lookup shortcut.", current);
 
-    await page.getByRole("button", { name: "Record", exact: true }).click();
+    const advancedRegion = page.getByRole("region", { name: "Advanced settings", exact: true });
+    await advancedRegion.getByRole("button", { name: "Record", exact: true }).click();
     await page.keyboard.down("Shift");
     await page.keyboard.press("l");
     await page.keyboard.up("Shift");
@@ -117,16 +118,33 @@ async function main() {
     assert(current.shortcut === "Ctrl + Alt + J", "Recorder should save a valid Ctrl+Alt shortcut.", current);
     assert(current.events?.includes("shortcut:Ctrl + Alt + J"), "Shortcut recorder should call the save handler.", current);
 
-    await page.getByRole("button", { name: "Record", exact: true }).click();
+    await advancedRegion.getByRole("button", { name: "Record", exact: true }).click();
     await page.keyboard.press("Escape");
     current = await state(page);
     assert(current.shortcut === "Ctrl + Alt + J", "Escape should cancel recording without changing the shortcut.", current);
 
-    await page.getByRole("button", { name: "Record", exact: true }).click();
+    await advancedRegion.getByRole("button", { name: "Record", exact: true }).click();
     await page.keyboard.press("Backspace");
     current = await state(page);
     assert(current.shortcut === "Ctrl + Alt + H", "Backspace during recording should reset to the default shortcut.", current);
     assert(current.events?.endsWith("reset"), "Reset should call the reset handler.", current);
+
+    const shortcutsRegion = page.getByRole("region", { name: "Keyboard shortcuts", exact: true });
+    await shortcutsRegion.getByRole("button", { name: "Record", exact: true }).click();
+    await page.keyboard.down("Control");
+    await page.keyboard.down("Alt");
+    await page.keyboard.down("Shift");
+    await page.keyboard.press("k");
+    await page.keyboard.up("Shift");
+    await page.keyboard.up("Alt");
+    await page.keyboard.up("Control");
+    current = await state(page);
+    assert(current.shortcut === "Ctrl + Alt + Shift + K", "Shortcuts panel recorder should save combined global shortcuts.", current);
+    assert(current.events?.includes("shortcut:Ctrl + Alt + Shift + K"), "Shortcuts panel recorder should call the save handler.", current);
+
+    await shortcutsRegion.getByRole("button", { name: "Reset", exact: true }).click();
+    current = await state(page);
+    assert(current.shortcut === "Ctrl + Alt + H", "Shortcuts panel reset should restore the default global shortcut.", current);
 
     await page.locator("#global-selected-lookup").click();
     current = await state(page);

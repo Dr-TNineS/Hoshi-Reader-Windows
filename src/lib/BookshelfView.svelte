@@ -416,7 +416,11 @@
         onGlobalLookupShortcutReset={onResetGlobalLookupShortcut}
       />
     {:else if activePanel === "shortcuts"}
-      <ShortcutsPanel {globalLookupSettings} />
+      <ShortcutsPanel
+        {globalLookupSettings}
+        onGlobalLookupShortcutChange={onSetGlobalLookupShortcut}
+        onGlobalLookupShortcutReset={onResetGlobalLookupShortcut}
+      />
     {/if}
   </main>
 </section>
