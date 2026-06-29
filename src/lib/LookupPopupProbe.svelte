@@ -115,6 +115,15 @@
             "\uff08\u25bd\u773c\uff09",
           ],
         },
+        {
+          tag: "div",
+          data: { class: "probe-cjk-hooks" },
+          content: [
+            { tag: "span", data: { "\u5916\u5b57": "", "\u5de6\u4e38": "" }, content: "\u53c2\u8003" },
+            " ",
+            { tag: "span", data: { "\u54c1\u8a5e": "", "\u6d3b\u7528": "" }, content: "\u6d3b\u7528" },
+          ],
+        },
         { tag: "div", data: { class: "probe-japanese-prefix" }, content: "Aことは A" },
         { tag: "div", data: { class: "probe-japanese-quote" }, content: "って「ことと言いなさい」" },
         { tag: "div", data: { class: "probe-japanese-plain" }, content: "ことは純日文" },
@@ -161,6 +170,15 @@
       ],
     },
   ]);
+  const noCssGlossaryText = JSON.stringify([
+    {
+      type: "structured-content",
+      content: [
+        "plain dictionary entry without imported CSS ",
+        { tag: "span", data: { "\u5916\u5b57": "", "\u5de6\u4e38": "" }, content: "\u53c2\u8003" },
+      ],
+    },
+  ]);
 
   const baseResult: DictResult = {
     expression: emptyExpression ? "" : "school",
@@ -168,7 +186,7 @@
     glossary: [
       { dict: "Jitendex.org [probe]", text: structuredGlossaryText, termTags: "n common", definitionTags: "education" },
       { dict: "Jitendex.org [probe]", text: "academy; lesson context", definitionTags: "place" },
-      { dict: "No CSS Dictionary [probe]", text: "plain dictionary entry without imported CSS", definitionTags: "plain" },
+      { dict: "No CSS Dictionary [probe]", text: noCssGlossaryText, definitionTags: "plain" },
       { dict: "JMdict [probe]", text: glossaryText, termTags: "n" },
     ],
     matched: "school",
@@ -631,6 +649,16 @@
         }
         [data-sc-class="probe-dict-font"] {
           font-family: "Courier New", monospace;
+        }
+        [data-sc\u5916\u5b57][data-sc\u5de6\u4e38] {
+          color: rgb(16, 154, 47);
+          border: 1px solid rgb(16, 154, 47);
+          border-radius: 8px;
+          padding-inline: 0.2em;
+        }
+        [data-sc\u54c1\u8a5e][data-sc\u6d3b\u7528] {
+          color: rgb(74, 138, 222);
+          font-weight: bold;
         }
       `,
     };

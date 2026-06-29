@@ -301,11 +301,13 @@
   }
 
   function handleGlossaryClick(event: MouseEvent) {
-    const target = event.target instanceof Element
-      ? event.target.closest<HTMLAnchorElement>("a[data-lookup-redirect]")
+    const targetElement = event.target instanceof Element ? event.target : null;
+    const target = targetElement
+      ? targetElement.closest<HTMLAnchorElement>("a[data-lookup-redirect]")
       : null;
     if (!target) {
       if (event.button !== 0) return;
+      if (targetElement?.closest("a[href], button, input, select, summary, textarea")) return;
       const result = selectPopupTextFromPoint(event.clientX, event.clientY, selection.chapterIndex, popupSelectionOptions);
       if (!result) return;
 
@@ -418,9 +420,9 @@
       loadDictionaryStyles?.(dictionary) ?? loadCachedDictionaryStyles(dictionary)
     )));
     if (scopedStyleRequestId !== styleRequestId) return;
-    const chunks = resources.flatMap((resource) => (
+    const chunks = resources.flatMap((resource, index) => (
       resource.status === "fulfilled" && resource.value.css.trim()
-        ? [scopeDictionaryCss(resource.value.css, popupId)]
+        ? [scopeDictionaryCss(resource.value.css, popupId, dictionaries[index])]
         : []
     ));
     if (scopedStyleRequestId === styleRequestId) {
@@ -874,7 +876,7 @@
             </div>
           {/if}
           {#each rendered.glossaryGroups as group, groupIndex}
-            <details class="lookup-glossary-group" open={glossaryGroupOpen(group.dictionary, groupIndex)}>
+            <details class="lookup-glossary-group" data-dictionary={group.dictionary} open={glossaryGroupOpen(group.dictionary, groupIndex)}>
               <summary class="lookup-glossary-dict">{group.dictionary}</summary>
               {#if dictionarySettings.showExpressionTags && group.termTags.length > 0}
                 <div class="lookup-tags">

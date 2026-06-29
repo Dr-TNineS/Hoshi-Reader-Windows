@@ -144,8 +144,8 @@ export function renderGlossaryContent(text: string, dictionary = "", options: Re
   }
 }
 
-export function scopeDictionaryCss(css: string, popupId: string): string {
-  const scope = `[data-popup-id="${escapeCssString(popupId)}"] .lookup-glossary-content`;
+export function scopeDictionaryCss(css: string, popupId: string, dictionary: string): string {
+  const scope = `[data-popup-id="${escapeCssString(popupId)}"] [data-dictionary="${escapeCssString(dictionary)}"] .lookup-glossary-content`;
   const cleaned = stripCssComments(css)
     .replace(/@import[^;]+;/gi, "")
     .replace(/url\(\s*(['"]?)https?:\/\/[^)]+\1\s*\)/gi, "none")
@@ -243,8 +243,8 @@ function renderText(text: string, language: string | null = null): string {
 
 function safeStructuredTag(tag: string): string {
   const allowed = new Set([
-    "a", "br", "div", "i", "li", "ol", "p", "ruby", "rt", "rp", "span", "table", "tbody",
-    "td", "tfoot", "th", "thead", "tr", "ul",
+    "a", "b", "br", "details", "div", "em", "i", "li", "ol", "p", "ruby", "rt", "rp",
+    "span", "strong", "summary", "table", "tbody", "td", "tfoot", "th", "thead", "tr", "ul",
   ]);
   return allowed.has(tag) ? tag : "span";
 }
@@ -331,8 +331,7 @@ function structuredDataAttributes(record: Record<string, unknown>): string[] {
   if (data && typeof data === "object") {
     for (const [key, value] of Object.entries(data as Record<string, unknown>)) {
       if (typeof value !== "string" && typeof value !== "number") continue;
-      const prefix = /^[\u3000-\u9fff\uf900-\ufaff]/u.test(key) ? "data-sc" : "data-sc-";
-      attrs.push(`${prefix}${toKebabCase(key)}="${escapeAttribute(String(value))}"`);
+      attrs.push(`${structuredDataAttributeName(key)}="${escapeAttribute(String(value))}"`);
     }
   }
   return attrs;
@@ -397,6 +396,17 @@ function isStructuredTag(value: unknown, tag: string): boolean {
 
 function toKebabCase(value: string): string {
   return value.replace(/([a-z])([A-Z])/g, "$1-$2").replace(/[^a-zA-Z0-9_-]+/g, "-").toLowerCase();
+}
+
+function toStructuredDataKey(value: string): string {
+  return value
+    .replace(/([A-Z])/g, (_, c, offset) => `${offset ? "-" : ""}${c.toLowerCase()}`)
+    .replace(/[\u0000-\u001f\u007f\s"'<>/=]+/g, "-");
+}
+
+function structuredDataAttributeName(key: string): string {
+  const prefix = /^[\u3000-\u9fff\uf900-\ufaff]/u.test(key) ? "data-sc" : "data-sc-";
+  return `${prefix}${toStructuredDataKey(key)}`;
 }
 
 function escapeHtml(value: string): string {

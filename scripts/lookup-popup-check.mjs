@@ -125,6 +125,10 @@ async function popupMetrics(page) {
     const kanjiJapanese = document.querySelector('.lookup-glossary-content [data-sc-class="probe-kanji-ja"]');
     const ambiguousHan = document.querySelector('.lookup-glossary-content [data-sc-class="probe-ambiguous-han-ja"]');
     const dictionaryFont = document.querySelector('.lookup-glossary-content [data-sc-class="probe-dict-font"]');
+    const cjkBadge = document.querySelector(".lookup-glossary-content [data-sc\u5916\u5b57][data-sc\u5de6\u4e38]");
+    const cjkPartOfSpeech = document.querySelector(".lookup-glossary-content [data-sc\u54c1\u8a5e][data-sc\u6d3b\u7528]");
+    const noCssCjkBadge = Array.from(document.querySelectorAll("[data-sc\u5916\u5b57][data-sc\u5de6\u4e38]"))
+      .find((node) => node instanceof HTMLElement && node.closest("[data-dictionary]")?.getAttribute("data-dictionary") === "No CSS Dictionary [probe]");
     const rect = popup instanceof HTMLElement
       ? popup.getBoundingClientRect()
       : { x: 0, y: 0, width: 0, height: 0, right: 0, bottom: 0 };
@@ -263,6 +267,13 @@ async function popupMetrics(page) {
       dictionaryStyledMaxHeight: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).maxHeight : "",
       dictionaryStyledTransform: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).transform : "",
       dictionaryStyledZoom: styledGlossary instanceof HTMLElement ? getComputedStyle(styledGlossary).zoom : "",
+      cjkBadgeColor: cjkBadge instanceof HTMLElement ? getComputedStyle(cjkBadge).color : "",
+      cjkBadgeBorderColor: cjkBadge instanceof HTMLElement ? getComputedStyle(cjkBadge).borderTopColor : "",
+      cjkBadgeBorderRadius: cjkBadge instanceof HTMLElement ? getComputedStyle(cjkBadge).borderTopLeftRadius : "",
+      cjkPartOfSpeechColor: cjkPartOfSpeech instanceof HTMLElement ? getComputedStyle(cjkPartOfSpeech).color : "",
+      cjkPartOfSpeechFontWeight: cjkPartOfSpeech instanceof HTMLElement ? getComputedStyle(cjkPartOfSpeech).fontWeight : "",
+      noCssCjkBadgeColor: noCssCjkBadge instanceof HTMLElement ? getComputedStyle(noCssCjkBadge).color : "",
+      noCssCjkBadgeBorderStyle: noCssCjkBadge instanceof HTMLElement ? getComputedStyle(noCssCjkBadge).borderTopStyle : "",
       structuredInlineColor: safeInlineStyle instanceof HTMLElement ? getComputedStyle(safeInlineStyle).color : "",
       structuredInlineFontWeight: safeInlineStyle instanceof HTMLElement ? getComputedStyle(safeInlineStyle).fontWeight : "",
       structuredInlineFontSize: safeInlineStyle instanceof HTMLElement ? getComputedStyle(safeInlineStyle).fontSize : "",
@@ -517,6 +528,9 @@ async function main() {
     assert(ready.dictionaryStyledLineHeight !== "126px", "Dictionary CSS sanitizer should block imported line-height overrides.", ready);
     assert(ready.dictionaryStyledWidth !== "640px" && ready.dictionaryStyledHeight !== "480px" && ready.dictionaryStyledMaxHeight !== "900px", "Dictionary CSS sanitizer should block imported box-size overrides.", ready);
     assert(ready.dictionaryStyledTransform === "none" && ready.dictionaryStyledZoom === "1", "Dictionary CSS sanitizer should block imported transform and zoom overrides.", ready);
+    assert(ready.cjkBadgeColor === "rgb(16, 154, 47)" && ready.cjkBadgeBorderColor === "rgb(16, 154, 47)" && ready.cjkBadgeBorderRadius === "8px", "Dictionary CSS should match CJK structured data hooks such as data-sc外字.", ready);
+    assert(ready.cjkPartOfSpeechColor === "rgb(74, 138, 222)" && Number.parseInt(ready.cjkPartOfSpeechFontWeight, 10) >= 700, "Dictionary CSS should match CJK structured data hooks such as data-sc活用.", ready);
+    assert(ready.noCssCjkBadgeColor !== "rgb(16, 154, 47)" && ready.noCssCjkBadgeBorderStyle === "none", "Dictionary CSS should stay scoped to the matching dictionary group.", ready);
     assert(ready.structuredInlineColor === "rgb(30, 144, 255)", "Structured glossary inline color should be preserved for Yomitan style objects.", ready);
     assert(Number.parseInt(ready.structuredInlineFontWeight, 10) >= 700, "Structured glossary inline font weight should be preserved.", ready);
     assert(ready.structuredInlineFontSize === "16.8px", "Structured glossary inline font size should be preserved.", ready);
