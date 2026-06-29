@@ -13,6 +13,12 @@ export interface LookupPopupViewport {
   right?: number;
 }
 
+export type LookupPopupOrientation = "auto" | "horizontal";
+
+export interface LookupPopupPositionOptions {
+  orientation?: LookupPopupOrientation;
+}
+
 export function clampPopupValue(value: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, value));
 }
@@ -21,6 +27,7 @@ export function lookupPopupStyle(
   selection: ReaderSelection,
   size: LookupPopupSize,
   viewport: LookupPopupViewport,
+  options: LookupPopupPositionOptions = {},
 ): string {
   const anchor = selection.anchorRect ?? selection.rect;
   const margin = 12;
@@ -36,6 +43,15 @@ export function lookupPopupStyle(
   const canFitRight = rightSpace >= size.width;
   const verticalAnchor = selection.rect.height > selection.rect.width * 1.4 || anchor.height > anchor.width * 1.4;
   let left: number;
+
+  if (options.orientation === "horizontal") {
+    left = clampPopupValue(anchor.x + anchor.width / 2 - size.width / 2, leftMargin, maxLeft);
+    const above = anchor.y - size.height - gap;
+    const below = anchor.y + anchor.height + gap;
+    const topCandidate = above >= topMargin ? above : below;
+    const top = clampPopupValue(topCandidate, topMargin, maxTop);
+    return `left:${left}px;top:${top}px`;
+  }
 
   if (verticalAnchor) {
     if (canFitRight) {

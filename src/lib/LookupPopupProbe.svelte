@@ -15,6 +15,7 @@
   const lookupState = allowedStates.includes(requestedState ?? "loading") ? requestedState ?? "loading" : "loading";
   const longResult = params.has("longResult");
   const bottomEdge = params.has("bottomEdge");
+  const topEdge = params.has("topEdge");
   const mediaMode = params.get("mediaMode") ?? "success";
   const ankiMode = params.get("ankiMode") ?? "disabled";
   const ankiAddMode = params.get("ankiAddMode") ?? "added";
@@ -57,7 +58,7 @@
     sentenceOffset: "The academy ".length,
     chapterOffset: 16,
     chapterIndex: 0,
-    rect: { x: 460, y: bottomEdge ? Math.max(120, window.innerHeight - 118) : 180, width: 36, height: 120 },
+    rect: { x: 460, y: topEdge ? 44 : bottomEdge ? Math.max(120, window.innerHeight - 118) : 180, width: 36, height: 120 },
   };
 
   const probeSasayakiCue: SasayakiPlaybackCue = {
@@ -257,6 +258,7 @@
   let scrollCloseCount = $state(0);
   let nestedLookupCount = $state(0);
   let nestedLookupText = $state("");
+  let nestedLookupAnchor = $state<ReaderSelection["anchorRect"] | null>(null);
   let ankiAddRequests = $state<AnkiNoteRequest[]>([]);
   let ankiStoreRequests = $state<AnkiDictionaryMediaRef[][]>([]);
   let ankiAudioStoreRequests = $state<AnkiRemoteAudioRequest[]>([]);
@@ -283,6 +285,8 @@
     const style = lookupPopupStyle(popup.selection, size, {
       width: window.innerWidth,
       bottom,
+    }, {
+      orientation: popup.id === "root" ? "auto" : "horizontal",
     });
     return `${style};width:${size.width}px;height:${size.height}px;--popup-scale:${popupSettings.scale};--popup-z:${125 + index}`;
   }
@@ -305,6 +309,7 @@
   function openNestedLookup(parentId: string, nestedSelection: ReaderSelection) {
     nestedLookupCount += 1;
     nestedLookupText = nestedSelection.text;
+    nestedLookupAnchor = nestedSelection.anchorRect ?? nestedSelection.rect;
     const parentIndex = popups.findIndex((popup) => popup.id === parentId);
     if (parentIndex < 0) return;
     const result = nestedResult(nestedSelection);
@@ -668,6 +673,7 @@
     data-scroll-close-count={scrollCloseCount}
     data-nested-lookup-count={nestedLookupCount}
     data-nested-lookup-text={nestedLookupText}
+    data-nested-lookup-anchor={JSON.stringify(nestedLookupAnchor)}
     data-popup-count={popups.length}
     data-root-clear-selection-signal={popups[0]?.clearSelectionSignal ?? 0}
     data-top-popup-id={popups[popups.length - 1]?.id ?? ""}

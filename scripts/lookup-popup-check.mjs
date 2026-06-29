@@ -47,6 +47,7 @@ async function openProbe(page, state, options = {}) {
   const params = new URLSearchParams({ lookupPopupProbe: "1", lookupState: state });
   if (options.longResult) params.set("longResult", "1");
   if (options.bottomEdge) params.set("bottomEdge", "1");
+  if (options.topEdge) params.set("topEdge", "1");
   if (options.mediaMode) params.set("mediaMode", options.mediaMode);
   if (options.ankiMode) params.set("ankiMode", options.ankiMode);
   if (options.ankiAddMode) params.set("ankiAddMode", options.ankiAddMode);
@@ -119,6 +120,18 @@ async function popupMetrics(page) {
     const rect = popup instanceof HTMLElement
       ? popup.getBoundingClientRect()
       : { x: 0, y: 0, width: 0, height: 0, right: 0, bottom: 0 };
+    const popupRects = Array.from(document.querySelectorAll(".lookup-pop")).map((node) => {
+      const nodeRect = node.getBoundingClientRect();
+      return {
+        id: node instanceof HTMLElement ? node.dataset.popupId ?? "" : "",
+        x: nodeRect.x,
+        y: nodeRect.y,
+        width: nodeRect.width,
+        height: nodeRect.height,
+        right: nodeRect.right,
+        bottom: nodeRect.bottom,
+      };
+    });
     const controlsRect = controls instanceof HTMLElement ? controls.getBoundingClientRect() : null;
     return {
       text: Array.from(document.querySelectorAll(".lookup-pop")).map((node) => node.textContent ?? "").join("\n"),
@@ -139,6 +152,7 @@ async function popupMetrics(page) {
       scrollCloseCount: Number(state?.getAttribute("data-scroll-close-count") ?? 0),
       nestedLookupCount: Number(state?.getAttribute("data-nested-lookup-count") ?? 0),
       nestedLookupText: state?.getAttribute("data-nested-lookup-text") ?? "",
+      nestedLookupAnchor: JSON.parse(state?.getAttribute("data-nested-lookup-anchor") ?? "null"),
       popupCount: Number(state?.getAttribute("data-popup-count") ?? 0),
       rootClearSelectionSignal: Number(state?.getAttribute("data-root-clear-selection-signal") ?? 0),
       topPopupId: state?.getAttribute("data-top-popup-id") ?? "",
@@ -165,6 +179,7 @@ async function popupMetrics(page) {
       sasayakiPlaying: state?.getAttribute("data-sasayaki-playing") === "true",
       sasayakiControls: document.querySelectorAll(".lookup-sasayaki-controls button").length,
       popup: { x: rect.x, y: rect.y, width: rect.width, height: rect.height, right: rect.right, bottom: rect.bottom },
+      popups: popupRects,
       viewport: { width: window.innerWidth, height: window.innerHeight },
       controlsTop: controlsRect?.top ?? window.innerHeight,
       horizontalOverflow: document.documentElement.scrollWidth > window.innerWidth,
@@ -875,12 +890,35 @@ async function main() {
     assert(nested.topPopupId.startsWith("child-"), "Nested lookup should make the child popup topmost.", nested);
     assert(nested.nativeSelectionText === "", "Shift-hover nested lookup should not leave a native browser selection.", nested);
     assert(nested.popupHighlightText === "cl", "Shift-hover nested lookup should highlight only the first result's matched range.", nested);
+    const nestedChild = nested.popups.find((popup) => popup.id !== "root");
+    assert(nestedChild && nested.nestedLookupAnchor, "Nested lookup should expose child popup and anchor metrics.", nested);
+    assert(nestedChild.bottom <= nested.nestedLookupAnchor.y + 1, "Horizontal nested child popup should prefer the space above the selected glossary line.", { nestedChild, anchor: nested.nestedLookupAnchor });
+    assert(
+      Math.abs((nestedChild.x + nestedChild.width / 2) - (nested.nestedLookupAnchor.x + nested.nestedLookupAnchor.width / 2)) <= 2,
+      "Horizontal nested child popup should center on the selected glossary line when space permits.",
+      { nestedChild, anchor: nested.nestedLookupAnchor },
+    );
 
     await closeChildPopup(page);
     const childClosed = await popupMetrics(page);
     assert(childClosed.popupCount === 1, "Closing a child popup should keep the root popup open.", childClosed);
     assert(childClosed.rootClearSelectionSignal > nested.rootClearSelectionSignal, "Closing a child popup should signal parent selection clear.", { nested, childClosed });
     assert(childClosed.popupHighlightText === "", "Closing a child popup should clear the parent popup lookup highlight.", childClosed);
+
+    await openProbe(page, "ready", { topEdge: true });
+    await dispatchShiftHover(page, "classroom");
+    await page.waitForFunction(() => document.querySelectorAll(".lookup-pop").length === 2);
+    const topEdgeNested = await popupMetrics(page);
+    const topEdgeChild = topEdgeNested.popups.find((popup) => popup.id !== "root");
+    assert(topEdgeChild && topEdgeNested.nestedLookupAnchor, "Top-edge nested lookup should expose child popup and anchor metrics.", topEdgeNested);
+    assert(
+      topEdgeChild.y >= topEdgeNested.nestedLookupAnchor.y + topEdgeNested.nestedLookupAnchor.height - 1,
+      "Horizontal nested child popup should fall below the selected glossary line when there is not enough space above.",
+      { topEdgeChild, anchor: topEdgeNested.nestedLookupAnchor },
+    );
+    assert(topEdgeChild.y >= 44, "Top-edge fallback child popup should stay inside the viewport top margin.", topEdgeNested);
+
+    await openProbe(page, "ready");
 
     await dispatchGlossaryClick(page, "school room");
     await page.waitForFunction(() => {

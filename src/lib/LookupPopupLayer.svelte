@@ -118,7 +118,7 @@
     viewportHeight = window.innerHeight;
   }
 
-  function popupStyle(selection: ReaderSelection): string {
+  function popupStyle(selection: ReaderSelection, popupId: string): string {
     const bottom = Math.min(viewportHeight, readerBottomBoundary());
     const left = bounds?.left ?? 0;
     const right = bounds?.right ?? viewportWidth;
@@ -133,6 +133,8 @@
       left,
       right,
       top,
+    }, {
+      orientation: popupId === "root" ? "auto" : "horizontal",
     });
     return `${position};width:${size.width}px;height:${size.height}px;--popup-scale:${popupSettings.scale}`;
   }
@@ -189,7 +191,7 @@
     class="lookup-pop"
     data-popup-id={popup.id}
     onpointerdown={() => onPopupPointerDown(popup.id)}
-    style={`${popupStyle(popup.selection)};--popup-z:${125 + popupIndex}`}
+    style={`${popupStyle(popup.selection, popup.id)};--popup-z:${125 + popupIndex}`}
   >
     <LookupPopupContent
       popupId={popup.id}
