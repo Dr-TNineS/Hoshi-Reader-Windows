@@ -17,6 +17,8 @@
     "check:reader-toc": "node scripts/reader-toc-check.mjs",
     "check:settings-state": "node scripts/settings-state-check.mjs",
     "check:sasayaki-playback": "node scripts/sasayaki-playback-check.mjs",
+    "check:tauri-linked": "scripts\\vs-x64-cargo.cmd check",
+    "test:dict-linked": "scripts\\vs-x64-cargo.cmd test --lib dict::commands",
     "check": "svelte-check --tsconfig ./tsconfig.app.json && tsc -p tsconfig.node.json",
     "package": "powershell -ExecutionPolicy Bypass -File scripts/package-portable.ps1"
   },
