@@ -28,6 +28,7 @@ export const KEYBOARD_SHORTCUT_SETTINGS_KEY = "hoshi_keyboard_shortcuts";
 
 const modifierOrder = ["Ctrl", "Alt", "Shift", "Win"] as const;
 const actionIdSet = new Set<string>(keyboardShortcutActionIds);
+type ShortcutBindingInput = { modifiers: string[]; keyCode: string };
 
 export const defaultKeyboardShortcutBindings: Record<KeyboardShortcutActionId, ShortcutBinding> = {
   "reader-next-page": { modifiers: [], keyCode: "ArrowLeft", displayLabel: "Left" },
@@ -114,13 +115,16 @@ function isKeyboardShortcutActionId(value: string): value is KeyboardShortcutAct
   return actionIdSet.has(value);
 }
 
-export function bindingKey(binding: ShortcutBinding): string {
-  const normalized = normalizeLocalShortcutBinding(binding);
-  if (!normalized) return "";
-  return `${normalized.modifiers.join("+")}::${normalized.keyCode}`;
+function shortcutBindingInput(value: unknown): ShortcutBindingInput | null {
+  if (typeof value !== "object" || value === null) return null;
+  const candidate = value as { modifiers?: unknown; keyCode?: unknown };
+  const modifiers = candidate.modifiers;
+  if (!Array.isArray(modifiers) || !modifiers.every((modifier): modifier is string => typeof modifier === "string")) return null;
+  if (typeof candidate.keyCode !== "string") return null;
+  return { modifiers, keyCode: candidate.keyCode };
 }
 
-export function normalizeLocalShortcutBinding(binding: ShortcutBinding): ShortcutBinding | null {
+function normalizeShortcutBindingInput(binding: ShortcutBindingInput): ShortcutBinding | null {
   const keyCode = binding.keyCode.trim();
   const label = keyLabel(keyCode);
   if (!label || isRecorderReservedKey(keyCode)) return null;
@@ -130,6 +134,17 @@ export function normalizeLocalShortcutBinding(binding: ShortcutBinding): Shortcu
     keyCode,
     displayLabel: [...modifiers, label].join(" + "),
   };
+}
+
+export function bindingKey(binding: ShortcutBinding): string {
+  const normalized = normalizeLocalShortcutBinding(binding);
+  if (!normalized) return "";
+  return `${normalized.modifiers.join("+")}::${normalized.keyCode}`;
+}
+
+export function normalizeLocalShortcutBinding(binding: ShortcutBinding): ShortcutBinding | null {
+  const input = shortcutBindingInput(binding);
+  return input ? normalizeShortcutBindingInput(input) : null;
 }
 
 export function shortcutFromKeyboardEvent(
@@ -162,11 +177,12 @@ export function resolvedKeyboardShortcutBindings(settings: KeyboardShortcutSetti
 
 export function normalizeKeyboardShortcutSettings(value: unknown): KeyboardShortcutSettings {
   const source = typeof value === "object" && value !== null ? value as Partial<KeyboardShortcutSettings> : {};
-  const rawBindings = typeof source.bindings === "object" && source.bindings !== null ? source.bindings as Record<string, ShortcutBinding> : {};
+  const rawBindings = typeof source.bindings === "object" && source.bindings !== null ? source.bindings as Record<string, unknown> : {};
   const bindings: KeyboardShortcutSettings["bindings"] = {};
   for (const [actionId, binding] of Object.entries(rawBindings)) {
     if (!isKeyboardShortcutActionId(actionId)) continue;
-    const normalized = normalizeLocalShortcutBinding(binding);
+    const input = shortcutBindingInput(binding);
+    const normalized = input ? normalizeShortcutBindingInput(input) : null;
     if (normalized) bindings[actionId] = normalized;
   }
   return { version: 1, bindings };

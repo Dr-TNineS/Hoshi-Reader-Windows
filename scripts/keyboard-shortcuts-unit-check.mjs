@@ -67,6 +67,22 @@ try {
   assert(normalized.bindings["reader-next-page"].displayLabel === "Alt + J", "Valid persisted bindings should normalize labels.", normalized);
   assert(!("stale" in normalized.bindings), "Unknown persisted action ids should be ignored.", normalized);
   assert(!("reader-previous-page" in normalized.bindings), "Invalid persisted bindings should fall back to defaults.", normalized);
+
+  const malformed = shortcuts.normalizeKeyboardShortcutSettings({
+    version: 1,
+    bindings: {
+      "reader-next-page": { modifiers: ["Shift"], keyCode: "KeyN", displayLabel: "ignored" },
+      "reader-previous-page": null,
+      "reader-next-chapter": { keyCode: "KeyJ", displayLabel: "J" },
+      "reader-previous-chapter": { modifiers: [1], keyCode: "KeyK", displayLabel: "K" },
+      "reader-close": { modifiers: [], keyCode: 42, displayLabel: "42" },
+    },
+  });
+  assert(malformed.bindings["reader-next-page"].displayLabel === "Shift + N", "Malformed persisted bindings should not discard valid overrides.", malformed);
+  assert(!("reader-previous-page" in malformed.bindings), "Null persisted bindings should be ignored.", malformed);
+  assert(!("reader-next-chapter" in malformed.bindings), "Persisted bindings without modifiers should be ignored.", malformed);
+  assert(!("reader-previous-chapter" in malformed.bindings), "Persisted bindings with non-string modifiers should be ignored.", malformed);
+  assert(!("reader-close" in malformed.bindings), "Persisted bindings with non-string key codes should be ignored.", malformed);
 } finally {
   await server.close();
 }
