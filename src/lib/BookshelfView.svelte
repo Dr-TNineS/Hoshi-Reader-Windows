@@ -13,6 +13,11 @@
   import AdvancedPanel from "./AdvancedPanel.svelte";
   import type { AdvancedSettings } from "./advanced-settings";
   import type { GlobalLookupSettings, ShortcutBinding } from "./global-lookup-settings";
+  import {
+    defaultKeyboardShortcutSettings,
+    type KeyboardShortcutActionId,
+    type KeyboardShortcutSettings,
+  } from "./keyboard-shortcuts";
   import type { DictionarySearchState } from "./state/dictionary-search-state.svelte";
   import { bookRecordKey, type BookRecord } from "./storage";
   import ConfirmDialog from "./ui/ConfirmDialog.svelte";
@@ -27,6 +32,7 @@
     readerThemeLabels,
     advancedSettings,
     globalLookupSettings,
+    keyboardShortcutSettings = defaultKeyboardShortcutSettings,
     lookupPopupSettings,
     dictionarySettings,
     dictionaryList = [],
@@ -51,6 +57,8 @@
     onSetGlobalLookupEnabled,
     onSetGlobalLookupShortcut,
     onResetGlobalLookupShortcut,
+    onSetKeyboardShortcut = (_actionId: KeyboardShortcutActionId, _shortcut: ShortcutBinding) => "",
+    onResetKeyboardShortcut = (_actionId: KeyboardShortcutActionId) => {},
     onSetLookupPopupWidth,
     onSetLookupPopupHeight,
     onSetLookupPopupScale,
@@ -100,6 +108,7 @@
     readerThemeLabels: Record<ReaderTheme, string>;
     advancedSettings: AdvancedSettings;
     globalLookupSettings: GlobalLookupSettings;
+    keyboardShortcutSettings?: KeyboardShortcutSettings;
     lookupPopupSettings: LookupPopupSettings;
     dictionarySettings: DictionarySettings;
     dictionaryList?: DictionaryManifestEntry[];
@@ -124,6 +133,8 @@
     onSetGlobalLookupEnabled: (enabled: boolean) => void;
     onSetGlobalLookupShortcut: (shortcut: ShortcutBinding) => void;
     onResetGlobalLookupShortcut: () => void;
+    onSetKeyboardShortcut?: (actionId: KeyboardShortcutActionId, shortcut: ShortcutBinding) => string;
+    onResetKeyboardShortcut?: (actionId: KeyboardShortcutActionId) => void;
     onSetLookupPopupWidth: (width: number) => void;
     onSetLookupPopupHeight: (height: number) => void;
     onSetLookupPopupScale: (scale: number) => void;
@@ -418,8 +429,11 @@
     {:else if activePanel === "shortcuts"}
       <ShortcutsPanel
         {globalLookupSettings}
+        {keyboardShortcutSettings}
         onGlobalLookupShortcutChange={onSetGlobalLookupShortcut}
         onGlobalLookupShortcutReset={onResetGlobalLookupShortcut}
+        onKeyboardShortcutChange={onSetKeyboardShortcut}
+        onKeyboardShortcutReset={onResetKeyboardShortcut}
       />
     {/if}
   </main>

@@ -3,6 +3,7 @@
   import { defaultReaderAppearance } from "./appearance";
   import { defaultDictionarySettings } from "./dictionary-settings";
   import { defaultGlobalLookupSettings } from "./global-lookup-settings";
+  import { defaultKeyboardShortcutSettings } from "./keyboard-shortcuts";
   import { createDictionarySearchState } from "./state/dictionary-search-state.svelte";
   import type { BookRecord } from "./storage";
   import type { DictResult, DictionaryStatus } from "./types";
@@ -72,6 +73,7 @@
     readerThemeLabels={{ light: "Light", dark: "Dark", sepia: "Sepia", custom: "Custom" }}
     advancedSettings={{ reopenLastBookOnStartup: true }}
     globalLookupSettings={defaultGlobalLookupSettings}
+    keyboardShortcutSettings={defaultKeyboardShortcutSettings}
     lookupPopupSettings={{ width: 320, height: 250, scale: 1 }}
     {dictionarySettings}
     {dictionarySearchState}
@@ -87,6 +89,8 @@
     onSetGlobalLookupEnabled={() => {}}
     onSetGlobalLookupShortcut={() => {}}
     onResetGlobalLookupShortcut={() => {}}
+    onSetKeyboardShortcut={() => ""}
+    onResetKeyboardShortcut={() => {}}
     onSetLookupPopupWidth={() => {}}
     onSetLookupPopupHeight={() => {}}
     onSetLookupPopupScale={() => {}}

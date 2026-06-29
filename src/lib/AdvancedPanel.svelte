@@ -1,7 +1,7 @@
 <script lang="ts">
   import type { AdvancedSettings } from "./advanced-settings";
   import GlobalShortcutEditor from "./GlobalShortcutEditor.svelte";
-  import type { GlobalLookupSettings, ShortcutBinding } from "./global-lookup-settings";
+  import { defaultGlobalLookupShortcut, type GlobalLookupSettings, type ShortcutBinding } from "./global-lookup-settings";
   import UiSwitch from "./ui/Switch.svelte";
 
   let {
@@ -58,6 +58,8 @@
       />
       <GlobalShortcutEditor
         shortcut={globalLookupSettings.shortcut}
+        defaultShortcut={defaultGlobalLookupShortcut}
+        requireCommandModifier={true}
         onShortcutChange={onGlobalLookupShortcutChange}
         onShortcutReset={onGlobalLookupShortcutReset}
       />

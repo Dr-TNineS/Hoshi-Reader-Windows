@@ -72,7 +72,12 @@ async function main() {
       assert(await entry.getAttribute("aria-current") === "page", `${panel} should become the single active panel.`);
       assert(await navigation.locator('[aria-current="page"]').count() === 1, "Bookshelf should expose exactly one active panel.");
       if (panel === "Shortcuts") {
-        const shortcutText = await page.getByRole("region", { name: "Keyboard shortcuts", exact: true }).textContent();
+        const shortcutsRegion = page.getByRole("region", { name: "Keyboard shortcuts", exact: true });
+        const recordCount = await shortcutsRegion.getByRole("button", { name: "Record", exact: true }).count();
+        const resetCount = await shortcutsRegion.getByRole("button", { name: "Reset", exact: true }).count();
+        assert(recordCount >= 9, "Shortcuts panel should expose Record controls for Global, Reader, and Sasayaki keyboard shortcuts.", { recordCount });
+        assert(resetCount >= 9, "Shortcuts panel should expose Reset controls for Global, Reader, and Sasayaki keyboard shortcuts.", { resetCount });
+        const shortcutText = await shortcutsRegion.textContent();
         assert(
           shortcutText?.includes("Sasayaki") &&
             shortcutText.includes("Toggle playback") &&
