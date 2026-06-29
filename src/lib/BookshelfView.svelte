@@ -12,6 +12,7 @@
   import ShortcutsPanel from "./ShortcutsPanel.svelte";
   import AdvancedPanel from "./AdvancedPanel.svelte";
   import type { AdvancedSettings } from "./advanced-settings";
+  import type { GlobalLookupSettings, ShortcutBinding } from "./global-lookup-settings";
   import type { DictionarySearchState } from "./state/dictionary-search-state.svelte";
   import { bookRecordKey, type BookRecord } from "./storage";
   import ConfirmDialog from "./ui/ConfirmDialog.svelte";
@@ -25,6 +26,7 @@
     readerAppearance,
     readerThemeLabels,
     advancedSettings,
+    globalLookupSettings,
     lookupPopupSettings,
     dictionarySettings,
     dictionaryList = [],
@@ -46,6 +48,9 @@
     onSetReaderInterface,
     onSetReaderAppearanceColor,
     onSetReopenLastBookOnStartup,
+    onSetGlobalLookupEnabled,
+    onSetGlobalLookupShortcut,
+    onResetGlobalLookupShortcut,
     onSetLookupPopupWidth,
     onSetLookupPopupHeight,
     onSetLookupPopupScale,
@@ -94,6 +99,7 @@
     readerAppearance: ReaderAppearance;
     readerThemeLabels: Record<ReaderTheme, string>;
     advancedSettings: AdvancedSettings;
+    globalLookupSettings: GlobalLookupSettings;
     lookupPopupSettings: LookupPopupSettings;
     dictionarySettings: DictionarySettings;
     dictionaryList?: DictionaryManifestEntry[];
@@ -115,6 +121,9 @@
     onSetReaderInterface: (theme: ReaderInterfaceTheme) => void;
     onSetReaderAppearanceColor: (field: ReaderAppearanceColorField, color: string) => void;
     onSetReopenLastBookOnStartup: (enabled: boolean) => void;
+    onSetGlobalLookupEnabled: (enabled: boolean) => void;
+    onSetGlobalLookupShortcut: (shortcut: ShortcutBinding) => void;
+    onResetGlobalLookupShortcut: () => void;
     onSetLookupPopupWidth: (width: number) => void;
     onSetLookupPopupHeight: (height: number) => void;
     onSetLookupPopupScale: (scale: number) => void;
@@ -400,10 +409,14 @@
     {:else if activePanel === "advanced"}
       <AdvancedPanel
         settings={advancedSettings}
+        {globalLookupSettings}
         onReopenLastBookOnStartupChange={onSetReopenLastBookOnStartup}
+        onGlobalLookupEnabledChange={onSetGlobalLookupEnabled}
+        onGlobalLookupShortcutChange={onSetGlobalLookupShortcut}
+        onGlobalLookupShortcutReset={onResetGlobalLookupShortcut}
       />
     {:else if activePanel === "shortcuts"}
-      <ShortcutsPanel />
+      <ShortcutsPanel {globalLookupSettings} />
     {/if}
   </main>
 </section>

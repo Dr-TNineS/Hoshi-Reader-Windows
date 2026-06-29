@@ -2,6 +2,7 @@ mod anki;
 mod audio_clip;
 mod dict;
 mod epub;
+mod global_lookup;
 mod library;
 mod local_audio;
 mod sasayaki;
@@ -15,10 +16,13 @@ use tauri::Manager;
 pub fn run() {
     tauri::Builder::default()
         .plugin(tauri_plugin_dialog::init())
+        .plugin(tauri_plugin_global_shortcut::Builder::new().build())
         .manage(EpubState {
             book: std::sync::Mutex::new(None),
         })
         .manage(DictState::new())
+        .manage(global_lookup::GlobalLookupState::default())
+        .on_window_event(global_lookup::handle_window_event)
         .invoke_handler(tauri::generate_handler![
             epub::commands::epub_open,
             epub::commands::epub_get_chapter_path,
@@ -45,6 +49,9 @@ pub fn run() {
             dict::commands::dictionary_remove_import,
             dict::commands::dict_lookup,
             dict::commands::dict_status,
+            global_lookup::global_lookup_load_settings,
+            global_lookup::global_lookup_save_settings,
+            global_lookup::global_lookup_take_pending,
             anki::anki_load_settings,
             anki::anki_save_settings,
             anki::anki_ping,
@@ -75,6 +82,7 @@ pub fn run() {
         ])
         .setup(|app| {
             app.state::<DictState>().initialize(app.handle());
+            global_lookup::initialize(app.handle());
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()

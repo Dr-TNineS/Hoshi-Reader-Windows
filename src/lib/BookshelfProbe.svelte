@@ -2,6 +2,7 @@
   import BookshelfView from "./BookshelfView.svelte";
   import { defaultReaderAppearance } from "./appearance";
   import { defaultDictionarySettings } from "./dictionary-settings";
+  import { defaultGlobalLookupSettings } from "./global-lookup-settings";
   import { createDictionarySearchState } from "./state/dictionary-search-state.svelte";
   import type { BookRecord } from "./storage";
 
@@ -37,6 +38,7 @@
     readerAppearance={{ ...defaultReaderAppearance, theme: "dark" }}
     readerThemeLabels={{ light: "Light", dark: "Dark", sepia: "Sepia", custom: "Custom" }}
     advancedSettings={{ reopenLastBookOnStartup: true }}
+    globalLookupSettings={defaultGlobalLookupSettings}
     lookupPopupSettings={{ width: 320, height: 250, scale: 1 }}
     dictionarySettings={defaultDictionarySettings}
     {dictionarySearchState}
@@ -113,6 +115,9 @@
     onSetReaderInterface={() => {}}
     onSetReaderAppearanceColor={() => {}}
     onSetReopenLastBookOnStartup={() => {}}
+    onSetGlobalLookupEnabled={() => {}}
+    onSetGlobalLookupShortcut={() => {}}
+    onResetGlobalLookupShortcut={() => {}}
     onSetLookupPopupWidth={() => {}}
     onSetLookupPopupHeight={() => {}}
     onSetLookupPopupScale={() => {}}
