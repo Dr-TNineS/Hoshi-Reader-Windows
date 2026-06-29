@@ -83,8 +83,8 @@
     return Math.max(min, Math.min(max, value));
   }
 
-  async function syncWindowFrame(nextSettings: LookupPopupSettings) {
-    if (!isTauriRuntime()) return;
+  async function syncWindowFrame(nextSettings: LookupPopupSettings): Promise<boolean> {
+    if (!isTauriRuntime()) return true;
     const syncId = ++windowFrameSync;
     const width = nextSettings.width + WINDOW_PADDING;
     const height = nextSettings.height + WINDOW_PADDING;
@@ -108,8 +108,22 @@
       }
 
       if (syncId === windowFrameSync) requestAnimationFrame(syncBounds);
+      return true;
     } catch (e) {
       console.warn("Cannot resize global lookup window.", e);
+      return false;
+    }
+  }
+
+  async function presentAfterFrameSync() {
+    refreshPopupSettings();
+    if (!isTauriRuntime()) return;
+    if (!(await syncWindowFrame(popupSettings))) return;
+    try {
+      await invoke("global_lookup_show_window");
+      requestAnimationFrame(syncBounds);
+    } catch (e) {
+      error = String(e);
     }
   }
 
@@ -453,7 +467,9 @@
         applyPayload(await invoke<GlobalLookupPayload | null>("global_lookup_take_pending"));
         unlisten = await listen<GlobalLookupPayload>("global-lookup-request", (event) => {
           applyPayload(event.payload);
+          void presentAfterFrameSync();
         });
+        await presentAfterFrameSync();
       } catch (e) {
         error = String(e);
       }
@@ -464,9 +480,6 @@
     };
   });
 
-  $effect(() => {
-    void syncWindowFrame(popupSettings);
-  });
 </script>
 
 <svelte:window onresize={syncBounds} />

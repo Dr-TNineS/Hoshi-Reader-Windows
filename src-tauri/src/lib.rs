@@ -51,6 +51,7 @@ pub fn run() {
             dict::commands::dict_status,
             global_lookup::global_lookup_load_settings,
             global_lookup::global_lookup_save_settings,
+            global_lookup::global_lookup_show_window,
             global_lookup::global_lookup_take_pending,
             anki::anki_load_settings,
             anki::anki_save_settings,

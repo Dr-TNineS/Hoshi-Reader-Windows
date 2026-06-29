@@ -385,6 +385,28 @@ pub fn global_lookup_take_pending(
     Ok(state.pending.lock().unwrap().take())
 }
 
+#[tauri::command]
+pub fn global_lookup_show_window(
+    app: AppHandle,
+    state: tauri::State<'_, GlobalLookupState>,
+) -> Result<(), String> {
+    let window = app
+        .get_webview_window(WINDOW_LABEL)
+        .ok_or_else(|| "Global lookup window is not available.".to_string())?;
+    apply_tool_window_style(&window)?;
+    state
+        .presented_at
+        .lock()
+        .unwrap()
+        .replace(Instant::now());
+    window
+        .show()
+        .map_err(|e| format!("Cannot show global lookup window: {e}"))?;
+    window
+        .set_focus()
+        .map_err(|e| format!("Cannot focus global lookup window: {e}"))
+}
+
 fn settings_root(app: &AppHandle) -> Result<PathBuf, String> {
     let root = app
         .path()
@@ -512,11 +534,6 @@ fn present_global_lookup(app: &AppHandle, payload: GlobalLookupPayload) -> Resul
         .lock()
         .unwrap()
         .replace(payload.clone());
-    app.state::<GlobalLookupState>()
-        .presented_at
-        .lock()
-        .unwrap()
-        .replace(Instant::now());
 
     let window = if let Some(window) = app.get_webview_window(WINDOW_LABEL) {
         window
@@ -542,12 +559,6 @@ fn present_global_lookup(app: &AppHandle, payload: GlobalLookupPayload) -> Resul
     if let Some(position) = cursor_window_position() {
         let _ = window.set_position(position);
     }
-    window
-        .show()
-        .map_err(|e| format!("Cannot show global lookup window: {e}"))?;
-    window
-        .set_focus()
-        .map_err(|e| format!("Cannot focus global lookup window: {e}"))?;
     app.emit_to(WINDOW_LABEL, "global-lookup-request", payload)
         .map_err(|e| format!("Cannot emit global lookup request: {e}"))
 }
