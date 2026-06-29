@@ -1,3 +1,9 @@
+import {
+  defaultKeyboardShortcutSettings,
+  keyboardShortcutActionForEvent,
+  type KeyboardShortcutSettings,
+} from "./keyboard-shortcuts";
+
 export type SasayakiShortcutAction = "togglePlayback" | "previous" | "next";
 
 export function isEditableShortcutTarget(target: EventTarget | null): boolean {
@@ -6,12 +12,19 @@ export function isEditableShortcutTarget(target: EventTarget | null): boolean {
   return Boolean(target.closest("input, textarea, select, button, [contenteditable='true']"));
 }
 
-export function sasayakiShortcutAction(event: KeyboardEvent): SasayakiShortcutAction | null {
-  if (event.ctrlKey || event.altKey || event.metaKey || isEditableShortcutTarget(event.target)) return null;
+export function sasayakiShortcutAction(
+  event: KeyboardEvent,
+  settings: KeyboardShortcutSettings = defaultKeyboardShortcutSettings,
+): SasayakiShortcutAction | null {
+  if (isEditableShortcutTarget(event.target)) return null;
 
-  const key = event.key.toLowerCase();
-  if (event.code === "KeyP" || key === "p") return "togglePlayback";
-  if (event.code === "BracketLeft" || event.key === "[") return "previous";
-  if (event.code === "BracketRight" || event.key === "]") return "next";
+  const action = keyboardShortcutActionForEvent(settings, event, [
+    "sasayaki-toggle-playback",
+    "sasayaki-previous-skip-action",
+    "sasayaki-next-skip-action",
+  ]);
+  if (action === "sasayaki-toggle-playback") return "togglePlayback";
+  if (action === "sasayaki-previous-skip-action") return "previous";
+  if (action === "sasayaki-next-skip-action") return "next";
   return null;
 }

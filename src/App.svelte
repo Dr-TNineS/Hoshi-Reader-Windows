@@ -1416,7 +1416,7 @@
 
   function handleSasayakiShortcut(event: KeyboardEvent) {
     if (view !== "reader" || !sasayakiPlayback?.configured || !sasayakiPlayback.audioAvailable) return;
-    const action = sasayakiShortcutAction(event);
+    const action = sasayakiShortcutAction(event, settings.keyboardShortcutSettings);
     if (!action) return;
 
     event.preventDefault();
