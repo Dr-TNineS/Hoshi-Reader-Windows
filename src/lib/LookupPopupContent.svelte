@@ -431,16 +431,17 @@
 
   async function addAnki(result: DictResult, resultIndex: number, key: string) {
     if (!buildAnkiPayload || !canPreviewAnki || !onAddAnkiNote || ankiActionState === "adding") return;
-    const payload = buildAnkiPayload(result, resultIndex);
 
     ankiPreviewKey = key;
-    const previewFields = renderAnkiFieldPreview(payload, ankiSettings);
-    ankiAudioHint = audioBoundaryHint(payload, previewFields);
     ankiActionKey = key;
     ankiActionState = "adding";
     ankiActionMessage = "Adding note...";
     ankiMediaWarnings = [];
     try {
+      const payload = await payloadWithLoadedDictionaryStyles(buildAnkiPayload(result, resultIndex));
+      if (ankiActionKey !== key) return;
+      const previewFields = renderAnkiFieldPreview(payload, ankiSettings);
+      ankiAudioHint = audioBoundaryHint(payload, previewFields);
       const storeResult = await storeAnkiMediaForPayload(payload);
       if (ankiActionKey !== key) return;
       let notePayload = storeResult
@@ -474,16 +475,31 @@
         : audioBoundaryHint(notePayload, notePreviewFields);
       const note = buildAnkiNoteRequest(notePayload, ankiSettings);
       if (!note) return;
-      const result = await onAddAnkiNote(note);
+      const addResult = await onAddAnkiNote(note);
       if (ankiActionKey !== key) return;
-      ankiMediaWarnings = [...ankiMediaWarnings, ...result.warnings];
-      ankiActionState = result.status === "added" ? "added" : "duplicate";
-      ankiActionMessage = result.message;
+      ankiMediaWarnings = [...ankiMediaWarnings, ...addResult.warnings];
+      ankiActionState = addResult.status === "added" ? "added" : "duplicate";
+      ankiActionMessage = addResult.message;
     } catch (error) {
       if (ankiActionKey !== key) return;
       ankiActionState = "error";
       ankiActionMessage = String(error);
     }
+  }
+
+  async function payloadWithLoadedDictionaryStyles(payload: LookupAnkiPayload): Promise<LookupAnkiPayload> {
+    const dictionaries = [...new Set(payload.glossary.map((entry) => entry.dict.trim()).filter(Boolean))];
+    if (dictionaries.length === 0) return payload;
+    const resources = await Promise.allSettled(dictionaries.map((dictionary) => (
+      loadDictionaryStyles?.(dictionary) ?? loadCachedDictionaryStyles(dictionary)
+    )));
+    const dictionaryStyles: Record<string, string> = { ...(payload.dictionaryStyles ?? {}) };
+    resources.forEach((resource, index) => {
+      if (resource.status !== "fulfilled") return;
+      const css = resource.value.css.trim();
+      if (css) dictionaryStyles[dictionaries[index]] = css;
+    });
+    return Object.keys(dictionaryStyles).length > 0 ? { ...payload, dictionaryStyles } : payload;
   }
 
   async function storeAnkiMediaForPayload(payload: LookupAnkiPayload): Promise<AnkiStoreMediaResult | null> {

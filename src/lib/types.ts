@@ -95,6 +95,7 @@ export interface LookupAnkiPayload {
   rules: string;
   frequencies: FrequencyEntry[];
   pitches: PitchEntry[];
+  dictionaryStyles?: Record<string, string>;
   media: LookupAnkiMediaReference[];
   audioFilename: string | null;
   sasayakiCueId: string | null;

@@ -186,11 +186,12 @@
       selectedDeck: "Mining",
       selectedNoteType: "Hoshi Vocabulary",
       decks: [{ name: "Mining" }],
-      noteTypes: [{ name: "Hoshi Vocabulary", fields: ["Expression", "ExpressionFurigana", "Meaning", "Sentence", "JmOnly", "MissingDict", "Media", ...(coverFieldEnabled ? ["Picture"] : []), ...(audioFieldEnabled ? ["Audio"] : []), ...(sasayakiFieldEnabled ? ["SentenceAudio"] : []), "Frequency", "Pitch", "Unknown"] }],
+      noteTypes: [{ name: "Hoshi Vocabulary", fields: ["Expression", "ExpressionFurigana", "Meaning", "FullGlossary", "Sentence", "JmOnly", "MissingDict", "Media", ...(coverFieldEnabled ? ["Picture"] : []), ...(audioFieldEnabled ? ["Audio"] : []), ...(sasayakiFieldEnabled ? ["SentenceAudio"] : []), "Frequency", "Pitch", "Unknown"] }],
       fieldMappings: [
         { field: "Expression", template: "{expression} / {reading}" },
         { field: "ExpressionFurigana", template: "{furigana-plain}" },
         { field: "Meaning", template: "{glossary-first}" },
+        { field: "FullGlossary", template: "{glossary}" },
         { field: "Sentence", template: "{sentence}" },
         { field: "JmOnly", template: "{single-glossary-JMdict [probe]}" },
         { field: "MissingDict", template: "{single-glossary-Missing Probe}" },
@@ -576,6 +577,12 @@
   }
 
   async function loadDictionaryStyles(dictionary: string) {
+    if (dictionary === "JMdict [probe]") {
+      return {
+        source: "probe",
+        css: `li { margin-left: 2px; }`,
+      };
+    }
     if (dictionary !== "Jitendex.org [probe]") return { source: dictionary, css: "" };
     return {
       source: "probe",

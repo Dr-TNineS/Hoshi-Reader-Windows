@@ -179,9 +179,9 @@ function tokenValue(token: string, payload: LookupAnkiPayload, compactGlossaries
     case "popup-selection-text":
       return payload.selectedText;
     case "glossary-first":
-      return payload.glossary[0] ? renderAnkiGlossaryEntries([payload.glossary[0]], compactGlossaries, payload.media) : "";
+      return payload.glossary[0] ? renderAnkiGlossaryEntries([payload.glossary[0]], compactGlossaries, payload.media, payload.dictionaryStyles) : "";
     case "glossary":
-      return renderAnkiGlossaryEntries(payload.glossary, compactGlossaries, payload.media);
+      return renderAnkiGlossaryEntries(payload.glossary, compactGlossaries, payload.media, payload.dictionaryStyles);
     case "sentence":
       return sentenceValue(payload);
     case "document-title":
@@ -300,10 +300,15 @@ function defaultTemplateForField(field: string): string {
 
 function glossaryTextForDictionary(dictionary: string, payload: LookupAnkiPayload, compactGlossaries: boolean): string {
   const exact = payload.glossary.filter((entry) => entry.dict === dictionary);
-  if (exact.length > 0) return renderAnkiGlossaryEntries(exact, compactGlossaries, payload.media);
+  if (exact.length > 0) return renderAnkiGlossaryEntries(exact, compactGlossaries, payload.media, payload.dictionaryStyles);
 
   const normalized = normalizeDictionaryName(dictionary);
-  return renderAnkiGlossaryEntries(payload.glossary.filter((entry) => normalizeDictionaryName(entry.dict) === normalized), compactGlossaries, payload.media);
+  return renderAnkiGlossaryEntries(
+    payload.glossary.filter((entry) => normalizeDictionaryName(entry.dict) === normalized),
+    compactGlossaries,
+    payload.media,
+    payload.dictionaryStyles,
+  );
 }
 
 export function payloadWithStoredRemoteAudio(
@@ -343,12 +348,14 @@ function renderAnkiGlossaryEntries(
   entries: GlossaryEntry[],
   compactGlossaries = false,
   media: LookupAnkiMediaReference[] = [],
+  dictionaryStyles: Record<string, string> | undefined = undefined,
 ): string {
   const mediaByKey = new Map(media.map((item) => [mediaKey(item.dictionary, item.path), item]));
   const items = entries.map((entry, index) => renderAnkiGlossaryEntry(entry, index, mediaByKey)).filter(Boolean).join("");
   if (!items) return "";
-  const style = `${ANKI_GLOSSARY_STYLE}${compactGlossaries ? COMPACT_GLOSSARY_STYLE : ""}`;
-  return `${style}<div style="text-align: left;" class="yomitan-glossary"><ol>${items}</ol></div>`;
+  const dictionaryStyle = ankiDictionaryStyleBlock(entries, dictionaryStyles);
+  const compactStyle = compactGlossaries ? COMPACT_GLOSSARY_STYLE : "";
+  return `${ANKI_GLOSSARY_STYLE}<div style="text-align: left;" class="yomitan-glossary"><ol>${items}</ol>${dictionaryStyle}${compactStyle}</div>`;
 }
 
 function renderAnkiGlossaryEntry(
@@ -377,6 +384,99 @@ function renderAnkiGlossaryEntry(
 
 function normalizeDictionaryName(dictionary: string): string {
   return dictionary.trim().replace(/\s*\[[^\]]+]\s*$/, "");
+}
+
+function ankiDictionaryStyleBlock(
+  entries: GlossaryEntry[],
+  dictionaryStyles: Record<string, string> | undefined,
+): string {
+  if (!dictionaryStyles) return "";
+  const dictionaries = [...new Set(entries.map((entry) => entry.dict.trim()).filter(Boolean))];
+  const chunks = dictionaries
+    .map((dictionary) => scopeAnkiDictionaryCss(dictionaryStyles[dictionary] ?? "", dictionary))
+    .filter(Boolean);
+  return chunks.length ? `<style>${escapeStyleContent(chunks.join("\n"))}</style>` : "";
+}
+
+export function scopeAnkiDictionaryCss(css: string, dictionary: string): string {
+  const cleaned = stripCssComments(css)
+    .replace(/@import[^;]+;/gi, "")
+    .replace(/url\(\s*(['"]?)https?:\/\/[^)]+\1\s*\)/gi, "none")
+    .replace(/position\s*:\s*fixed\s*!?\s*[^;}]*/gi, "position: static");
+  const scope = `.yomitan-glossary [data-dictionary="${escapeCssString(dictionary)}"]`;
+  return scopeCssRules(cleaned, scope).trim();
+}
+
+function stripCssComments(css: string): string {
+  return css.replace(/\/\*[\s\S]*?\*\//g, "");
+}
+
+function scopeCssRules(css: string, scope: string): string {
+  let output = "";
+  let index = 0;
+  while (index < css.length) {
+    const open = css.indexOf("{", index);
+    if (open < 0) break;
+    const selector = css.slice(index, open).trim();
+    const close = matchingBrace(css, open);
+    if (close < 0) break;
+    const body = css.slice(open + 1, close).trim();
+    index = close + 1;
+
+    if (!selector || !body) continue;
+    if (selector.toLowerCase().startsWith("@media")) {
+      const inner = scopeCssRules(body, scope);
+      if (inner) output += `${selector}{${inner}}\n`;
+      continue;
+    }
+    if (selector.startsWith("@")) continue;
+
+    const scopedSelector = selector
+      .split(",")
+      .map((item) => scopeCssSelector(item.trim(), scope))
+      .filter(Boolean)
+      .join(", ");
+    if (!scopedSelector) continue;
+    output += `${scopedSelector}{${body}}\n`;
+  }
+  return output;
+}
+
+function matchingBrace(css: string, open: number): number {
+  let depth = 0;
+  let quote = "";
+  for (let index = open; index < css.length; index += 1) {
+    const char = css[index];
+    const previous = css[index - 1];
+    if (quote) {
+      if (char === quote && previous !== "\\") quote = "";
+      continue;
+    }
+    if (char === "\"" || char === "'") {
+      quote = char;
+      continue;
+    }
+    if (char === "{") depth += 1;
+    if (char === "}") {
+      depth -= 1;
+      if (depth === 0) return index;
+    }
+  }
+  return -1;
+}
+
+function scopeCssSelector(selector: string, scope: string): string {
+  if (!selector || /(^|[\s>+~,(])(?:html|body|:root)(?=$|[\s>+~,#.[:)])/i.test(selector)) return "";
+  if (selector.startsWith("&")) return `${scope}${selector.slice(1)}`;
+  return `${scope} ${selector}`;
+}
+
+function escapeCssString(value: string): string {
+  return value.replace(/\\/g, "\\\\").replace(/"/g, "\\\"");
+}
+
+function escapeStyleContent(value: string): string {
+  return value.replace(/<\/style/gi, "<\\/style");
 }
 
 function splitTags(value: string | undefined): string[] {
