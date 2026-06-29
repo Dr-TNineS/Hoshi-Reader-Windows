@@ -127,7 +127,7 @@
   }, []);
   const totalBookChars = chapters.reduce((total, chapter) => total + chapter.charCount, 0);
 
-  let chapterIndex = $state(0);
+  let chapterIndex = $state(params.get("startChapter") === "1" ? 1 : 0);
   let startAtEnd = $state(false);
   let lastProgress = $state<ReaderProgress | null>(null);
   let lastSelection = $state<ReaderSelection | null>(null);

@@ -3,8 +3,10 @@
   import { countChars, createWalker, getTotalChars, isVertical, rawOffsetForReaderChars, readerCharOffsetForRange, readerRangeForOffsets, textEndOffsets } from "../reader";
   import type { ReaderAppearancePalette } from "../appearance";
   import {
+    defaultKeyboardShortcutBindings,
     defaultKeyboardShortcutSettings,
     keyboardShortcutActionForEvent,
+    resolvedKeyboardShortcutBindings,
     type KeyboardShortcutSettings,
   } from "../keyboard-shortcuts";
   import {
@@ -64,6 +66,7 @@
   type BoundsRect = ViewportRect & { left: number; top: number; right: number; bottom: number };
   type RectLike = Partial<ViewportRect & { left: number; top: number; right: number; bottom: number }>;
   type OverlayRect = { left: number; top: number; width: number; height: number };
+  type ReaderChapterShortcutAction = "reader-next-chapter" | "reader-previous-chapter";
 
   let containerEl: HTMLDivElement = $state()!;
   let contentEl: HTMLDivElement = $state()!;
@@ -1195,6 +1198,25 @@
     scheduleProgressEmit();
   }
 
+  function activeReaderBindingMatchesDefault(action: ReaderChapterShortcutAction): boolean {
+    const binding = resolvedKeyboardShortcutBindings(keyboardShortcutSettings)[action];
+    const defaultBinding = defaultKeyboardShortcutBindings[action];
+    return binding.keyCode === defaultBinding.keyCode &&
+      binding.modifiers.length === defaultBinding.modifiers.length &&
+      binding.modifiers.every((modifier, index) => modifier === defaultBinding.modifiers[index]);
+  }
+
+  function defaultReaderMetaChapterAction(e: KeyboardEvent): ReaderChapterShortcutAction | null {
+    if (!e.metaKey || e.ctrlKey || e.altKey || e.shiftKey) return null;
+    const action = e.code === "ArrowLeft"
+      ? "reader-next-chapter"
+      : e.code === "ArrowRight"
+        ? "reader-previous-chapter"
+        : null;
+    if (!action) return null;
+    return activeReaderBindingMatchesDefault(action) ? action : null;
+  }
+
   function handleKey(e: KeyboardEvent) {
     if (e.key === "Shift") {
       const wasShiftPressed = shiftKeyPressed;
@@ -1211,7 +1233,7 @@
       "reader-previous-page",
       "reader-next-page",
       "reader-close",
-    ]);
+    ]) ?? defaultReaderMetaChapterAction(e);
     if (!action) return;
 
     if (action === "reader-next-chapter") {
