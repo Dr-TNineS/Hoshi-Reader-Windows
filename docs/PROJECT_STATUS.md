@@ -1,8 +1,10 @@
 # Hoshi Reader Windows Project Status
 
-Last updated: 2026-06-27
+Last updated: 2026-06-29
 
-This file records current implementation facts for `hoshi-reader-windows`. It is not an agent rule file, product roadmap, or substitute for checking the current code.
+This file records current implementation status for `hoshi-reader-windows`. It
+is not an agent rule file, product roadmap, architecture overview, validation
+manual, or substitute for checking the current code.
 
 Facts that cannot be confirmed from current code should be marked `unknown` or `not verified`.
 
@@ -222,30 +224,18 @@ Facts that cannot be confirmed from current code should be marked `unknown` or `
   - Real lookup depends on hoshidicts build/link success and imported dictionary data.
   - Real lookup validation is tracked in `docs/REAL_LOOKUP_VALIDATION_PLAN.md`.
 
-## Validation Commands
+## Validation
 
-- Documentation-only changes: `git diff --check`
-- Frontend/type changes: `npm run check`
-- Frontend production build: `npm run build`
-- AnkiConnect panel regression probe: `npm run check:anki-connect`
-- Bookshelf shell and confirmation regression probe: `npm run check:bookshelf`
-- Dictionary management regression probe: `npm run check:dictionary-management`
-- Dictionary search regression probe: `npm run check:dictionary-search`
-- Appearance ToggleGroup and Advanced settings controller probe: `npm run check:settings-state`
-- Lookup popup regression probe: `npm run check:lookup-popup`
-- Reader TOC regression probe: `npm run check:reader-toc`
-- Lookup cache regression probe: `npm run check:lookup-performance`
-- Reader visual regression probe: `npm run check:reader-visual`
-- Rust command/backend changes: `cd src-tauri; cargo check`
-- Rust tests: `cd src-tauri; cargo test --lib`
-- Real desktop Anki add-note validation: from `src-tauri`, set `HSW_ANKI_RUNTIME_VALIDATE=1`, then run `cargo test --lib validates_real_ankiconnect_add_note_and_duplicate_check -- --ignored --nocapture`
-- Real desktop Anki store-media validation: from `src-tauri`, set `HSW_ANKI_RUNTIME_VALIDATE=1`, then run `cargo test --lib validates_real_ankiconnect_store_dictionary_media -- --ignored --nocapture`
-- Linked real dictionary validation: run from a VS developer shell with `RUSTFLAGS=--cfg hoshi_dicts_linked`, `CARGO_TARGET_DIR=target-linked-check`, `HSW_REAL_YOMITAN_ZIP=<local dictionary zip>`, then `cargo test --lib imports_real_yomitan_zip_and_loads_runtime -- --ignored --nocapture`
-- Tauri runtime check: `cmd /c npx.cmd tauri dev`
+Use `docs/VALIDATION.md` for the current validation matrix. This status file
+may record validation results or not-verified gaps, but it does not own the
+durable command list.
 
 ## Related Docs
 
 - `docs/TODO.md`
+- `docs/VALIDATION.md`
+- `docs/ARCHITECTURE.md`
+- `docs/ARCHITECTURE_REFACTORING.md`
 - `docs/LOOKUP_ROADMAP.md`
 - `docs/REAL_LOOKUP_VALIDATION_PLAN.md`
 - `docs/ANKI_HSA_WINDOWS_ALIGNMENT.md`

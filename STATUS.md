@@ -6,7 +6,10 @@ If content would overlap between this file and a file under `docs/`, keep the de
 
 ## Current Docs
 
-- `docs/PROJECT_STATUS.md` - current implementation facts, not implemented areas, known issues, risk areas, and validation commands.
+- `docs/VALIDATION.md` - durable validation commands, focused probes, runtime checks, and packaging rules.
+- `docs/ARCHITECTURE.md` - current architecture facts and module boundaries.
+- `docs/ARCHITECTURE_REFACTORING.md` - future architecture debt and refactor direction.
+- `docs/PROJECT_STATUS.md` - current implementation status, not implemented areas, known issues, and risk areas.
 - `docs/TODO.md` - short operational handoff for future agents.
 - `docs/LOOKUP_ROADMAP.md` - remaining reader lookup slices; execute only one slice at a time.
 - `docs/READER_ENTRY_CHARACTERIZATION.md` - bookshelf/import/reader/session behavior baseline.
@@ -14,10 +17,11 @@ If content would overlap between this file and a file under `docs/`, keep the de
 
 ## Current Priority
 
-Continue the reader lookup package from `docs/LOOKUP_ROADMAP.md`, starting with the first incomplete slice unless the user chooses another slice.
+No active implementation slice is selected in the root status. Use
+`docs/TODO.md` for the current handoff and choose the relevant feature plan
+before starting new work.
 
 ## Validation Reminder
 
-- Documentation-only changes: `git diff --check`
-- Frontend changes: `npm run check`
-- Rust/backend changes: `cd src-tauri; cargo check`
+See `docs/VALIDATION.md` for the current validation matrix. Documentation-only
+changes still require `git diff --check`.
