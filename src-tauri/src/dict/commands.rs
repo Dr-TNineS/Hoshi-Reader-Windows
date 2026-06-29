@@ -2057,7 +2057,7 @@ fn import_yomitan_zip_linked(
         );
         temp_paths.push(ascii_source_zip.clone());
 
-        let mut restored_title = None;
+        let mut restored_index = None;
         let preflight_started = Instant::now();
         let prefer_compat_import = prefers_compat_import_first(&ascii_source_zip)?;
         log::info!(
@@ -2076,7 +2076,7 @@ fn import_yomitan_zip_linked(
                 compat_zip_started.elapsed().as_millis(),
                 dict_id
             );
-            restored_title = compat_zip.original_title;
+            restored_index = compat_zip.original_index;
             temp_paths.push(compat_zip.path.clone());
             let import_started = Instant::now();
             let attempt = run_linked_import_attempt(&compat_zip.path, &staging_root, low_ram)?;
@@ -2121,7 +2121,7 @@ fn import_yomitan_zip_linked(
                 import_started.elapsed().as_millis(),
                 dict_id
             );
-            restored_title = compat_zip.original_title;
+            restored_index = compat_zip.original_index;
             temp_paths.push(compat_zip.path);
         }
 
@@ -2132,17 +2132,16 @@ fn import_yomitan_zip_linked(
         let imported_dir = find_single_imported_dictionary_dir(&staging_root)?;
         replace_imported_dictionary_dir(&imported_dir, final_dir)?;
 
-        let title = if let Some(title) = restored_title {
-            title
-        } else if attempt.title.trim().is_empty() {
+        let imported_title = if attempt.title.trim().is_empty() {
             read_imported_dictionary_title(final_dir)
                 .unwrap_or_else(|| "Imported Dictionary".into())
         } else {
             attempt.title
         };
-        let metadata = read_imported_dictionary_index(final_dir)
-            .map(|index| DictionaryImportMetadata::from_index(index, &title))
-            .unwrap_or_else(|| DictionaryImportMetadata::from_title(title.clone()));
+        let metadata = restored_index
+            .or_else(|| read_imported_dictionary_index(final_dir))
+            .map(|index| DictionaryImportMetadata::from_index(index, &imported_title))
+            .unwrap_or_else(|| DictionaryImportMetadata::from_title(imported_title.clone()));
         let entries = upsert_dictionary_manifest_entries(
             manifest_path,
             detected_dictionary_entries_for_import_with_metadata(
@@ -2213,7 +2212,7 @@ impl LinkedImportAttempt {
 #[cfg(any(hoshi_dicts_linked, test))]
 struct CompatImportZip {
     path: PathBuf,
-    original_title: Option<String>,
+    original_index: Option<ImportedDictionaryIndex>,
 }
 
 #[cfg(hoshi_dicts_linked)]
@@ -2380,15 +2379,13 @@ fn create_compat_import_zip(
         .map_err(|e| format!("Cannot finalize dictionary compatibility zip: {e}"))?;
     let original_index_json = original_index_json
         .ok_or_else(|| "Dictionary zip does not contain index.json.".to_string())?;
-    let original_title = serde_json::from_str::<ImportedDictionaryIndex>(
+    let original_index = serde_json::from_str::<ImportedDictionaryIndex>(
         original_index_json.trim_start_matches('\u{feff}'),
     )
-    .ok()
-    .and_then(|index| index.title)
-    .filter(|title| !title.trim().is_empty());
+    .ok();
     Ok(CompatImportZip {
         path: output.to_path_buf(),
-        original_title,
+        original_index,
     })
 }
 
@@ -2909,14 +2906,14 @@ mod tests {
         fs::create_dir_all(&root).unwrap();
         let source = root.join("source.zip");
         let output = root.join("compat.zip");
-        let index = br#"{"title":"Original MK3","format":3}"#;
+        let index = r#"{"title":"明鏡国語辞典 第三版","format":3,"revision":"2026-06-29","isUpdatable":true,"indexUrl":"https://example.test/index.json","downloadUrl":"https://example.test/dict.zip"}"#;
         let term_bank =
             r#"[["声","こえ","","",0,[{"type":"image","path":"gaiji/参考1.svg"}],0,0,""]]"#;
         let svg = br#"<svg xmlns="http://www.w3.org/2000/svg"><text>ref1</text></svg>"#;
         write_raw_stored_zip(
             &source,
             &[
-                (b"index.json", index.as_slice()),
+                (b"index.json", index.as_bytes()),
                 (b"term_bank_1.json", term_bank.as_bytes()),
                 (b"styles.css", b".tag { color: red; }".as_slice()),
                 (b"gaiji/\xb2\xce\xbf\xbc\x31.svg", svg.as_slice()),
@@ -2926,7 +2923,25 @@ mod tests {
         );
 
         let compat = create_compat_import_zip(&source, &output, "abc").unwrap();
-        assert_eq!(compat.original_title.as_deref(), Some("Original MK3"));
+        let original_index = compat
+            .original_index
+            .expect("compat zip should retain original index metadata");
+        assert_eq!(original_index.title.as_deref(), Some("明鏡国語辞典 第三版"));
+        assert_eq!(original_index.revision, "2026-06-29");
+        assert!(original_index.is_updatable);
+        assert_eq!(original_index.index_url, "https://example.test/index.json");
+        assert_eq!(original_index.download_url, "https://example.test/dict.zip");
+        let entries = dictionary_entries_for_import_with_metadata(
+            "abc",
+            DictionaryImportMetadata::from_index(original_index, "hoshi-import-abc"),
+            "dictionaries/imported/abc".into(),
+            (10, 0, 0, 0, 1),
+            123,
+        );
+        assert!(entries
+            .iter()
+            .all(|entry| entry.title == "明鏡国語辞典 第三版"));
+        assert!(entries.iter().all(|entry| entry.revision == "2026-06-29"));
 
         let file = File::open(&compat.path).unwrap();
         let mut archive = zip::ZipArchive::new(file).unwrap();
@@ -4164,7 +4179,7 @@ mod tests {
             prepare_ascii_dictionary_import_source(&source, &imported_root, &dict_id).unwrap();
         eprintln!("timing copy_ms={}", copy_started.elapsed().as_millis());
         temp_paths.push(ascii_source_zip.clone());
-        let mut restored_title = None;
+        let mut restored_index = None;
         let preflight_started = std::time::Instant::now();
         let prefer_compat_import = prefers_compat_import_first(&ascii_source_zip).unwrap();
         eprintln!(
@@ -4181,7 +4196,7 @@ mod tests {
                 "timing compat_zip_ms={}",
                 compat_zip_started.elapsed().as_millis()
             );
-            restored_title = compat_zip.original_title;
+            restored_index = compat_zip.original_index;
             temp_paths.push(compat_zip.path.clone());
             let import_started = std::time::Instant::now();
             let attempt =
@@ -4222,7 +4237,7 @@ mod tests {
                 "timing linked_import_retry_ms={}",
                 import_started.elapsed().as_millis()
             );
-            restored_title = compat_zip.original_title;
+            restored_index = compat_zip.original_index;
             temp_paths.push(compat_zip.path);
         }
         assert!(
@@ -4243,19 +4258,21 @@ mod tests {
             assert!(final_dir.join(file).is_file(), "{file} should exist");
         }
 
-        let title = if let Some(title) = restored_title {
-            title
-        } else if attempt.title.trim().is_empty() {
+        let imported_title = if attempt.title.trim().is_empty() {
             read_imported_dictionary_title(&final_dir)
                 .unwrap_or_else(|| "Imported Dictionary".into())
         } else {
             attempt.title
         };
+        let metadata = restored_index
+            .or_else(|| read_imported_dictionary_index(&final_dir))
+            .map(|index| DictionaryImportMetadata::from_index(index, &imported_title))
+            .unwrap_or_else(|| DictionaryImportMetadata::from_title(imported_title.clone()));
         let first_entries = upsert_dictionary_manifest_entries(
             &manifest_path,
-            dictionary_entries_for_import(
+            dictionary_entries_for_import_with_metadata(
                 &dict_id,
-                title,
+                metadata,
                 final_dir.to_string_lossy().into_owned(),
                 counts,
                 current_unix_time(),
