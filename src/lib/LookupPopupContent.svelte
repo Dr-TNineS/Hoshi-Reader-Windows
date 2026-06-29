@@ -1001,9 +1001,9 @@
   .lookup-glossary-dict { color: var(--app-status, #cce8d5); font-size: calc(10px * var(--popup-scale, 1)); cursor: pointer; }
   .lookup-glossary-list { margin: 0; padding-left: 1.25em; }
   .lookup-glossary-list > li { margin: calc(4px * var(--popup-scale, 1)) 0; }
-  .lookup-glossary-content { min-width: 0; font-size: calc(15px * var(--popup-scale, 1)); line-height: 1.4; }
-  .lookup-glossary-content,
-  .lookup-glossary-content :global(*) { font-family: var(--reader-body-font, "Yu Mincho", "Hiragino Mincho Pro", "MS Mincho", serif) !important; }
+  .lookup-glossary-content { min-width: 0; font-family: var(--reader-body-font, "Yu Mincho", "Hiragino Mincho Pro", "MS Mincho", serif); font-size: calc(15px * var(--popup-scale, 1)); line-height: 1.4; }
+  .lookup-glossary-content :global([lang|="ja"]) { font-family: var(--reader-body-font, "Yu Mincho", "Hiragino Mincho Pro", "MS Mincho", serif); }
+  .lookup-glossary-content :global([lang|="zh"]) { font-family: "Microsoft YaHei", "Microsoft JhengHei", "SimSun", "Noto Sans CJK SC", "Noto Sans CJK TC", system-ui, sans-serif; }
   .compact-glossaries .lookup-glossary { gap: calc(1px * var(--popup-scale, 1)); line-height: 1.28; }
   .compact-glossaries .lookup-glossary-list > li { margin: calc(2px * var(--popup-scale, 1)) 0; }
   .compact-glossaries .lookup-glossary-content { font-size: calc(14px * var(--popup-scale, 1)); line-height: 1.32; }

@@ -120,6 +120,11 @@ async function popupMetrics(page) {
     const glossaryItem = document.querySelector(".lookup-glossary");
     const glossaryDictionary = document.querySelector(".lookup-glossary-dict");
     const pitchList = document.querySelector(".pitch-list");
+    const explicitChinese = document.querySelector('.lookup-glossary-content [data-sc-class="probe-sgkk-zh"]');
+    const inferredChinese = document.querySelector('.lookup-glossary-content [data-sc-class="probe-inferred-zh"]');
+    const kanjiJapanese = document.querySelector('.lookup-glossary-content [data-sc-class="probe-kanji-ja"]');
+    const ambiguousHan = document.querySelector('.lookup-glossary-content [data-sc-class="probe-ambiguous-han-ja"]');
+    const dictionaryFont = document.querySelector('.lookup-glossary-content [data-sc-class="probe-dict-font"]');
     const rect = popup instanceof HTMLElement
       ? popup.getBoundingClientRect()
       : { x: 0, y: 0, width: 0, height: 0, right: 0, bottom: 0 };
@@ -273,10 +278,23 @@ async function popupMetrics(page) {
       expressionFontSize: expression instanceof HTMLElement ? getComputedStyle(expression).fontSize : "",
       readingFontSize: reading instanceof HTMLElement ? getComputedStyle(reading).fontSize : "",
       glossaryFontSize: glossary instanceof HTMLElement ? getComputedStyle(glossary).fontSize : "",
+      glossaryFontFamily: glossary instanceof HTMLElement ? getComputedStyle(glossary).fontFamily : "",
       glossaryLineHeight: glossary instanceof HTMLElement ? getComputedStyle(glossary).lineHeight : "",
       glossaryItemFontSize: glossaryItem instanceof HTMLElement ? getComputedStyle(glossaryItem).fontSize : "",
       glossaryDictionaryFontSize: glossaryDictionary instanceof HTMLElement ? getComputedStyle(glossaryDictionary).fontSize : "",
       pitchFontSize: pitchList instanceof HTMLElement ? getComputedStyle(pitchList).fontSize : "",
+      explicitChineseLang: explicitChinese instanceof HTMLElement ? explicitChinese.lang : "",
+      explicitChineseFontFamily: explicitChinese instanceof HTMLElement ? getComputedStyle(explicitChinese).fontFamily : "",
+      inferredChineseLang: inferredChinese instanceof HTMLElement ? inferredChinese.querySelector("[lang]")?.getAttribute("lang") ?? inferredChinese.lang : "",
+      inferredChineseFontFamily: (() => {
+        const target = inferredChinese instanceof HTMLElement
+          ? inferredChinese.querySelector("[lang]") ?? inferredChinese
+          : null;
+        return target instanceof HTMLElement ? getComputedStyle(target).fontFamily : "";
+      })(),
+      kanjiJapaneseLang: kanjiJapanese instanceof HTMLElement ? kanjiJapanese.querySelector("[lang]")?.getAttribute("lang") ?? kanjiJapanese.lang : "",
+      ambiguousHanLang: ambiguousHan instanceof HTMLElement ? ambiguousHan.querySelector("[lang]")?.getAttribute("lang") ?? ambiguousHan.lang : "",
+      dictionaryFontFamily: dictionaryFont instanceof HTMLElement ? getComputedStyle(dictionaryFont).fontFamily : "",
       actionSlotWidth: anki instanceof HTMLElement ? getComputedStyle(anki).width : "",
     };
   });
@@ -462,6 +480,11 @@ async function main() {
     assert(Math.abs(ready.popup.width - 320) <= 1 && Math.abs(ready.popup.height - 250) <= 1, "Default popup outer frame should be 320 x 250.", ready);
     assert(ready.text.includes("school"), "Ready popup should render expression.", ready);
     assert(ready.contentFontFamily.includes("Yu Mincho"), "Popup content should use the reader body font stack.", ready);
+    assert(ready.glossaryFontFamily.includes("Yu Mincho"), "Glossary fallback should keep the reader body font for unstyled Japanese/default content.", ready);
+    assert(ready.explicitChineseLang === "zh" && ready.explicitChineseFontFamily.includes("Microsoft YaHei"), "Explicit SGKK-style Chinese glossary content should keep lang=zh and use the Chinese fallback font.", ready);
+    assert(ready.inferredChineseLang === "zh" && ready.inferredChineseFontFamily.includes("Microsoft YaHei"), "Unmarked clearly Chinese glossary content should be annotated and use the Chinese fallback font.", ready);
+    assert(ready.kanjiJapaneseLang === "ja" && ready.ambiguousHanLang === "ja", "Kanji Japanese and lone ambiguous CJK text should not be treated as Chinese solely because they contain Han characters.", ready);
+    assert(ready.dictionaryFontFamily.includes("Courier New"), "Dictionary CSS font-family should be preserved instead of being overridden by the popup fallback.", ready);
     assert(ready.expressionFontSize === "26px" && ready.readingFontSize === "13px", "Scale 1 should use upstream expression and reading sizes.", ready);
     assert(ready.glossaryFontSize === "14px" && ready.glossaryItemFontSize === "14px" && ready.glossaryDictionaryFontSize === "10px", "Scale 1 should apply compact glossary defaults while preserving the type hierarchy.", ready);
     assert(Math.abs(parseFloat(ready.glossaryLineHeight) - 18.48) < 0.1 && ready.pitchFontSize === "12px", "Scale 1 should apply HSA compact glossary and pitch defaults.", ready);

@@ -134,13 +134,13 @@ export interface RenderGlossaryOptions {
 
 export function renderGlossaryContent(text: string, dictionary = "", options: RenderGlossaryOptions = {}): string {
   const trimmed = text.trim();
-  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return escapeHtml(text);
+  if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return renderText(text);
 
   try {
     const parsed = JSON.parse(trimmed) as unknown;
-    return renderStructuredContent(parsed, "", dictionary, options) || escapeHtml(text);
+    return renderStructuredContent(parsed, "", dictionary, options) || renderText(text);
   } catch {
-    return escapeHtml(text);
+    return renderText(text);
   }
 }
 
@@ -154,25 +154,31 @@ export function scopeDictionaryCss(css: string, popupId: string): string {
   return scopeCssRules(cleaned, scope).trim();
 }
 
-function renderStructuredContent(value: unknown, parentTag = "", dictionary = "", options: RenderGlossaryOptions = {}): string {
-  if (typeof value === "string") return renderText(value);
+function renderStructuredContent(
+  value: unknown,
+  parentTag = "",
+  dictionary = "",
+  options: RenderGlossaryOptions = {},
+  language: string | null = null,
+): string {
+  if (typeof value === "string") return renderText(value, language);
   if (Array.isArray(value)) {
     if (value.every((item) => typeof item === "string") && value.length > 1 && parentTag !== "span") {
-      return `<ul class="glossary-list">${value.map((item) => `<li>${renderText(item)}</li>`).join("")}</ul>`;
+      return `<ul class="glossary-list">${value.map((item) => `<li>${renderText(item, language)}</li>`).join("")}</ul>`;
     }
 
     const items = value.map((item) => isStructuredContentWrapper(item) ? (item as { content?: unknown }).content : item);
     if (items.every((item) => isStructuredTag(item, "a")) && items.length > 1) {
-      return `<ul class="glossary-list">${items.map((item) => `<li>${renderStructuredContent(item, "", dictionary, options)}</li>`).join("")}</ul>`;
+      return `<ul class="glossary-list">${items.map((item) => `<li>${renderStructuredContent(item, "", dictionary, options, language)}</li>`).join("")}</ul>`;
     }
 
-    return value.map((item) => renderStructuredContent(item, parentTag, dictionary, options)).join("");
+    return value.map((item) => renderStructuredContent(item, parentTag, dictionary, options, language)).join("");
   }
   if (!value || typeof value !== "object") return "";
 
   const record = value as Record<string, unknown>;
   if (record.type === "structured-content") {
-    return `<span class="structured-content">${renderStructuredContent(record.content, "span", dictionary, options)}</span>`;
+    return `<span class="structured-content">${renderStructuredContent(record.content, "span", dictionary, options, language)}</span>`;
   }
 
   const tag = typeof record.tag === "string" ? record.tag.toLowerCase() : "";
@@ -180,11 +186,14 @@ function renderStructuredContent(value: unknown, parentTag = "", dictionary = ""
   const safeTag = safeStructuredTag(tag);
   if (safeTag === "br") return "<br>";
 
+  const explicitLanguage = typeof record.lang === "string" ? normalizedLanguage(record.lang) : null;
+  const nextLanguage = explicitLanguage ?? language;
   const content = renderStructuredContent(
     typeof record.content !== "undefined" ? record.content : record.text,
     safeTag,
     dictionary,
     options,
+    nextLanguage,
   );
   const attributes = structuredAttributes(record, safeTag);
   const html = `<${safeTag}${attributes}>${content}</${safeTag}>`;
@@ -222,8 +231,14 @@ function renderStructuredImage(record: Record<string, unknown>, dictionary: stri
   return `<span${dataAttrs.length ? ` ${dataAttrs.join(" ")}` : ""}><a class="gloss-image-link gloss-media-placeholder"${pathAttr}${dictionaryAttr}${titleAttr}${statusAttr}><span class="gloss-image-container"${gaijiStyle}>${image}</span></a></span>`;
 }
 
-function renderText(text: string): string {
-  return text.split(/\r?\n/).map(escapeHtml).join("<br>");
+function renderText(text: string, language: string | null = null): string {
+  return text.split(/\r?\n/).map((line) => {
+    const escaped = escapeHtml(line);
+    if (!line) return escaped;
+    const detected = normalizedLanguage(language) ?? languageFromText(line);
+    if (!detected) return escaped;
+    return `<span lang="${escapeAttribute(detected)}">${escaped}</span>`;
+  }).join("<br>");
 }
 
 function safeStructuredTag(tag: string): string {
@@ -431,6 +446,34 @@ function scopeCssRules(css: string, scope: string): string {
   }
   return output;
 }
+
+function normalizedLanguage(language: string | null | undefined): string | null {
+  if (!language) return null;
+  const normalized = language.trim().toLowerCase();
+  if (normalized.startsWith("ja")) return "ja";
+  if (normalized.startsWith("zh") || normalized.startsWith("yue")) return normalized;
+  return normalized || null;
+}
+
+function languageFromText(text: string): string | null {
+  if (/[ぁ-ゖァ-ヺｦ-ﾟ]/u.test(text)) return "ja";
+  if (/[\u3100-\u312f\u31a0-\u31bf]/u.test(text)) return "zh";
+  if (simplifiedOnlyCount(text) >= 2) return "zh";
+  if (/[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff々〆〤]/u.test(text)) return "ja";
+  return null;
+}
+
+function simplifiedOnlyCount(text: string): number {
+  let count = 0;
+  for (const char of text) {
+    if (SIMPLIFIED_ONLY_CHARS.has(char)) count += 1;
+  }
+  return count;
+}
+
+const SIMPLIFIED_ONLY_CHARS = new Set(Array.from(
+  "汉语国双译释义词条辞典书页页码号项旧归补修饰装门报认设让讲读过边这进还连选远对错长发丽乌乐乔习乡买乱争于亏云亚产亩亲亵亸亿仅从仓仪们价众优会伞伟传伤伦伪体余佣佥侠侣侥侦侧侨侩侪侬俣俦俨俩俪俭债倾偬偻偾偿傥傧储傩儿兑兖党兰关兴兹养兽冁内冈册写军农冯冲决况冻净凄准凉减凑凛凤凫凭凯击凿刍划刘则刚创删别刬刭刮制剂剐剑剥剧劝办务劢动励劲劳势勋勐勚匀匦匮区医华协单卖卢卤卫却厂厅历厉压厌厍厕厢厣厦厨厩厮县参叆叇双发变叙叠只台叶号叹叽吁后吓吕吗吣吨听启吴呐呒呓呕呖呗员呙呛呜咏咙咛咝咤响哑哒哓哔哕哗哙哜哝哟唛唝唠唡唢唤啧啬啭啮啰啴啸喷喽喾嗫嗳嘘嘤嘱噜噼嚣团园囱围囵国图圆圣圹场坏块坚坛坝坞坟坠垄垅垆垒垦垩垫垭垯垱垲垴埘埙埚埯堑堕塆墙壮声壳壶壸处备复够头夹夺奁奂奋奖奥妆妇妈妩妪妫姗姜娄娅娆娇娈娱娲娴婳婴婵婶媪嫒嫔嫱嬷孙学孪宁宝实宠审宪宫宽宾寝对寻导寿将尔尘尝尧尴尸尽层屃屉届属屡屦屿岁岂岖岗岘岙岚岛岭岳岽岿峃峄峡峣峤峥峦崂崃崭嵘嵚嵝巅巩巯币帅师帐帏帜带帧帮帱帻帼幂并广庄庆庐庑库应庙庞废庼廪开异弃张弥弪弯弹强归当录彟彦彻径徕忆忏忧忾怀态怂怃怄怅怆怜总怼怿恋恒恳恶恸恹恺恻恼恽悦悫悬悭悯惊惧惨惩惫惬惭惮惯愠愤愦愿慑懑懒懔戆戋戏戗战戬户扎扑执扩扪扫扬扰抚抛抟抠抡抢护报担拟拢拣拥拦拧拨择挂挚挛挜挝挞挟挠挡挢挣挤挥挦捞损捡换捣据捻掳掴掷掸掺掼揽揿搀搁搂搅携摄摅摆摇摈摊撄撑撵撷撸撺擞攒敌敛数斋斓斗斩断无旧时旷旸昙昼显晋晒晓晔晕晖暂暧术机杀杂权杆条来杨杩杰极构枞枢枣枥枧枨枪枫枭柜柠柽栀栅标栈栉栊栋栌栎栏树栖样栾桊桠桡桢档桤桥桦桧桨桩梦梼梾检棂椁椟椠椤椭楼榄榅榇榈榉槚槛槟槠横樯樱橥橱橹橼檩欢欤欧歼殁殇残殒殓殚殡殴毁毂毕毙毡毵氇气氢氩氲汇汉污汤汹沟没沣沤沥沦沧沨沩沪泞注泪泶泷泸泺泻泼泽泾洁洒洼浃浅浆浇浈浊测浍济浏浐浑浒浓浔浕涂涌涛涝涞涟涠涡涣涤润涧涨涩淀渊渌渍渎渐渑渔渖渗温湾湿溃溅溆滗滚滞滟滠满滢滤滥滦滨滩滪漓漤潆潇潋潍潜潴澜濑濒灏灭灯灵灾灿炀炉炖炜炝点炼炽烁烂烃烛烟烦烧烨烩烫烬热焕焖焘煴爱爷牍牦牵牺犊状犷犸犹狈狝狞独狭狮狯狰狱狲猃猎猕猡猪猫猬献獭玑玙玚玛玮环现玱玺珐珑珰珲琏琐琼瑶瑷璎瓒瓯电画畅畴疖疗疟疠疡疬疮疯疱疴痈痉痒痨痪痫瘅瘆瘗瘘瘪瘫瘾瘿癞癣皑皱皲盏盐监盖盗盘眍眦睁睐睑瞒瞩矫矶矾矿砀码砖砗砚砜砺砻砾础硁硕硖硗硙硚确硷碍碛碜碱礼祎祢祯祷祸禀禄禅离秃秆种积称秽秾稆税稣稳穑穷窃窍窑窜窝窥窦窭竖竞笃笋笔笕笺笼笾筑筚筛筜筝筹签简箓箦箧箨箩箪箫篑篮篱簖籁籴类籼粜粝粤粪粮糁糇紧絷纟纠纡红纣纤纥约级纨纩纪纫纬纭纯纰纱纲纳纵纶纷纸纹纺纽纾线绀绁绂练组绅细织终绉绊绋绌绍绎经绑绒结绕绗绘给绚络绝绞统绠绡绢绣绥绦继绩绪绫续绮绯绰绲绳维绵绶绷绸综绽绾绿缀缁缂缃缄缅缆缇缈缉缊缋缌缍缎缏缑缒缓缔缕编缗缘缙缚缛缜缝缟缠缡缢缣缤缥缦缧缨缩缪缫缬缭缮缯缰缱缲缳缴罂网罗罚罢罴羁羟羡翘耢耧耸耻聂职聍联聪肃肠肤肷肾肿胀胁胆胜胧胨胪胫胶脉脍脏脐脑脓脔脚脱脶脸腊腌腘腭腻腼腾膑臜舆舣舰舱舻艰艳艺节芈芗芜芦苁苇苈苋苌苍苎苏苧苹茎茏茑茔茕茧荆荐荙荚荛荜荞荟荠荡荣荤荥荦荧荨荩荪荫荬荭荮药莅莱莲莳莴莶获莸莹莺莼萝萤营萦萧萨葱蒇蒉蒋蒌蓝蓟蓠蓣蓥蓦蔑蔷蔹蔺蔼蕲蕴薮藓虏虑虚虫虬虮虽虾虿蚀蚁蚂蚕蚝蚬蛊蛎蛏蛮蛰蛱蛲蛳蛴蜕蜗蜡蝇蝈蝉蝎蝼蝾螀螨蟏衅衔补衬衮袄袅袆袜袭袯装裆裈裢裣裤裥褛褴襁见观规觅视觇览觉觊觋觌觎觏觐觑觞触觯訚誉誊讠计订讣认讥讦讧讨让讪讫训议讯记讲讳讴讵讶讷许讹论讼讽设访诀证诂诃评诅识诈诉诊诋诌词诎诏译诒诓诔试诗诘诙诚诛诜话诞诟诠诡询诣诤该详诧诨诩诫诬语诮误诰诱诲诳说诵请诸诺读诽课诿谀谁调谄谅谆谈谊谋谌谍谎谏谐谑谒谓谔谕谖谗谘谙谚谛谜谝谞谟谠谡谢谣谤谥谦谧谨谩谪谫谬谭谮谯谰谱谲谳谴谵谷豮贝贞负贡财责贤败账货质贩贪贫贬购贮贯贰贱贲贳贴贵贷贸费贺贻贼贽贾贿赀赁赂赃资赅赆赇赈赉赊赋赌赍赎赏赐赔赖赘赙赚赛赞赠赡赢赣赵赶趋趱趸跃跄跞践跷跸跹跻踊踌踪踬蹑蹒蹰蹿躏躜车轧轨轩轫转轭轮软轰轱轲轳轴轵轶轸轹轻轼载轾轿辁辂较辄辅辆辇辈辉辊辋辍辎辏辐辑输辔辕辖辗辘辙辚辞辩辫边辽达迁过迈运还这进远违连迟迩迳迹适选逊递逦逻遗遥邓邝邬邮邹邺邻郏郐郑郓郦郧郸酝酦酱酽酾酿释里鉴銮錾钅针钉钊钋钌钍钎钏钐钒钓钔钕钗钙钚钛钜钝钞钟钠钢钡钣钤钥钦钧钨钩钪钫钬钭钮钯钰钱钲钳钴钵钶钷钸钹钺钻钼钽钾钿铀铁铂铃铄铅铆铈铉铊铋铌铍铎铐铑铒铕铖铗铙铛铜铝铞铟铠铡铢铣铤铥铦铧铨铩铪铫铬铭铮铯铰铱铲铳铴铵银铷铸铹铺铻铼铽链铿销锁锂锅锈锉锋锌锍锎锏锐锑锒锓锔锕锖锗错锚锛锜锝锞锟锡锢锣锤锥锦锨锩锪锫锬锭键锯锰锱锲锴锵锶锷锸锹锻锼锾锿镀镁镂镇镉镌镍镎镏镐镑镒镓镔镖镗镘镙镚镜镝镞镟镡镢镤镥镦镧镨镩镪镫镬镭镯镰镱镲镳长门闩闪闫闭问闯闰闲间闵闷闸闹闺闻闼闽闾阀阁阂阅阆阈阉阊阋阌阍阎阏阐阑阒阔阕阖阗阙阚队阳阴阵阶际陆陇陈陉陕陧陨险随隐隶隽难雏雠雳雾霁霉静靥鞑鞒鞯韦韧韩韪韫韬韵页顶顷顸项顺须顼顽顾顿颀颁颂预颅领颇颈颉颊颌颍颏频颓颖颗题额颚颛颜颙颠颡颢颤颥颦风飏飐飑飒飓飔飕飖飘飙飚飞飨餍饣饥饧饨饩饪饫饬饭饮饯饰饱饲饳饴饵饶饷饸饹饺饻饼饽饿馁馄馅馆馈馊馋馍馏馐馑馒馓馔馕马驭驮驯驰驱驳驴驶驷驸驹驻驼驽驾驿骀骁骂骄骅骆骇骈骊验骎骏骐骑骒骓骖骗骘骚骛骜骝骟骠骡骢骣骤骥骧髅髋髌鬓魇鱼鱽鱾饿鲁鲂鲅鲆鲇鲈鲊鲋鲍鲎鲐鲑鲒鲔鲕鲚鲞鲟鲠鲡鲢鲣鲤鲥鲦鲧鲨鲩鲫鲭鲮鲰鲱鲲鲳鲴鲵鲶鲷鲸鲺鲻鲼鲽鲾鳃鳄鳅鳆鳇鳈鳉鳊鳋鳌鳍鳎鳏鳐鳓鳔鳕鳖鳗鳘鳙鳜鳝鳞鳟鳢鸟鸠鸡鸢鸣鸥鸦鸧鸨鸩鸪鸫鸬鸭鸯鸱鸲鸳鸵鸶鸷鸸鸹鸺鸻鸼鸽鸾鸿鹁鹂鹃鹄鹅鹆鹇鹈鹉鹊鹋鹌鹏鹐鹑鹒鹕鹗鹘鹚鹛鹜鹞鹟鹠鹡鹢鹣鹤鹥鹦鹧鹨鹩鹪鹫鹬鹭鹯鹰鹱鹳鹾麦麸黄黉黡黩黪黾鼋鼍鼗鼹齐齑齿龀龁龂龄龅龆龇龈龉龊龋龌龙龚龛龟",
+));
 
 function sanitizeDictionaryCssBody(body: string): string {
   return body

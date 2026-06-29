@@ -118,6 +118,11 @@
         { tag: "div", data: { class: "probe-japanese-prefix" }, content: "Aことは A" },
         { tag: "div", data: { class: "probe-japanese-quote" }, content: "って「ことと言いなさい」" },
         { tag: "div", data: { class: "probe-japanese-plain" }, content: "ことは純日文" },
+        { tag: "div", data: { class: "probe-sgkk-zh" }, lang: "zh", content: "\u4fee\u8865\u8863\u670d\u7834\u7efd\u3002" },
+        { tag: "div", data: { class: "probe-inferred-zh" }, content: "\u4fee\u8865\u88c5\u9970\u7834\u7efd" },
+        { tag: "div", data: { class: "probe-kanji-ja" }, content: "\u6f22\u5b57\u304b\u306a\u4ea4\u3058\u308a\u6587" },
+        { tag: "div", data: { class: "probe-ambiguous-han-ja" }, content: "\u6c49" },
+        { tag: "div", data: { class: "probe-dict-font" }, content: "dictionary font fixture" },
         {
           tag: "ul",
           content: [
@@ -623,6 +628,9 @@
           transform: scale(2);
           zoom: 2;
           background-image: url("https://example.invalid/bad.png");
+        }
+        [data-sc-class="probe-dict-font"] {
+          font-family: "Courier New", monospace;
         }
       `,
     };
