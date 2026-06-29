@@ -456,7 +456,7 @@
   .book-progress { height: 5px; min-width: 0; overflow: hidden; background: var(--app-border); border-radius: 999px; }
   .book-progress span { display: block; width: var(--progress); height: 100%; background: var(--app-primary); border-radius: inherit; }
   .book-percent { color: var(--app-muted); font-size: 13px; font-weight: 650; line-height: 1; }
-  .book-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-text); font-size: 15px; line-height: 1.35; }
+  .book-title { min-width: 0; height: 40px; display: -webkit-box; overflow: hidden; color: var(--app-text); font-size: 16px; font-weight: 400; line-height: 1.25; -webkit-box-orient: vertical; -webkit-line-clamp: 2; line-clamp: 2; }
   @media (max-width: 760px) {
     .bookshelf { grid-template-columns: 74px minmax(0, 1fr); }
     .sidebar { padding: 14px 8px; gap: 18px; align-items: center; }
