@@ -40,7 +40,7 @@ export function shortcutGroups(
   keyboardShortcutSettings: KeyboardShortcutSettings = defaultKeyboardShortcutSettings,
 ): readonly ShortcutGroup[] {
   const globalLookup = globalLookupSettings ?? {
-    enabled: true,
+    enabled: false,
     shortcut: defaultGlobalLookupShortcut,
   };
   const keyboard = resolvedKeyboardShortcutBindings(keyboardShortcutSettings);
