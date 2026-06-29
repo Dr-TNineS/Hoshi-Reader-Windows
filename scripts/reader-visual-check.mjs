@@ -169,6 +169,31 @@ async function keyboardShortcutState(page) {
   });
 }
 
+async function dispatchReaderKeyDown(page, init) {
+  await page.evaluate((eventInit) => {
+    window.dispatchEvent(new KeyboardEvent("keydown", {
+      bubbles: true,
+      cancelable: true,
+      key: eventInit.key,
+      code: eventInit.code,
+      ctrlKey: Boolean(eventInit.ctrlKey),
+      altKey: Boolean(eventInit.altKey),
+      shiftKey: Boolean(eventInit.shiftKey),
+      metaKey: Boolean(eventInit.metaKey),
+    }));
+  }, init);
+}
+
+async function setReaderShortcutPage(page, pageIndex) {
+  await page.evaluate((nextPageIndex) => {
+    const viewport = document.querySelector(".rv");
+    if (!(viewport instanceof HTMLElement)) throw new Error("Reader viewport not found.");
+    viewport.scrollTop = viewport.clientHeight * nextPageIndex;
+    viewport.dispatchEvent(new Event("scroll"));
+  }, pageIndex);
+  await waitForPageIndex(page, pageIndex);
+}
+
 async function waitForProbeChapter(page, chapterIndex) {
   await page.waitForFunction(
     (expected) => document.querySelector(".probe-state")?.getAttribute("data-chapter-index") === String(expected),
@@ -598,8 +623,34 @@ async function dispatchReaderPointerMove(page, point, shiftKey = false) {
   }, { x: point.x, y: point.y, shift: shiftKey });
 }
 
-async function verifyCustomReaderShortcuts(browser, origin) {
+async function verifyDefaultReaderMetaShortcuts(browser, origin) {
   const page = await browser.newPage({ viewport: { width: 900, height: 720 } });
+  await page.goto(`${origin}/?readerVisualProbe=1`);
+  await page.locator(".rv.ready").waitFor();
+
+  const beforeNext = await keyboardShortcutState(page);
+  await dispatchReaderKeyDown(page, { key: "ArrowLeft", code: "ArrowLeft", metaKey: true });
+  await page.waitForTimeout(80);
+  const afterNext = await keyboardShortcutState(page);
+  assert(
+    afterNext.chapter === "1",
+    "Default Meta+ArrowLeft should preserve legacy next-chapter compatibility.",
+    { beforeNext, afterNext },
+  );
+
+  await dispatchReaderKeyDown(page, { key: "ArrowRight", code: "ArrowRight", metaKey: true });
+  await page.waitForTimeout(80);
+  const afterPrevious = await keyboardShortcutState(page);
+  assert(
+    afterPrevious.chapter === "0",
+    "Default Meta+ArrowRight should preserve legacy previous-chapter compatibility.",
+    { afterNext, afterPrevious },
+  );
+
+  await page.close();
+}
+
+async function verifyCustomReaderOldDefaultsInactive(page, origin) {
   await page.goto(`${origin}/?readerVisualProbe=1&customShortcuts=reader`);
   await page.locator(".rv.ready").waitFor();
 
@@ -611,6 +662,52 @@ async function verifyCustomReaderShortcuts(browser, origin) {
     "Default ArrowLeft should not advance when next page is customized.",
     { before, afterOld },
   );
+
+  await setReaderShortcutPage(page, 1);
+  const beforeRight = await keyboardShortcutState(page);
+  await page.keyboard.press("ArrowRight");
+  const afterRight = await keyboardShortcutState(page);
+  assert(
+    afterRight.page === beforeRight.page && afterRight.chapter === beforeRight.chapter,
+    "Default ArrowRight should not move to the previous page when previous page is customized.",
+    { beforeRight, afterRight },
+  );
+
+  await page.keyboard.press("Control+ArrowLeft");
+  const afterCtrlNext = await keyboardShortcutState(page);
+  assert(
+    afterCtrlNext.chapter === beforeRight.chapter,
+    "Default Ctrl+ArrowLeft should not advance chapters when next chapter is customized.",
+    { beforeRight, afterCtrlNext },
+  );
+
+  await page.keyboard.press("Escape");
+  const afterEscape = await keyboardShortcutState(page);
+  assert(
+    afterEscape.backEvents === "0",
+    "Default Escape should not trigger reader close/back when close is customized.",
+    { afterEscape },
+  );
+
+  await page.goto(`${origin}/?readerVisualProbe=1&customShortcuts=reader&startChapter=1`);
+  await page.locator(".rv.ready").waitFor();
+  const beforeCtrlPrevious = await keyboardShortcutState(page);
+  await page.keyboard.press("Control+ArrowRight");
+  const afterCtrlPrevious = await keyboardShortcutState(page);
+  assert(
+    afterCtrlPrevious.chapter === beforeCtrlPrevious.chapter,
+    "Default Ctrl+ArrowRight should not move to the previous chapter when previous chapter is customized.",
+    { beforeCtrlPrevious, afterCtrlPrevious },
+  );
+}
+
+async function verifyCustomReaderShortcuts(browser, origin) {
+  const page = await browser.newPage({ viewport: { width: 900, height: 720 } });
+  await verifyCustomReaderOldDefaultsInactive(page, origin);
+
+  await page.goto(`${origin}/?readerVisualProbe=1&customShortcuts=reader`);
+  await page.locator(".rv.ready").waitFor();
+  const before = await keyboardShortcutState(page);
 
   await page.keyboard.press("n");
   const afterNext = await keyboardShortcutState(page);
@@ -627,6 +724,8 @@ async function verifyCustomReaderShortcuts(browser, origin) {
   await page.keyboard.press("q");
   const afterClose = await keyboardShortcutState(page);
   assert(afterClose.backEvents === "1", "Custom Q shortcut should trigger reader close/back behavior.", afterClose);
+
+  await page.close();
 }
 
 async function main() {
@@ -1208,6 +1307,7 @@ async function main() {
       darkCue,
     );
 
+    await verifyDefaultReaderMetaShortcuts(browser, origin);
     await verifyCustomReaderShortcuts(browser, origin);
 
     console.log(JSON.stringify({ desktop, narrow, lightCue, darkCue }, null, 2));
