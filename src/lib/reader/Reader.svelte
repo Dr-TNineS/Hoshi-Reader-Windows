@@ -3,6 +3,11 @@
   import { countChars, createWalker, getTotalChars, isVertical, rawOffsetForReaderChars, readerCharOffsetForRange, readerRangeForOffsets, textEndOffsets } from "../reader";
   import type { ReaderAppearancePalette } from "../appearance";
   import {
+    defaultKeyboardShortcutSettings,
+    keyboardShortcutActionForEvent,
+    type KeyboardShortcutSettings,
+  } from "../keyboard-shortcuts";
+  import {
     clearLookupHighlight,
     READER_LOOKUP_HIGHLIGHT,
     READER_SASAYAKI_HIGHLIGHT,
@@ -29,6 +34,7 @@
     sasayakiCueSignal = 0,
     scanLength = 16,
     scanNonJapaneseText = true,
+    keyboardShortcutSettings = defaultKeyboardShortcutSettings as KeyboardShortcutSettings,
     onProgressChange = (_progress: ReaderProgress) => {},
     onSelectionChange = (_selection: ReaderSelection | null) => {},
   } = $props();
@@ -1190,26 +1196,37 @@
   }
 
   function handleKey(e: KeyboardEvent) {
-    const ctrl = e.ctrlKey || e.metaKey;
     if (e.key === "Shift") {
       const wasShiftPressed = shiftKeyPressed;
       shiftKeyPressed = true;
       if (!wasShiftPressed && lastPointer && shouldScheduleShiftHoverLookup(lastPointer)) {
         scheduleShiftHoverLookup();
       }
-    } else if (ctrl && e.key === "ArrowLeft") {
+      return;
+    }
+
+    const action = keyboardShortcutActionForEvent(keyboardShortcutSettings, e, [
+      "reader-next-chapter",
+      "reader-previous-chapter",
+      "reader-previous-page",
+      "reader-next-page",
+      "reader-close",
+    ]);
+    if (!action) return;
+
+    if (action === "reader-next-chapter") {
       e.preventDefault();
       onNextChapter();
-    } else if (ctrl && e.key === "ArrowRight") {
+    } else if (action === "reader-previous-chapter") {
       e.preventDefault();
       onPrevChapterDirect();
-    } else if (e.key === "ArrowRight") {
+    } else if (action === "reader-previous-page") {
       e.preventDefault();
       prevPage();
-    } else if (e.key === "ArrowLeft") {
+    } else if (action === "reader-next-page") {
       e.preventDefault();
       nextPage();
-    } else if (e.key === "Escape") {
+    } else if (action === "reader-close") {
       if (hasActiveSelection) {
         e.preventDefault();
         clearSelection();
