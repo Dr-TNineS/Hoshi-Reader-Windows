@@ -1044,6 +1044,39 @@ async function main() {
     assert(!narrow.horizontalOverflow, "Reader fixture should not create horizontal overflow in a narrow window.", narrow);
     assert(narrow.totalPages >= desktop.totalPages, "Narrow reader should keep a paginated layout.", { desktop, narrow });
 
+    await page.goto(probeUrl({ statisticsControls: "1" }));
+    await page.getByRole("button", { name: "Stats", exact: true }).click();
+    await page.locator("#reader-statistics").waitFor({ state: "visible" });
+    const statisticsUi = await page.evaluate(() => {
+      const panel = document.querySelector("#reader-statistics");
+      const trigger = document.querySelector("#reader-statistics-trigger");
+      const bodyWidth = document.documentElement.scrollWidth;
+      return {
+        panelVisible: panel instanceof HTMLElement && panel.offsetHeight > 0,
+        triggerExpanded: trigger?.getAttribute("aria-expanded"),
+        text: panel?.textContent ?? "",
+        bodyWidth,
+        viewportWidth: window.innerWidth,
+      };
+    });
+    assert(
+      statisticsUi.panelVisible &&
+        statisticsUi.triggerExpanded === "true" &&
+        statisticsUi.text.includes("Session") &&
+        statisticsUi.text.includes("Time to finish book"),
+      "Reader statistics controls should open the HSA-style statistics panel.",
+      statisticsUi,
+    );
+    assert(statisticsUi.bodyWidth <= statisticsUi.viewportWidth, "Reader statistics controls should fit in a narrow window.", statisticsUi);
+
+    await page.goto(probeUrl({ statisticsControls: "1", statisticsText: "3,600 chars/h" }));
+    const speedOnlyText = await page.locator(".statistics-text").textContent();
+    assert(speedOnlyText === "3,600 chars/h", "Reader statistics footer should support speed-only display.", { speedOnlyText });
+
+    await page.goto(probeUrl({ statisticsControls: "1", statisticsText: "0:01" }));
+    const timeOnlyText = await page.locator(".statistics-text").textContent();
+    assert(timeOnlyText === "0:01", "Reader statistics footer should support time-only display.", { timeOnlyText });
+
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto(probeUrl({ theme: "light" }));
     const lightTheme = await readerThemeState(page);

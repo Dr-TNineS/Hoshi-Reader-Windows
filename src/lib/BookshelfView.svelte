@@ -46,6 +46,7 @@
     onSetReaderInterface,
     onSetReaderAppearanceColor,
     onSetReopenLastBookOnStartup,
+    onAdvancedSettingsChange,
     onSetLookupPopupWidth,
     onSetLookupPopupHeight,
     onSetLookupPopupScale,
@@ -115,6 +116,7 @@
     onSetReaderInterface: (theme: ReaderInterfaceTheme) => void;
     onSetReaderAppearanceColor: (field: ReaderAppearanceColorField, color: string) => void;
     onSetReopenLastBookOnStartup: (enabled: boolean) => void;
+    onAdvancedSettingsChange: (update: Partial<AdvancedSettings>) => void;
     onSetLookupPopupWidth: (width: number) => void;
     onSetLookupPopupHeight: (height: number) => void;
     onSetLookupPopupScale: (scale: number) => void;
@@ -398,6 +400,7 @@
       <AdvancedPanel
         settings={advancedSettings}
         onReopenLastBookOnStartupChange={onSetReopenLastBookOnStartup}
+        {onAdvancedSettingsChange}
       />
     {:else if activePanel === "shortcuts"}
       <ShortcutsPanel />

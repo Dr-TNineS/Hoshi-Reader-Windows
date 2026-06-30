@@ -22,7 +22,14 @@
       customTextColor: "#ABCDEF",
     }),
     saveReaderAppearance: (appearance) => savedAppearances = [...savedAppearances, appearance],
-    loadAdvancedSettings: () => ({ reopenLastBookOnStartup: true }),
+    loadAdvancedSettings: () => ({
+      reopenLastBookOnStartup: true,
+      enableReadingStatistics: false,
+      readingStatisticsAutostartMode: "off",
+      showReadingStatisticsToggle: false,
+      showReadingSpeed: false,
+      showReadingTime: false,
+    }),
     saveAdvancedSettings: (settings) => savedAdvancedSettings = [...savedAdvancedSettings, settings],
     loadLookupPopupSettings: () => ({ width: 320, height: 250, scale: 1 }),
     saveLookupPopupSettings: (settings) => savedLookupPopupSettings = [...savedLookupPopupSettings, settings],
@@ -48,6 +55,15 @@
   <button onclick={() => settings.setReopenLastBookOnStartup(!settings.advancedSettings.reopenLastBookOnStartup)}>
     Toggle startup
   </button>
+  <button onclick={() => settings.updateAdvancedSettings({ enableReadingStatistics: true })}>
+    Enable statistics
+  </button>
+  <button onclick={() => settings.updateAdvancedSettings({ readingStatisticsAutostartMode: "pageTurn" })}>
+    Page turn statistics
+  </button>
+  <button onclick={() => settings.updateAdvancedSettings({ showReadingSpeed: false, showReadingTime: false })}>
+    Hide statistics text
+  </button>
   <button onclick={() => settings.updateDictionarySettings({ maxResults: 88, scanLength: 0, compactGlossaries: false })}>
     Clamp dictionary
   </button>
@@ -64,10 +80,15 @@
     data-sasayaki-dark-text={settings.readerAppearance.sasayakiDarkTextColor}
     data-sasayaki-dark-background={settings.readerAppearance.sasayakiDarkBackgroundColor}
     data-reopen={settings.advancedSettings.reopenLastBookOnStartup}
+    data-statistics-enabled={settings.advancedSettings.enableReadingStatistics}
+    data-statistics-autostart={settings.advancedSettings.readingStatisticsAutostartMode}
+    data-statistics-toggle={settings.advancedSettings.showReadingStatisticsToggle}
+    data-statistics-speed={settings.advancedSettings.showReadingSpeed}
+    data-statistics-time={settings.advancedSettings.showReadingTime}
     data-appearance-vars={settings.appearanceVars}
     data-saved-appearances={savedAppearances.map((appearance) => appearance.theme).join(",")}
     data-saved-appearance-json={JSON.stringify(savedAppearances)}
-    data-saved-advanced={savedAdvancedSettings.map((advanced) => advanced.reopenLastBookOnStartup).join(",")}
+    data-saved-advanced={savedAdvancedSettings.map((advanced) => `${advanced.reopenLastBookOnStartup}:${advanced.enableReadingStatistics}:${advanced.readingStatisticsAutostartMode}:${advanced.showReadingStatisticsToggle}:${advanced.showReadingSpeed}:${advanced.showReadingTime}`).join(",")}
     data-popup-width={settings.lookupPopupSettings.width}
     data-popup-height={settings.lookupPopupSettings.height}
     data-popup-scale={settings.lookupPopupSettings.scale}

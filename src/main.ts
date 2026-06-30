@@ -7,6 +7,7 @@ import DictionarySearchProbe from "./lib/DictionarySearchProbe.svelte";
 import LookupPopupProbe from "./lib/LookupPopupProbe.svelte";
 import LookupPerformanceProbe from "./lib/LookupPerformanceProbe.svelte";
 import ReaderVisualProbe from "./lib/reader/ReaderVisualProbe.svelte";
+import ReadingStatisticsProbe from "./lib/ReadingStatisticsProbe.svelte";
 import ReaderTocProbe from "./lib/ReaderTocProbe.svelte";
 import SettingsStateProbe from "./lib/SettingsStateProbe.svelte";
 import SasayakiPlaybackProbe from "./lib/SasayakiPlaybackProbe.svelte";
@@ -15,6 +16,8 @@ import "./lib/styles/tokens.css";
 const params = new URLSearchParams(window.location.search);
 const Component = params.has("readerVisualProbe")
   ? ReaderVisualProbe
+  : params.has("readingStatisticsProbe")
+    ? ReadingStatisticsProbe
   : params.has("sasayakiPlaybackProbe")
     ? SasayakiPlaybackProbe
   : params.has("lookupPerformanceProbe")

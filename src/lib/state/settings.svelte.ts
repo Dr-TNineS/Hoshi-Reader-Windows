@@ -96,6 +96,24 @@ export function createSettingsState(persistence: SettingsPersistence = browserSe
     persistence.saveAdvancedSettings(advancedSettings);
   }
 
+  function updateAdvancedSettings(update: Partial<AdvancedSettings>) {
+    const enablingStatistics = update.enableReadingStatistics === true && !advancedSettings.enableReadingStatistics;
+    advancedSettings = {
+      ...advancedSettings,
+      ...update,
+      showReadingStatisticsToggle: enablingStatistics
+        ? true
+        : update.showReadingStatisticsToggle ?? advancedSettings.showReadingStatisticsToggle,
+      showReadingSpeed: enablingStatistics
+        ? true
+        : update.showReadingSpeed ?? advancedSettings.showReadingSpeed,
+      showReadingTime: enablingStatistics
+        ? true
+        : update.showReadingTime ?? advancedSettings.showReadingTime,
+    };
+    persistence.saveAdvancedSettings(advancedSettings);
+  }
+
   function updateLookupPopupSettings(update: Partial<LookupPopupSettings>) {
     lookupPopupSettings = normalizeLookupPopupSettings({ ...lookupPopupSettings, ...update });
     persistence.saveLookupPopupSettings(lookupPopupSettings);
@@ -130,6 +148,7 @@ export function createSettingsState(persistence: SettingsPersistence = browserSe
     setReaderInterface,
     setReaderAppearanceColor,
     setReopenLastBookOnStartup,
+    updateAdvancedSettings,
     setLookupPopupWidth,
     setLookupPopupHeight,
     setLookupPopupScale,

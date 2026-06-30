@@ -5,18 +5,32 @@
     onToggleToc,
     onBackToShelf,
     onToggleSasayaki = () => {},
+    onToggleStatisticsPanel = () => {},
+    onToggleStatisticsTracking = () => {},
     tocOpen = false,
     sasayakiOpen = false,
     sasayakiAvailable = false,
+    statisticsOpen = false,
+    statisticsEnabled = false,
+    statisticsTracking = false,
+    showStatisticsToggle = false,
+    statisticsText = "",
   }: {
     onPrevChapter: () => void;
     onNextChapter: () => void;
     onToggleToc: () => void;
     onBackToShelf: () => void;
     onToggleSasayaki?: () => void;
+    onToggleStatisticsPanel?: () => void;
+    onToggleStatisticsTracking?: () => void;
     tocOpen?: boolean;
     sasayakiOpen?: boolean;
     sasayakiAvailable?: boolean;
+    statisticsOpen?: boolean;
+    statisticsEnabled?: boolean;
+    statisticsTracking?: boolean;
+    showStatisticsToggle?: boolean;
+    statisticsText?: string;
   } = $props();
 </script>
 
@@ -36,6 +50,25 @@
     class:available={sasayakiAvailable}
     onclick={onToggleSasayaki}
   >Audio</button>
+  {#if statisticsEnabled}
+    <button
+      id="reader-statistics-trigger"
+      aria-expanded={statisticsOpen}
+      aria-controls="reader-statistics"
+      class:available={statisticsTracking}
+      onclick={onToggleStatisticsPanel}
+    >Stats</button>
+    {#if showStatisticsToggle}
+      <button
+        aria-label={statisticsTracking ? "Pause reading statistics" : "Start reading statistics"}
+        class:available={statisticsTracking}
+        onclick={onToggleStatisticsTracking}
+      >{statisticsTracking ? "Pause" : "Start"}</button>
+    {/if}
+    {#if statisticsText}
+      <span class="statistics-text">{statisticsText}</span>
+    {/if}
+  {/if}
   <button onclick={onBackToShelf}>Esc</button>
 </div>
 
@@ -44,4 +77,10 @@
   .ctrls button { padding: 4px 10px; background: var(--app-control); color: var(--app-text); border: 1px solid var(--app-border); border-radius: 3px; cursor: pointer; font-size: 12px; }
   .ctrls button:hover { background: var(--app-control-hover); }
   .ctrls button.available { border-color: var(--app-primary); }
+  .statistics-text { max-width: min(34vw, 260px); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--app-muted); font-size: 12px; font-variant-numeric: tabular-nums; }
+  @media (max-width: 560px) {
+    .ctrls { justify-content: flex-start; overflow-x: auto; }
+    .ctrls button { flex: 0 0 auto; }
+    .statistics-text { flex: 0 0 auto; max-width: 180px; }
+  }
 </style>
