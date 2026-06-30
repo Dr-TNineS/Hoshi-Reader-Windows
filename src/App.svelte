@@ -21,8 +21,11 @@
   import ReaderControls from "./lib/ReaderControls.svelte";
   import SasayakiPlayerPanel from "./lib/SasayakiPlayerPanel.svelte";
   import {
+    applySasayakiAudioRate,
     clampPlaybackTime,
     cuePresentationAtTime,
+    mergeSasayakiPlaybackSaveResult,
+    normalizeSasayakiRate,
     sasayakiSkipTarget,
     shouldAutoPauseSasayaki,
     shouldCommitPlaybackTime,
@@ -778,6 +781,10 @@
     });
   }
 
+  $effect(() => {
+    applySasayakiAudioRate(sasayakiAudio, sasayakiPlayback?.rate);
+  });
+
   function currentSasayakiRestorePending(): SasayakiPlaybackRestorePending | null {
     const pending = sasayakiPendingRestore;
     const sessionPath = sasayakiPlayback?.audioPath ?? null;
@@ -1084,6 +1091,7 @@
         duration: sasayakiDuration,
       });
       const restored = clampPlaybackTime(restorePosition, sasayakiDuration);
+      applySasayakiAudioRate(audio, sasayakiPlayback?.rate);
       audio.currentTime = restored;
       sasayakiCurrentTime = restored;
       sasayakiLoadedAudioPath = path;
@@ -1279,7 +1287,7 @@
         });
         return true;
       }
-      sasayakiPlayback = { ...saved, lastPosition: snapshot.lastPosition };
+      sasayakiPlayback = mergeSasayakiPlaybackSaveResult(sasayakiPlayback, saved, snapshot.lastPosition);
       if (!sasayakiAudio || sasayakiAudio.paused) sasayakiCurrentTime = snapshot.lastPosition;
       sasayakiLastPersistedSecond = Math.floor(Math.max(0, snapshot.lastPosition));
       recordSasayakiPersistence("save.success", {
@@ -1360,6 +1368,7 @@
     }
     const resolvedAudio = await ensureSasayakiAudio();
     if (!resolvedAudio) return;
+    applySasayakiAudioRate(resolvedAudio, sasayakiPlayback?.rate);
     sasayakiPlaybackError = "";
     try {
       await resolvedAudio.play();
@@ -1414,9 +1423,9 @@
 
   function setSasayakiRate(rate: number) {
     if (!sasayakiPlayback) return;
-    const normalized = Math.max(0.5, Math.min(2, rate));
+    const normalized = normalizeSasayakiRate(rate);
     sasayakiPlayback = { ...sasayakiPlayback, rate: normalized };
-    if (sasayakiAudio) sasayakiAudio.playbackRate = normalized;
+    applySasayakiAudioRate(sasayakiAudio, normalized);
     scheduleSasayakiPlaybackSave(false, "rate");
   }
 

@@ -1,6 +1,8 @@
-import type { SasayakiPlaybackCue, SasayakiSkipAction } from "./types";
+import type { SasayakiPlaybackCue, SasayakiPlaybackSession, SasayakiSkipAction } from "./types";
 
 export const SASAYAKI_TIME_UI_INTERVAL_MS = 250;
+export const SASAYAKI_MIN_RATE = 0.5;
+export const SASAYAKI_MAX_RATE = 2;
 
 export function clampPlaybackTime(value: number, duration: number): number {
   const safe = Number.isFinite(value) ? Math.max(0, value) : 0;
@@ -28,6 +30,37 @@ export function shouldPersistPlaybackSecond(
   if (!Number.isFinite(currentTime) || currentTime < 0) return false;
   if (force) return true;
   return Math.floor(currentTime) !== lastPersistedSecond;
+}
+
+export function normalizeSasayakiRate(rate: number): number {
+  return Number.isFinite(rate)
+    ? Math.max(SASAYAKI_MIN_RATE, Math.min(SASAYAKI_MAX_RATE, rate))
+    : 1;
+}
+
+export function applySasayakiAudioRate(audio: HTMLMediaElement | null, rate: number | null | undefined): number | null {
+  if (!audio || rate === null || rate === undefined) return null;
+  const normalized = normalizeSasayakiRate(rate);
+  audio.defaultPlaybackRate = normalized;
+  audio.playbackRate = normalized;
+  return normalized;
+}
+
+export function mergeSasayakiPlaybackSaveResult(
+  current: SasayakiPlaybackSession | null,
+  saved: SasayakiPlaybackSession,
+  lastPosition: number,
+): SasayakiPlaybackSession {
+  if (!current) return { ...saved, lastPosition };
+  const sameAudioSource = current.audioPath === saved.audioPath
+    && current.audioFileName === saved.audioFileName
+    && current.audioStorage === saved.audioStorage;
+  return {
+    ...current,
+    configured: saved.configured,
+    audioAvailable: sameAudioSource ? saved.audioAvailable : current.audioAvailable,
+    lastPosition,
+  };
 }
 
 export function nextCueTime(cues: SasayakiPlaybackCue[], currentTime: number, delay: number): number | null {

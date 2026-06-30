@@ -51,6 +51,8 @@ async function presentation(page) {
     chapterToLoad: await state.getAttribute("data-chapter-to-load"),
     playing: await state.getAttribute("data-playing"),
     audioElement: await state.getAttribute("data-audio-element"),
+    audioRate: await state.getAttribute("data-audio-rate"),
+    sessionRate: await state.getAttribute("data-session-rate"),
     audioTimeCommits: await state.getAttribute("data-audio-time-commits"),
     repaintSentinel: await state.getAttribute("data-repaint-sentinel"),
     wordCoordinationActive: await state.getAttribute("data-word-coordination-active"),
@@ -95,6 +97,12 @@ async function main() {
     assert((await panel.textContent())?.includes("星の音.wav"), "Playback should show the restored audio source.");
     assert((await panel.textContent())?.includes("0:12") && (await panel.textContent())?.includes("2:00"), "Playback should show restored progress and duration.");
     assert((await presentation(page)).audioElement === "true", "Playback probe should mount a controlled audio element.");
+    await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-audio-rate") === "1.25");
+    assert(
+      (await presentation(page)).audioRate === "1.25",
+      "Restored Sasayaki playback should apply the saved speed to the audio element before playback starts.",
+      await presentation(page),
+    );
     await panel.getByRole("button", { name: "Play Sasayaki", exact: true }).click();
     await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-playing") === "true");
     await page.getByRole("button", { name: "Probe throttled audio tick", exact: true }).dispatchEvent("click");
@@ -192,6 +200,15 @@ async function main() {
     assert(
       await events(page) === "play,audio-throttled,audio-time:12.30,lookup-pause,lookup-resume,word-pause,word-resume,word-pause,word-pause,word-resume,word-duck:0.25,word-volume:1,word-mix,pause,previous:5.25,next:15.25,skip:-10,skip:10,rate:1.5,delay:-0.5,autoScroll:false,autoPause:false,skipAction:seconds15,next:30.25,play,previous:15.25,next:30.25",
       "Playback controls and keyboard shortcuts should emit stable lifecycle, cue/seconds skip, rate, delay, and coordination settings.",
+    );
+    await panel.getByLabel("Sasayaki playback speed").fill("1.6");
+    await page.waitForFunction(() => document.querySelector(".probe-state")?.getAttribute("data-audio-rate") === "1.60");
+    await page.getByRole("button", { name: "Probe stale Sasayaki rate save", exact: true }).dispatchEvent("click");
+    const staleRate = await presentation(page);
+    assert(
+      staleRate.sessionRate === "1.60" && staleRate.audioRate === "1.60",
+      "A stale Sasayaki save response should not pull the speed slider or audio rate back to an older value.",
+      staleRate,
     );
     const wideOverflow = await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth);
     assert(!wideOverflow, "Wide playback panel should not overflow horizontally.");

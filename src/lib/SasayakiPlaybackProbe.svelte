@@ -2,7 +2,9 @@
   import ReaderControls from "./ReaderControls.svelte";
   import SasayakiPlayerPanel from "./SasayakiPlayerPanel.svelte";
   import {
+    applySasayakiAudioRate,
     cuePresentationAtTime,
+    mergeSasayakiPlaybackSaveResult,
     sasayakiSkipTarget,
     shouldAutoPauseSasayaki,
     shouldCommitPlaybackTime,
@@ -24,6 +26,7 @@
   let pausedByLookup = $state(false);
   let chapterIndex = $state(0);
   let audioEl = $state<HTMLAudioElement | null>(null);
+  let appliedAudioRate = $state(1);
   let probeNow = 1000;
   let lastCommittedAt = 1000;
   let audioTimeCommits = $state(0);
@@ -74,6 +77,11 @@
     session.autoScroll,
     hasPlayedOnce,
   ));
+
+  $effect(() => {
+    const applied = applySasayakiAudioRate(audioEl, session.rate);
+    if (applied !== null) appliedAudioRate = applied;
+  });
 
   function probeAudioTimeUpdate(delta: number, elapsedMs: number) {
     if (!audioEl) return;
@@ -178,6 +186,16 @@
     }
     recordProbeTrace("save.start", staleSnapshot.runId, staleSnapshot.position);
     recordProbeTrace("save.success", staleSnapshot.runId, staleSnapshot.position);
+  }
+
+  function probeStaleRateSave() {
+    const staleSavedSession = {
+      ...session,
+      lastPosition: currentTime,
+      rate: 1.5,
+    };
+    session = mergeSasayakiPlaybackSaveResult(session, staleSavedSession, currentTime);
+    events = [...events, `stale-rate:${session.rate}`];
   }
 
   function appendRestoreTrace(event: string, position: number) {
@@ -369,6 +387,11 @@
   >Stale save trace</button>
   <button
     class="probe-action"
+    aria-label="Probe stale Sasayaki rate save"
+    onclick={probeStaleRateSave}
+  >Stale rate save</button>
+  <button
+    class="probe-action"
     aria-label="Probe pre-metadata restore start"
     onclick={probeStartPreMetadataRestore}
   >Pre-metadata restore</button>
@@ -544,6 +567,8 @@
     data-chapter-to-load={presentation.chapterToLoad ?? ""}
     data-chapter-index={chapterIndex}
     data-audio-element={Boolean(audioEl)}
+    data-audio-rate={audioEl ? appliedAudioRate.toFixed(2) : ""}
+    data-session-rate={session.rate.toFixed(2)}
     data-audio-time-commits={audioTimeCommits}
     data-repaint-sentinel={repaintSentinel}
     data-word-coordination-active={Boolean(wordAudioCoordination)}
