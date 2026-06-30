@@ -112,3 +112,24 @@ visual check when the behavior cannot be fully verified in the probe.
 `npm run package` is a packaging validation, not a default check. Run it only
 when the user requests packaging, a task affects packaging/release output, or a
 feature plan explicitly requires package validation.
+
+Release packages that must support the native hoshidicts backend must be built
+from the VS 2022 x64 Native Tools environment, for example the "x64 Native
+Tools Command Prompt for VS 2022" shortcut. Before packaging from a fresh
+worktree, initialize the backend submodule and its nested dependencies:
+
+```text
+git submodule update --init --recursive third_party/hoshidicts
+```
+
+If a package or release target was already built before CMake, MSVC, Ninja, or
+`third_party/hoshidicts` were available, clean the Rust target before rebuilding
+so the disabled-backend build script result is not reused:
+
+```text
+cargo clean --manifest-path src-tauri/Cargo.toml
+npm run package
+```
+
+Do not ship a release package whose build output says `hoshidicts backend
+disabled`; that package cannot use the native dictionary lookup backend.

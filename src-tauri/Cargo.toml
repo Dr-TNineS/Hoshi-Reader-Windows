@@ -1,6 +1,6 @@
 [package]
 name = "hoshi-reader-windows"
-version = "0.1.0"
+version = "0.2.0"
 description = "Hoshi Reader Windows - EPUB reader with dictionary lookup"
 authors = ["you"]
 license = ""
