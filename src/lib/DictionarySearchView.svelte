@@ -44,6 +44,8 @@
     popupSettings = defaultLookupPopupSettings,
     ankiSettings = null,
     active = true,
+    externalQuery = "",
+    externalQuerySignal = 0,
   }: {
     searchState: DictionarySearchState;
     actions: DictionarySearchActions;
@@ -51,12 +53,15 @@
     popupSettings?: LookupPopupSettings;
     ankiSettings?: AnkiSettings | null;
     active?: boolean;
+    externalQuery?: string;
+    externalQuerySignal?: number;
   } = $props();
 
   const rootPopupId = "dictionary-search-root";
   let searchInput: HTMLInputElement | null = null;
   let pageShell: HTMLElement | null = null;
   let bounds = $state<{ left: number; top: number; right: number; bottom: number } | null>(null);
+  let lastExternalQuerySignal = -1;
 
   function syncBounds() {
     if (!pageShell) return;
@@ -75,6 +80,16 @@
     if (!active) return;
     searchState.focusSignal;
     focusSearch();
+  });
+
+  $effect(() => {
+    if (!active) return;
+    if (externalQuerySignal === lastExternalQuerySignal) return;
+    lastExternalQuerySignal = externalQuerySignal;
+    const text = externalQuery.trim();
+    if (!text) return;
+    searchState.query = text;
+    void submitSearch();
   });
 
   function rootResultsScrollTop(): number {

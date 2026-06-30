@@ -1,3 +1,5 @@
+import { defaultGlobalLookupShortcut, type GlobalLookupSettings } from "./global-lookup-settings";
+
 export type ShortcutBinding = {
   tokens: readonly string[];
 };
@@ -15,7 +17,7 @@ export type ShortcutGroup = {
   actions: readonly ShortcutAction[];
 };
 
-export const shortcutGroups: readonly ShortcutGroup[] = [
+const baseShortcutGroups: readonly ShortcutGroup[] = [
   {
     id: "reader",
     label: "Reader",
@@ -85,3 +87,27 @@ export const shortcutGroups: readonly ShortcutGroup[] = [
     ],
   },
 ];
+
+export function shortcutGroups(globalLookupSettings?: GlobalLookupSettings | null): readonly ShortcutGroup[] {
+  const globalLookup = globalLookupSettings ?? {
+    enabled: true,
+    shortcut: defaultGlobalLookupShortcut,
+  };
+  return [
+    {
+      id: "global",
+      label: "Global",
+      actions: [
+        {
+          id: "global-selected-text-lookup",
+          label: "Look up selected text",
+          detail: globalLookup.enabled
+            ? "Works in Windows apps that expose selected text through UI Automation."
+            : "Disabled in Advanced settings.",
+          bindings: [{ tokens: globalLookup.shortcut.displayLabel.split("+").map((token) => token.trim()) }],
+        },
+      ],
+    },
+    ...baseShortcutGroups,
+  ];
+}

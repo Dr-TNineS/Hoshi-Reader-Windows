@@ -1,11 +1,20 @@
 <script lang="ts">
+  import type { GlobalLookupSettings } from "./global-lookup-settings";
   import { shortcutGroups } from "./shortcuts";
+
+  let {
+    globalLookupSettings = null,
+  }: {
+    globalLookupSettings?: GlobalLookupSettings | null;
+  } = $props();
+
+  const groups = $derived(shortcutGroups(globalLookupSettings));
 </script>
 
 <section class="shortcuts-panel" aria-label="Keyboard shortcuts">
   <p class="shortcuts-summary">Current keyboard and mouse shortcuts, grouped by feature.</p>
 
-  {#each shortcutGroups as group}
+  {#each groups as group}
     <section class="shortcut-group" aria-labelledby={`shortcut-group-${group.id}`}>
       <h2 id={`shortcut-group-${group.id}`}>{group.label}</h2>
       <div class="shortcut-card">
