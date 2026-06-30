@@ -74,6 +74,31 @@ async function presentation(page) {
   };
 }
 
+async function verifyCustomSasayakiShortcuts(browser, origin) {
+  const page = await browser.newPage({ viewport: { width: 900, height: 760 } });
+  await page.goto(`${origin}/?sasayakiPlaybackProbe=1&customShortcuts=sasayaki`);
+  await page.locator(".probe-state").waitFor();
+
+  await page.keyboard.press("p");
+  await page.keyboard.press("[");
+  await page.keyboard.press("]");
+  assert(await events(page) === "", "Default Sasayaki keys should not fire when custom bindings are active.");
+
+  await page.keyboard.press("t");
+  await page.keyboard.press(",");
+  await page.keyboard.press(".");
+  assert(await events(page) === "play,previous:5.25,next:15.25", "Custom Sasayaki keys should drive playback and skip actions.");
+
+  const panel = page.getByRole("region", { name: "Sasayaki playback", exact: true });
+  await page.getByRole("button", { name: "Audio", exact: true }).click();
+  await panel.getByLabel("Sasayaki playback speed").focus();
+  const beforeFocused = await events(page);
+  await page.keyboard.press("t");
+  assert(await events(page) === beforeFocused, "Custom Sasayaki shortcuts should not fire from focused playback controls.");
+
+  await page.close();
+}
+
 async function main() {
   const vite = spawn(
     process.platform === "win32" ? "cmd.exe" : "npm",
@@ -301,6 +326,8 @@ async function main() {
       "Sasayaki restore trace should expose the pre-metadata skip, guarded stop sample, and metadata restore.",
       lifecycle,
     );
+
+    await verifyCustomSasayakiShortcuts(browser, origin);
 
     console.log(JSON.stringify({ events: await events(page), wideOverflow, narrowOverflow }, null, 2));
   } finally {

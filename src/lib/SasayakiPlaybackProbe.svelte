@@ -16,7 +16,23 @@
     endWordAudioCoordination,
     type WordAudioCoordinationState,
   } from "./word-audio-coordination";
+  import {
+    defaultKeyboardShortcutSettings,
+    normalizeKeyboardShortcutSettings,
+  } from "./keyboard-shortcuts";
   import type { AudioPlaybackMode, SasayakiPlaybackSession } from "./types";
+
+  const params = new URLSearchParams(window.location.search);
+  const keyboardShortcutSettings = params.get("customShortcuts") === "sasayaki"
+    ? normalizeKeyboardShortcutSettings({
+        version: 1,
+        bindings: {
+          "sasayaki-toggle-playback": { modifiers: [], keyCode: "KeyT", displayLabel: "T" },
+          "sasayaki-previous-skip-action": { modifiers: [], keyCode: "Comma", displayLabel: "," },
+          "sasayaki-next-skip-action": { modifiers: [], keyCode: "Period", displayLabel: "." },
+        },
+      })
+    : defaultKeyboardShortcutSettings;
 
   let open = $state(false);
   let playing = $state(false);
@@ -322,7 +338,7 @@
 
   function handleSasayakiShortcut(event: KeyboardEvent) {
     if (!session.configured || !session.audioAvailable) return;
-    const action = sasayakiShortcutAction(event);
+    const action = sasayakiShortcutAction(event, keyboardShortcutSettings);
     if (!action) return;
 
     event.preventDefault();

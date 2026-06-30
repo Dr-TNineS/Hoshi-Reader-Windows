@@ -72,7 +72,18 @@ async function main() {
       assert(await entry.getAttribute("aria-current") === "page", `${panel} should become the single active panel.`);
       assert(await navigation.locator('[aria-current="page"]').count() === 1, "Bookshelf should expose exactly one active panel.");
       if (panel === "Shortcuts") {
-        const shortcutText = await page.getByRole("region", { name: "Keyboard shortcuts", exact: true }).textContent();
+        const shortcutsRegion = page.getByRole("region", { name: "Keyboard shortcuts", exact: true });
+        const recordLabels = await shortcutsRegion.getByRole("button", { name: /^Record .+ shortcut$/ }).evaluateAll((buttons) => (
+          buttons.map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim() ?? "")
+        ));
+        const resetLabels = await shortcutsRegion.getByRole("button", { name: /^Reset .+ shortcut$/ }).evaluateAll((buttons) => (
+          buttons.map((button) => button.getAttribute("aria-label") ?? button.textContent?.trim() ?? "")
+        ));
+        assert(recordLabels.length >= 9, "Shortcuts panel should expose named Record controls for Global, Reader, and Sasayaki keyboard shortcuts.", { recordLabels });
+        assert(resetLabels.length >= 9, "Shortcuts panel should expose named Reset controls for Global, Reader, and Sasayaki keyboard shortcuts.", { resetLabels });
+        assert(new Set(recordLabels).size === recordLabels.length, "Shortcuts panel Record controls should have unique accessible names.", { recordLabels });
+        assert(new Set(resetLabels).size === resetLabels.length, "Shortcuts panel Reset controls should have unique accessible names.", { resetLabels });
+        const shortcutText = await shortcutsRegion.textContent();
         assert(
           shortcutText?.includes("Sasayaki") &&
             shortcutText.includes("Toggle playback") &&

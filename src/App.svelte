@@ -1580,7 +1580,7 @@
 
   function handleSasayakiShortcut(event: KeyboardEvent) {
     if (view !== "reader" || !sasayakiPlayback?.configured || !sasayakiPlayback.audioAvailable) return;
-    const action = sasayakiShortcutAction(event);
+    const action = sasayakiShortcutAction(event, settings.keyboardShortcutSettings);
     if (!action) return;
 
     event.preventDefault();
@@ -2854,6 +2854,7 @@
       {readerThemeLabels}
       advancedSettings={settings.advancedSettings}
       {globalLookupSettings}
+      keyboardShortcutSettings={settings.keyboardShortcutSettings}
       lookupPopupSettings={settings.lookupPopupSettings}
       dictionarySettings={settings.dictionarySettings}
       {dictionaryList}
@@ -2884,6 +2885,8 @@
       onSetGlobalLookupEnabled={setGlobalLookupEnabled}
       onSetGlobalLookupShortcut={setGlobalLookupShortcut}
       onResetGlobalLookupShortcut={resetGlobalLookupShortcut}
+      onSetKeyboardShortcut={settings.setKeyboardShortcut}
+      onResetKeyboardShortcut={settings.resetKeyboardShortcut}
       onSetLookupPopupWidth={settings.setLookupPopupWidth}
       onSetLookupPopupHeight={settings.setLookupPopupHeight}
       onSetLookupPopupScale={settings.setLookupPopupScale}
@@ -2963,6 +2966,7 @@
       {sasayakiCueSignal}
       scanLength={settings.dictionarySettings.scanLength}
       scanNonJapaneseText={settings.dictionarySettings.scanNonJapaneseText}
+      keyboardShortcutSettings={settings.keyboardShortcutSettings}
       onProgressChange={handleReaderProgress}
       onSelectionChange={handleReaderSelection}
       {startAtEnd}
