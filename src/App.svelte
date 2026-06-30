@@ -189,9 +189,13 @@
   let readingStatisticsBottomText = $derived(
     settings.advancedSettings.enableReadingStatistics && readingStatisticsState
       ? [
-          formatReadingSpeed(readingStatisticsState.session.lastReadingSpeed),
-          formatBottomStatisticsTime(readingStatisticsState.session.readingTime),
-        ].join(" ")
+          settings.advancedSettings.showReadingSpeed
+            ? formatReadingSpeed(readingStatisticsState.session.lastReadingSpeed)
+            : "",
+          settings.advancedSettings.showReadingTime
+            ? formatBottomStatisticsTime(readingStatisticsState.session.readingTime)
+            : "",
+        ].filter(Boolean).join(" ")
       : "",
   );
 
@@ -281,7 +285,7 @@
   $effect(() => {
     if (!isTauriRuntime()) return;
     const handleUnload = () => {
-      flushReadingStatistics("window-unload", true);
+      void flushReadingStatistics("window-unload", true);
       void stopSasayakiPlayback(true, "window-unload");
     };
     globalThis.addEventListener("pagehide", handleUnload);
@@ -289,7 +293,7 @@
     return () => {
       globalThis.removeEventListener("pagehide", handleUnload);
       globalThis.removeEventListener("beforeunload", handleUnload);
-      flushReadingStatistics("effect-cleanup", true);
+      void flushReadingStatistics("effect-cleanup", true);
       void stopSasayakiPlayback(true, "effect-cleanup");
     };
   });
@@ -298,7 +302,7 @@
     if (!settings.advancedSettings.enableReadingStatistics || !readingStatisticsTracker) return;
     if (!readingStatisticsTracker.state.isTracking) return;
     const timer = setInterval(() => {
-      const currentCharacter = currentReaderProgress?.bookReadChars ?? 0;
+      const currentCharacter = currentReadingStatisticsCharacter();
       readingStatisticsTracker?.update(currentCharacter);
       syncReadingStatisticsState();
     }, 1000);
@@ -308,7 +312,7 @@
   $effect(() => {
     if (settings.advancedSettings.enableReadingStatistics) return;
     if (!readingStatisticsTracker && !readingStatisticsState) return;
-    flushReadingStatistics("statistics-disabled", true);
+    void flushReadingStatistics("statistics-disabled", true);
     readingStatisticsTracker = null;
     readingStatisticsState = null;
     readingStatisticsOpen = false;
@@ -357,6 +361,20 @@
       });
   }
 
+  function readerCharacterAt(bookMeta: EpubMeta, chapter: number, progress: number): number {
+    const safeChapter = clampChapter(chapter, bookMeta.spine.length);
+    const chapterInfo = bookMeta.book_info.chapter_info[safeChapter];
+    return Math.max(0, Math.round(
+      (chapterInfo?.current_total ?? 0) +
+      (chapterInfo?.chapter_count ?? 0) * clampUnit(progress),
+    ));
+  }
+
+  function currentReadingStatisticsCharacter(): number {
+    if (currentReaderProgress) return currentReaderProgress.bookReadChars;
+    return meta ? readerCharacterAt(meta, chapterIndex, readerInitialProgress) : 0;
+  }
+
   function syncReadingStatisticsState() {
     readingStatisticsState = readingStatisticsTracker
       ? {
@@ -368,7 +386,7 @@
       : null;
   }
 
-  async function prepareReadingStatistics(locator: BookLocator, bookMeta: EpubMeta) {
+  async function prepareReadingStatistics(locator: BookLocator, bookMeta: EpubMeta, initialCharacter: number) {
     const loadId = ++readingStatisticsLoadId;
     readingStatisticsTracker = null;
     readingStatisticsState = null;
@@ -391,45 +409,48 @@
     );
     syncReadingStatisticsState();
     if (settings.advancedSettings.readingStatisticsAutostartMode === "on") {
-      readingStatisticsTracker.start(currentReaderProgress?.bookReadChars ?? 0);
+      readingStatisticsTracker.start(initialCharacter);
       syncReadingStatisticsState();
     }
   }
 
-  function flushReadingStatistics(reason: string, pauseTracking = false) {
+  async function flushReadingStatistics(reason: string, pauseTracking = false): Promise<boolean> {
     const tracker = readingStatisticsTracker;
     const locator = currentBookLocator;
-    if (!tracker || !locator) return;
+    if (!tracker || !locator) return true;
+    const currentCharacter = currentReadingStatisticsCharacter();
     if (tracker.state.isTracking) {
-      tracker.update(currentReaderProgress?.bookReadChars ?? 0);
-      if (pauseTracking) tracker.pause(currentReaderProgress?.bookReadChars ?? 0);
+      tracker.update(currentCharacter);
+      if (pauseTracking) tracker.pause(currentCharacter);
     }
     syncReadingStatisticsState();
     const statistics = tracker.statisticsForPersistenceOrNull();
-    if (!statistics) return;
+    if (!statistics) return true;
     const saveId = ++readingStatisticsSaveId;
-    void saveReadingStatistics(locator, statistics, isTauriRuntime())
-      .then(() => {
-        if (saveId !== readingStatisticsSaveId || readingStatisticsTracker !== tracker) return;
+    try {
+      await saveReadingStatistics(locator, statistics, isTauriRuntime());
+      if (saveId === readingStatisticsSaveId && readingStatisticsTracker === tracker) {
         tracker.statisticsForPersistence();
-      })
-      .catch((e) => {
-        error = `Cannot save reading statistics after ${reason}: ${String(e)}`;
-      });
+      }
+      return true;
+    } catch (e) {
+      error = `Cannot save reading statistics after ${reason}: ${String(e)}`;
+      return false;
+    }
   }
 
-  function toggleReadingStatisticsTracking() {
+  async function toggleReadingStatisticsTracking() {
     const tracker = readingStatisticsTracker;
     if (!tracker) return;
-    const currentCharacter = currentReaderProgress?.bookReadChars ?? 0;
+    const currentCharacter = currentReadingStatisticsCharacter();
     if (tracker.state.isTracking) {
       tracker.pause(currentCharacter);
-      void saveReadingStatistics(currentBookLocator ?? {}, tracker.statisticsForPersistence(), isTauriRuntime())
-        .catch((e) => error = String(e));
+      syncReadingStatisticsState();
+      await flushReadingStatistics("statistics-toggle", false);
     } else {
       tracker.start(currentCharacter);
+      syncReadingStatisticsState();
     }
-    syncReadingStatisticsState();
   }
 
   function toggleReadingStatisticsPanel() {
@@ -444,6 +465,14 @@
       error = "Not inside Tauri. Use `npx tauri dev`.";
       debug = "Browser";
       return;
+    }
+
+    if (currentBookLocator && readingStatisticsTracker) {
+      const statisticsSaved = await flushReadingStatistics("book-switch", true);
+      if (!statisticsSaved) return;
+      readingStatisticsTracker = null;
+      readingStatisticsState = null;
+      readingStatisticsOpen = false;
     }
 
     if (sasayakiPlaybackBookId && sasayakiPlaybackBookId !== locator.bookId) {
@@ -463,7 +492,7 @@
     await loadChapter(safeChapter, chapterProgress);
     saveProgress(locator, meta, safeChapter, null, chapterProgress);
     view = "reader";
-    await prepareReadingStatistics(locator, meta);
+    await prepareReadingStatistics(locator, meta, readerCharacterAt(meta, safeChapter, chapterProgress));
     await prepareSasayakiPlayback(locator.bookId ?? null);
   }
 
@@ -1630,7 +1659,8 @@
     if (!meta || !isTauriRuntime()) return;
 
     try {
-      flushReadingStatistics("chapter-change");
+      const statisticsSaved = await flushReadingStatistics("chapter-change");
+      if (!statisticsSaved) return;
       if (!options.preserveLookup) closeReaderSelection();
       const safeIndex = clampChapter(idx, meta.spine.length);
       readerInitialProgress = clampUnit(chapterProgress);
@@ -2292,8 +2322,12 @@
     recordSasayakiPersistence("backToShelf.start");
     sasayakiExitingReader = true;
     closeReaderSelection();
-    flushReadingStatistics("back-to-shelf", true);
     try {
+      const statisticsSaved = await flushReadingStatistics("back-to-shelf", true);
+      if (!statisticsSaved) {
+        recordSasayakiPersistence("backToShelf.blocked", { reason: "statistics-save-failed" });
+        return;
+      }
       const stopped = await stopSasayakiPlayback(true, "back-to-shelf");
       if (!stopped) {
         recordSasayakiPersistence("backToShelf.blocked", { reason: "save-failed" });

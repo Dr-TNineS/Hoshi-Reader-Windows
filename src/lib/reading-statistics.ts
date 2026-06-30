@@ -30,6 +30,7 @@ export const systemReaderStatisticsClock: ReaderStatisticsClock = {
 };
 
 const PATH_STATISTICS_KEY = "hoshi_reading_statistics";
+export const HSA_STATISTICS_INT_MAX = 2_147_483_647;
 
 function localDateKey(date: Date): string {
   const year = date.getFullYear();
@@ -52,19 +53,28 @@ function defaultStatistic(title: string, dateKey: string): ReadingStatistic {
   };
 }
 
+function hsaStatisticInt(value: number | undefined): number {
+  if (!Number.isFinite(value)) return 0;
+  return Math.max(0, Math.min(HSA_STATISTICS_INT_MAX, Math.trunc(value ?? 0)));
+}
+
 export function normalizeReadingStatistic(value: Partial<ReadingStatistic>, title: string, dateKey: string): ReadingStatistic {
   const fallback = defaultStatistic(title, dateKey);
   return {
     title: typeof value.title === "string" && value.title ? value.title : fallback.title,
     dateKey: typeof value.dateKey === "string" && value.dateKey ? value.dateKey : fallback.dateKey,
-    charactersRead: Number.isFinite(value.charactersRead) ? Math.max(0, Math.trunc(value.charactersRead ?? 0)) : 0,
+    charactersRead: hsaStatisticInt(value.charactersRead),
     readingTime: Number.isFinite(value.readingTime) ? Math.max(0, value.readingTime ?? 0) : 0,
-    minReadingSpeed: Number.isFinite(value.minReadingSpeed) ? Math.max(0, Math.trunc(value.minReadingSpeed ?? 0)) : 0,
-    altMinReadingSpeed: Number.isFinite(value.altMinReadingSpeed) ? Math.max(0, Math.trunc(value.altMinReadingSpeed ?? 0)) : 0,
-    lastReadingSpeed: Number.isFinite(value.lastReadingSpeed) ? Math.max(0, Math.trunc(value.lastReadingSpeed ?? 0)) : 0,
-    maxReadingSpeed: Number.isFinite(value.maxReadingSpeed) ? Math.max(0, Math.trunc(value.maxReadingSpeed ?? 0)) : 0,
+    minReadingSpeed: hsaStatisticInt(value.minReadingSpeed),
+    altMinReadingSpeed: hsaStatisticInt(value.altMinReadingSpeed),
+    lastReadingSpeed: hsaStatisticInt(value.lastReadingSpeed),
+    maxReadingSpeed: hsaStatisticInt(value.maxReadingSpeed),
     lastStatisticModified: Number.isFinite(value.lastStatisticModified) ? Math.max(0, Math.trunc(value.lastStatisticModified ?? 0)) : 0,
   };
+}
+
+function normalizeReadingStatistics(statistics: ReadingStatistic[]): ReadingStatistic[] {
+  return statistics.map((statistic) => normalizeReadingStatistic(statistic, statistic.title || "Untitled", statistic.dateKey));
 }
 
 export function deduplicateReadingStatistics(statistics: ReadingStatistic[]): ReadingStatistic[] {
@@ -82,7 +92,7 @@ function allTimeStatistic(title: string, dateKey: string, statistics: ReadingSta
   const total = statistics.reduce(
     (acc, statistic) => ({
       readingTime: acc.readingTime + statistic.readingTime,
-      charactersRead: acc.charactersRead + statistic.charactersRead,
+      charactersRead: hsaStatisticInt(acc.charactersRead + statistic.charactersRead),
       lastStatisticModified: Math.max(acc.lastStatisticModified, statistic.lastStatisticModified),
     }),
     { readingTime: 0, charactersRead: 0, lastStatisticModified: 0 },
@@ -97,22 +107,22 @@ function allTimeStatistic(title: string, dateKey: string, statistics: ReadingSta
 }
 
 function readingSpeed(charactersRead: number, readingTime: number): number {
-  return readingTime > 0 ? Math.trunc(charactersRead / readingTime * 3600) : 0;
+  return readingTime > 0 ? hsaStatisticInt(charactersRead / readingTime * 3600) : 0;
 }
 
 function updateStatistic(statistic: ReadingStatistic, timeDiff: number, characterDiff: number, modified: number): ReadingStatistic {
   const nextReadingTime = statistic.readingTime + timeDiff;
-  const nextCharactersRead = Math.max(0, statistic.charactersRead + characterDiff);
+  const nextCharactersRead = hsaStatisticInt(statistic.charactersRead + characterDiff);
   const nextReadingSpeed = readingSpeed(nextCharactersRead, nextReadingTime);
   return {
     ...statistic,
     readingTime: nextReadingTime,
     charactersRead: nextCharactersRead,
     lastReadingSpeed: nextReadingSpeed,
-    maxReadingSpeed: Math.max(statistic.maxReadingSpeed, nextReadingSpeed),
-    minReadingSpeed: statistic.minReadingSpeed !== 0 ? Math.min(statistic.minReadingSpeed, nextReadingSpeed) : nextReadingSpeed,
+    maxReadingSpeed: hsaStatisticInt(Math.max(statistic.maxReadingSpeed, nextReadingSpeed)),
+    minReadingSpeed: statistic.minReadingSpeed !== 0 ? hsaStatisticInt(Math.min(statistic.minReadingSpeed, nextReadingSpeed)) : nextReadingSpeed,
     altMinReadingSpeed: characterDiff !== 0
-      ? (statistic.altMinReadingSpeed !== 0 ? Math.min(statistic.altMinReadingSpeed, nextReadingSpeed) : nextReadingSpeed)
+      ? (statistic.altMinReadingSpeed !== 0 ? hsaStatisticInt(Math.min(statistic.altMinReadingSpeed, nextReadingSpeed)) : nextReadingSpeed)
       : statistic.altMinReadingSpeed,
     lastStatisticModified: modified,
   };
@@ -142,7 +152,7 @@ export async function loadReadingStatistics(locator: { bookId?: string; path?: s
 }
 
 export async function saveReadingStatistics(locator: { bookId?: string; path?: string }, statistics: ReadingStatistic[], useTauri: boolean): Promise<ReadingStatistic[]> {
-  const next = deduplicateReadingStatistics(statistics);
+  const next = deduplicateReadingStatistics(normalizeReadingStatistics(statistics));
   if (useTauri && locator.bookId) {
     return invoke<ReadingStatistic[]>("reading_save_statistics", { bookId: locator.bookId, statistics: next });
   }
@@ -167,7 +177,7 @@ export class ReaderStatisticsTracker {
     private enabled: boolean,
     private clock: ReaderStatisticsClock = systemReaderStatisticsClock,
   ) {
-    this.statistics = deduplicateReadingStatistics(initialStatistics);
+    this.statistics = deduplicateReadingStatistics(normalizeReadingStatistics(initialStatistics));
     this.lastTimestampMillis = clock.nowMillis();
     const todayKey = clock.currentDateKey();
     this.state = {

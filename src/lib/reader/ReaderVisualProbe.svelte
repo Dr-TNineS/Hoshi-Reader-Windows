@@ -10,6 +10,7 @@
   const params = new URLSearchParams(window.location.search);
   const lookupHighlightMode = params.get("lookupHighlightMode") ?? "";
   const sasayakiMode = params.get("sasayakiMode") ?? "";
+  const statisticsText = params.get("statisticsText") ?? "3,600 chars/h 0:01";
   const themeParam = params.get("theme");
   const interfaceParam = params.get("interface");
   const theme = themeParam === "light" || themeParam === "dark" || themeParam === "sepia" || themeParam === "custom"
@@ -280,7 +281,7 @@
     statisticsEnabled={true}
     statisticsTracking={statisticsTracking}
     showStatisticsToggle={true}
-    statisticsText="3,600 chars/h 0:01"
+    {statisticsText}
   />
   {#if statisticsOpen}
     <ReaderStatisticsPanel

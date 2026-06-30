@@ -3,6 +3,8 @@ export type AdvancedSettings = {
   enableReadingStatistics: boolean;
   readingStatisticsAutostartMode: ReadingStatisticsAutostartMode;
   showReadingStatisticsToggle: boolean;
+  showReadingSpeed: boolean;
+  showReadingTime: boolean;
 };
 
 export type ReadingStatisticsAutostartMode = "off" | "pageTurn" | "on";
@@ -14,6 +16,8 @@ export const defaultAdvancedSettings: AdvancedSettings = {
   enableReadingStatistics: false,
   readingStatisticsAutostartMode: "off",
   showReadingStatisticsToggle: false,
+  showReadingSpeed: false,
+  showReadingTime: false,
 };
 
 function normalizeAutostartMode(value: unknown): ReadingStatisticsAutostartMode {
@@ -35,6 +39,12 @@ export function loadAdvancedSettings(): AdvancedSettings {
       showReadingStatisticsToggle: typeof parsed.showReadingStatisticsToggle === "boolean"
         ? parsed.showReadingStatisticsToggle
         : defaultAdvancedSettings.showReadingStatisticsToggle,
+      showReadingSpeed: typeof parsed.showReadingSpeed === "boolean"
+        ? parsed.showReadingSpeed
+        : defaultAdvancedSettings.showReadingSpeed,
+      showReadingTime: typeof parsed.showReadingTime === "boolean"
+        ? parsed.showReadingTime
+        : defaultAdvancedSettings.showReadingTime,
     };
   } catch {
     return defaultAdvancedSettings;

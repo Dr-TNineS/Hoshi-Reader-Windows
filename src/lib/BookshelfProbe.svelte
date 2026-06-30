@@ -37,7 +37,7 @@
     {books}
     readerAppearance={{ ...defaultReaderAppearance, theme: "dark" }}
     readerThemeLabels={{ light: "Light", dark: "Dark", sepia: "Sepia", custom: "Custom" }}
-    advancedSettings={{ reopenLastBookOnStartup: true, enableReadingStatistics: false, readingStatisticsAutostartMode: "off", showReadingStatisticsToggle: false }}
+    advancedSettings={{ reopenLastBookOnStartup: true, enableReadingStatistics: false, readingStatisticsAutostartMode: "off", showReadingStatisticsToggle: false, showReadingSpeed: false, showReadingTime: false }}
     lookupPopupSettings={{ width: 320, height: 250, scale: 1 }}
     dictionarySettings={defaultDictionarySettings}
     {dictionarySearchState}

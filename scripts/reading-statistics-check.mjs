@@ -63,6 +63,9 @@ async function main() {
       todayChars: Number(element.getAttribute("data-today-chars")),
       allTimeChars: Number(element.getAttribute("data-all-time-chars")),
       persisted: JSON.parse(element.getAttribute("data-persisted") ?? "[]"),
+      burstSpeed: Number(element.getAttribute("data-burst-speed")),
+      burstMaxSpeed: Number(element.getAttribute("data-burst-max-speed")),
+      burstPersisted: JSON.parse(element.getAttribute("data-burst-persisted") ?? "[]"),
     }));
 
     assert(state.tracking === "false", "Tracker should pause after explicit pause.", state);
@@ -74,6 +77,8 @@ async function main() {
     assert(state.allTimeChars === 100, "All-time statistics should include the persisted previous day after clamping.", state);
     assert(state.persisted.some((item) => item.dateKey === "2026-05-13" && item.charactersRead === 30), "Persistence should include the first active day.", state);
     assert(state.persisted.some((item) => item.dateKey === "2026-05-14" && item.charactersRead === 0), "Persistence should include the rolled current day.", state);
+    assert(state.burstSpeed === 2147483647 && state.burstMaxSpeed === 2147483647, "Burst reading speed should clamp to the HSA Int range.", state);
+    assert(state.burstPersisted.every((item) => item.lastReadingSpeed <= 2147483647 && item.maxReadingSpeed <= 2147483647), "Persisted statistics should never exceed i32 speed fields.", state);
     console.log(JSON.stringify(state, null, 2));
   } finally {
     if (browser) await browser.close();

@@ -1,3 +1,4 @@
+use serde::de::{self, Deserializer};
 use serde::{Deserialize, Serialize};
 use std::fs;
 use std::io::Write;
@@ -69,17 +70,17 @@ pub struct ReadingStateResponse {
 pub struct ReadingStatistics {
     pub title: String,
     pub date_key: String,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_clamped_i32")]
     pub characters_read: i32,
     #[serde(default)]
     pub reading_time: f64,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_clamped_i32")]
     pub min_reading_speed: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_clamped_i32")]
     pub alt_min_reading_speed: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_clamped_i32")]
     pub last_reading_speed: i32,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "deserialize_clamped_i32")]
     pub max_reading_speed: i32,
     #[serde(default)]
     pub last_statistic_modified: u64,
@@ -215,6 +216,34 @@ fn state_path(root: &Path) -> PathBuf {
 
 fn statistics_path(book_dir: &Path) -> PathBuf {
     book_dir.join("statistics.json")
+}
+
+fn deserialize_clamped_i32<'de, D>(deserializer: D) -> Result<i32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = serde_json::Value::deserialize(deserializer)?;
+    match value {
+        serde_json::Value::Number(number) => {
+            if let Some(value) = number.as_i64() {
+                Ok(value.clamp(0, i32::MAX as i64) as i32)
+            } else if let Some(value) = number.as_u64() {
+                Ok(value.min(i32::MAX as u64) as i32)
+            } else if let Some(value) = number.as_f64() {
+                if value.is_finite() {
+                    Ok(value.trunc().clamp(0.0, i32::MAX as f64) as i32)
+                } else {
+                    Ok(0)
+                }
+            } else {
+                Ok(0)
+            }
+        }
+        serde_json::Value::Null => Ok(0),
+        other => Err(de::Error::custom(format!(
+            "expected numeric reading statistics field, got {other}"
+        ))),
+    }
 }
 
 fn read_state(root: &Path) -> Result<ReadingState, String> {
@@ -581,6 +610,22 @@ mod tests {
             json,
             r#"[{"title":"Book","dateKey":"2026-05-13","charactersRead":0,"readingTime":0.0,"minReadingSpeed":0,"altMinReadingSpeed":0,"lastReadingSpeed":0,"maxReadingSpeed":0,"lastStatisticModified":0}]"#
         );
+    }
+
+    #[test]
+    fn statistics_deserialize_clamps_large_integer_fields() {
+        let statistics: Vec<ReadingStatistics> = serde_json::from_str(
+            r#"[{"title":"Book","dateKey":"2026-05-13","charactersRead":65310171428,"readingTime":0.001,"minReadingSpeed":65310171428,"altMinReadingSpeed":65310171428,"lastReadingSpeed":65310171428,"maxReadingSpeed":65310171428,"lastStatisticModified":1778623200000}]"#,
+        )
+        .unwrap();
+
+        assert_eq!(statistics.len(), 1);
+        let statistic = &statistics[0];
+        assert_eq!(statistic.characters_read, i32::MAX);
+        assert_eq!(statistic.min_reading_speed, i32::MAX);
+        assert_eq!(statistic.alt_min_reading_speed, i32::MAX);
+        assert_eq!(statistic.last_reading_speed, i32::MAX);
+        assert_eq!(statistic.max_reading_speed, i32::MAX);
     }
 
     #[test]

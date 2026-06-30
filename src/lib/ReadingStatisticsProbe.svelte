@@ -36,6 +36,17 @@
   tracker.update(10);
   tracker.pause(10);
   const persisted = tracker.statisticsForPersistence();
+
+  let burstNow = 1_778_623_200_000;
+  const burstClock: ReaderStatisticsClock = {
+    nowMillis: () => burstNow,
+    currentDateKey: () => "2026-05-15",
+  };
+  const burstTracker = new ReaderStatisticsTracker("Book", [], true, burstClock);
+  burstTracker.start(0);
+  burstNow += 1;
+  burstTracker.update(20_000);
+  const burstPersisted = burstTracker.statisticsForPersistence();
 </script>
 
 <div
@@ -48,4 +59,7 @@
   data-today-chars={tracker.state.today.charactersRead}
   data-all-time-chars={tracker.state.allTime.charactersRead}
   data-persisted={JSON.stringify(persisted)}
+  data-burst-speed={burstTracker.state.session.lastReadingSpeed}
+  data-burst-max-speed={burstTracker.state.session.maxReadingSpeed}
+  data-burst-persisted={JSON.stringify(burstPersisted)}
 ></div>

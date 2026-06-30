@@ -14,7 +14,7 @@ function assert(condition, message, details = {}) {
 async function waitForServer(proc) {
   let output = "";
   const ready = new Promise((resolve, reject) => {
-    const timer = setTimeout(() => reject(new Error(`Vite did not become ready.\n${output}`)), 30000);
+    const timer = setTimeout(() => reject(new Error(`Vite did not become ready.\n${output}`)), 60000);
     const onData = (chunk) => {
       output += chunk.toString();
       if (!output.includes("ready in")) return;
@@ -55,6 +55,8 @@ async function state(page) {
     statisticsEnabled: element.getAttribute("data-statistics-enabled"),
     statisticsAutostart: element.getAttribute("data-statistics-autostart"),
     statisticsToggle: element.getAttribute("data-statistics-toggle"),
+    statisticsSpeed: element.getAttribute("data-statistics-speed"),
+    statisticsTime: element.getAttribute("data-statistics-time"),
     appearanceVars: element.getAttribute("data-appearance-vars"),
     savedAppearances: element.getAttribute("data-saved-appearances"),
     savedAppearanceJson: JSON.parse(element.getAttribute("data-saved-appearance-json") ?? "[]"),
@@ -93,7 +95,15 @@ async function main() {
 
     let current = await state(page);
     assert(current.theme === "dark" && current.reopen === "true", "Controller should expose loaded settings.", current);
-    assert(current.statisticsEnabled === "false" && current.statisticsAutostart === "off" && current.statisticsToggle === "false", "Reading statistics should default to HSA-disabled settings.", current);
+    assert(
+      current.statisticsEnabled === "false" &&
+        current.statisticsAutostart === "off" &&
+        current.statisticsToggle === "false" &&
+        current.statisticsSpeed === "false" &&
+        current.statisticsTime === "false",
+      "Reading statistics should default to HSA-disabled settings.",
+      current,
+    );
     assert(current.savedAppearances === "dark", "Controller should preserve appearance startup normalization.", current);
     assert(current.interface === "light", "Controller should preserve loaded custom interface settings.", current);
     assert(current.customBackground === "#ffffff", "Invalid loaded custom background should fall back safely.", current);
@@ -147,14 +157,24 @@ async function main() {
     await page.getByRole("button", { name: "Toggle startup", exact: true }).click();
     current = await state(page);
     assert(current.reopen === "false", "Advanced setter should update reactive state.", current);
-    assert(current.savedAdvanced === "false:false:off:false", "Advanced setter should persist the next settings value.", current);
+    assert(current.savedAdvanced === "false:false:off:false:false:false", "Advanced setter should persist the next settings value.", current);
 
     await page.getByRole("button", { name: "Enable statistics", exact: true }).click();
     current = await state(page);
-    assert(current.statisticsEnabled === "true" && current.statisticsToggle === "true", "Enabling reading statistics should also enable the reader toggle.", current);
+    assert(
+      current.statisticsEnabled === "true" &&
+        current.statisticsToggle === "true" &&
+        current.statisticsSpeed === "true" &&
+        current.statisticsTime === "true",
+      "Enabling reading statistics should also enable HSA reader statistics display controls.",
+      current,
+    );
     await page.getByRole("button", { name: "Page turn statistics", exact: true }).click();
     current = await state(page);
     assert(current.statisticsAutostart === "pageTurn", "Statistics autostart setter should persist Page Turn mode.", current);
+    await page.getByRole("button", { name: "Hide statistics text", exact: true }).click();
+    current = await state(page);
+    assert(current.statisticsSpeed === "false" && current.statisticsTime === "false", "Statistics speed and time display should remain user controlled after enabling.", current);
 
     await customTheme.click();
     current = await state(page);

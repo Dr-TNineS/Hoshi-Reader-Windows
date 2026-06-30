@@ -74,6 +74,30 @@
         onCheckedChange={(enabled) => onAdvancedSettingsChange({ showReadingStatisticsToggle: enabled })}
       />
     </div>
+
+    <div class="setting-card">
+      <div class="setting-copy">
+        <label for="reading-speed-display">Reading speed display</label>
+        <p>Show the current session reading speed in the reader controls.</p>
+      </div>
+      <UiSwitch
+        id="reading-speed-display"
+        checked={settings.showReadingSpeed}
+        onCheckedChange={(enabled) => onAdvancedSettingsChange({ showReadingSpeed: enabled })}
+      />
+    </div>
+
+    <div class="setting-card">
+      <div class="setting-copy">
+        <label for="reading-time-display">Reading time display</label>
+        <p>Show the current session reading time in the reader controls.</p>
+      </div>
+      <UiSwitch
+        id="reading-time-display"
+        checked={settings.showReadingTime}
+        onCheckedChange={(enabled) => onAdvancedSettingsChange({ showReadingTime: enabled })}
+      />
+    </div>
   {/if}
 </section>
 

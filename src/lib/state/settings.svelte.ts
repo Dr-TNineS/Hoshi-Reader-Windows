@@ -104,6 +104,12 @@ export function createSettingsState(persistence: SettingsPersistence = browserSe
       showReadingStatisticsToggle: enablingStatistics
         ? true
         : update.showReadingStatisticsToggle ?? advancedSettings.showReadingStatisticsToggle,
+      showReadingSpeed: enablingStatistics
+        ? true
+        : update.showReadingSpeed ?? advancedSettings.showReadingSpeed,
+      showReadingTime: enablingStatistics
+        ? true
+        : update.showReadingTime ?? advancedSettings.showReadingTime,
     };
     persistence.saveAdvancedSettings(advancedSettings);
   }

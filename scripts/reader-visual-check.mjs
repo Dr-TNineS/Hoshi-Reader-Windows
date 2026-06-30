@@ -1069,6 +1069,14 @@ async function main() {
     );
     assert(statisticsUi.bodyWidth <= statisticsUi.viewportWidth, "Reader statistics controls should fit in a narrow window.", statisticsUi);
 
+    await page.goto(probeUrl({ statisticsControls: "1", statisticsText: "3,600 chars/h" }));
+    const speedOnlyText = await page.locator(".statistics-text").textContent();
+    assert(speedOnlyText === "3,600 chars/h", "Reader statistics footer should support speed-only display.", { speedOnlyText });
+
+    await page.goto(probeUrl({ statisticsControls: "1", statisticsText: "0:01" }));
+    const timeOnlyText = await page.locator(".statistics-text").textContent();
+    assert(timeOnlyText === "0:01", "Reader statistics footer should support time-only display.", { timeOnlyText });
+
     await page.setViewportSize({ width: 1280, height: 720 });
     await page.goto(probeUrl({ theme: "light" }));
     const lightTheme = await readerThemeState(page);
