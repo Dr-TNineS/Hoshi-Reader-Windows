@@ -241,6 +241,68 @@ async function popupMetrics(page) {
         const container = document.querySelector('.lookup-glossary-content [data-sc-img][data-sc-class="gaiji"] .gloss-image-container');
         return container instanceof HTMLElement ? getComputedStyle(container).width : "";
       })(),
+      gaijiMaxStructuredUsedWidth: (() => {
+        const widths = Array.from(document.querySelectorAll('.lookup-glossary-content [data-sc-img][data-sc-class="gaiji"] .gloss-image-link'))
+          .map((node) => node instanceof HTMLElement ? Number.parseFloat(node.dataset.imageUsedWidth ?? "") : Number.NaN)
+          .filter(Number.isFinite);
+        return widths.length > 0 ? Math.max(...widths) : 0;
+      })(),
+      gaijiMaxComputedContainerWidth: (() => {
+        const widths = Array.from(document.querySelectorAll('.lookup-glossary-content [data-sc-img][data-sc-class="gaiji"] .gloss-image-container'))
+          .map((node) => node instanceof HTMLElement ? Number.parseFloat(getComputedStyle(node).width) : Number.NaN)
+          .filter(Number.isFinite);
+        return widths.length > 0 ? Math.max(...widths) : 0;
+      })(),
+      monochromeSvgAppearance: (() => {
+        const link = document.querySelector('.lookup-glossary-content [data-sc-class="probe-mono-svg"] .gloss-image-link');
+        return link instanceof HTMLElement ? link.dataset.appearance ?? "" : "";
+      })(),
+      monochromeSvgHasAspectRatio: (() => {
+        const link = document.querySelector('.lookup-glossary-content [data-sc-class="probe-mono-svg"] .gloss-image-link');
+        return link instanceof HTMLElement ? link.dataset.hasAspectRatio === "true" : false;
+      })(),
+      monochromeSvgSizeUnits: (() => {
+        const link = document.querySelector('.lookup-glossary-content [data-sc-class="probe-mono-svg"] .gloss-image-link');
+        return link instanceof HTMLElement ? link.dataset.sizeUnits ?? "" : "";
+      })(),
+      monochromeSvgContainerWidth: (() => {
+        const container = document.querySelector('.lookup-glossary-content [data-sc-class="probe-mono-svg"] .gloss-image-container');
+        return container instanceof HTMLElement ? getComputedStyle(container).width : "";
+      })(),
+      monochromeSvgContainerBackgroundColor: (() => {
+        const container = document.querySelector('.lookup-glossary-content [data-sc-class="probe-mono-svg"] .gloss-image-container');
+        return container instanceof HTMLElement ? getComputedStyle(container).backgroundColor : "";
+      })(),
+      monochromeSvgLinkPaddingLeft: (() => {
+        const link = document.querySelector('.lookup-glossary-content [data-sc-class="probe-mono-svg"] .gloss-image-link');
+        return link instanceof HTMLElement ? getComputedStyle(link).paddingLeft : "";
+      })(),
+      monochromeSvgLinkBorderStyle: (() => {
+        const link = document.querySelector('.lookup-glossary-content [data-sc-class="probe-mono-svg"] .gloss-image-link');
+        return link instanceof HTMLElement ? getComputedStyle(link).borderTopStyle : "";
+      })(),
+      monochromeSvgLinkBackgroundColor: (() => {
+        const link = document.querySelector('.lookup-glossary-content [data-sc-class="probe-mono-svg"] .gloss-image-link');
+        return link instanceof HTMLElement ? getComputedStyle(link).backgroundColor : "";
+      })(),
+      monochromeSvgSizerPaddingTop: (() => {
+        const sizer = document.querySelector('.lookup-glossary-content [data-sc-class="probe-mono-svg"] .gloss-image-sizer');
+        return sizer instanceof HTMLElement ? getComputedStyle(sizer).paddingTop : "";
+      })(),
+      monochromeSvgMediaTag: (() => {
+        const image = document.querySelector('.lookup-glossary-content [data-sc-class="probe-mono-svg"] .gloss-media-image');
+        return image instanceof HTMLElement ? image.tagName : "";
+      })(),
+      monochromeSvgCanvasAriaLabel: (() => {
+        const image = document.querySelector('.lookup-glossary-content [data-sc-class="probe-mono-svg"] .gloss-media-image');
+        return image instanceof HTMLElement ? image.getAttribute("aria-label") ?? "" : "";
+      })(),
+      monochromeSvgBackgroundVisible: (() => {
+        const background = document.querySelector('.lookup-glossary-content [data-sc-class="probe-mono-svg"] .gloss-image-background');
+        return background instanceof HTMLElement
+          ? getComputedStyle(background).display !== "none" && getComputedStyle(background).backgroundColor !== "rgba(0, 0, 0, 0)"
+          : false;
+      })(),
       glossaryGroups: document.querySelectorAll(".lookup-glossary-group").length,
       openGlossaryGroups: document.querySelectorAll(".lookup-glossary-group[open]").length,
       compactGlossariesClass: document.querySelector(".lookup-content")?.classList.contains("compact-glossaries") ?? false,
@@ -511,12 +573,29 @@ async function main() {
     assert(ready.structuredListItems >= 2 && ready.structuredBreaks >= 1, "Ready popup should preserve structured glossary list and line breaks.", ready);
     assert(ready.structuredTables >= 1, "Ready popup should preserve structured glossary tables.", ready);
     assert(ready.structuredRuby >= 1, "Ready popup should preserve structured glossary ruby.", ready);
-    assert(ready.mediaPlaceholders >= 6, "Ready popup should render safe placeholders for dictionary media.", ready);
-    assert(ready.mediaLoaded >= 6 && ready.mediaImages >= 6, "Ready popup should lazy-load tag and type dictionary media into images.", ready);
+    assert(ready.mediaPlaceholders >= 7, "Ready popup should render safe placeholders for dictionary media.", ready);
+    assert(ready.mediaLoaded >= 7 && ready.mediaImages >= 7, "Ready popup should lazy-load tag and type dictionary media into images.", ready);
     assert(ready.gaijiMediaImages >= 5, "Ready popup should hydrate MK3 gaiji SVG media into inline images.", ready);
     assert(ready.mediaErrors === 0 && ready.mediaLoading === 0, "Successful dictionary media should not remain loading or error.", ready);
     assert(ready.mediaImageMaxHeight === "180px", "Dictionary media image should be constrained inside the popup.", ready);
     assert(ready.gaijiImageMaxHeight !== "180px" && ready.gaijiContainerWidth !== "" && Number.parseFloat(ready.gaijiContainerWidth) < 32, "MK3 gaiji SVG media should stay inline and small rather than rendering as block media cards.", ready);
+    assert(ready.gaijiMaxStructuredUsedWidth <= 2 && ready.gaijiMaxComputedContainerWidth < 32, "MK3 gaiji SVG media without explicit dimensions should default to inline glyph sizing instead of natural image width.", ready);
+    assert(
+      ready.monochromeSvgAppearance === "monochrome"
+        && ready.monochromeSvgHasAspectRatio
+        && ready.monochromeSvgSizeUnits === "em"
+        && Math.abs(Number.parseFloat(ready.monochromeSvgContainerWidth) - 28) < 1
+        && ready.monochromeSvgContainerBackgroundColor === "rgba(0, 0, 0, 0)"
+        && ready.monochromeSvgLinkPaddingLeft === "0px"
+        && ready.monochromeSvgLinkBorderStyle === "none"
+        && ready.monochromeSvgLinkBackgroundColor === "rgba(0, 0, 0, 0)"
+        && Math.abs(Number.parseFloat(ready.monochromeSvgSizerPaddingTop) - 14) < 1
+        && ready.monochromeSvgMediaTag === "CANVAS"
+        && ready.monochromeSvgCanvasAriaLabel === "monochrome icon"
+        && !ready.monochromeSvgBackgroundVisible,
+      "Small structured monochrome SVG media should preserve Mac popup-style aspect ratio and render through an internal canvas.",
+      ready,
+    );
     assert(ready.glossaryGroups >= 2, "Ready popup should group glossary entries by dictionary.", ready);
     assert(ready.redirectLinks >= 1, "Ready popup should render dictionary cross-reference links.", ready);
     assert(!ready.canGoBack && !ready.canGoForward, "Root popup should start without redirect history.", ready);
