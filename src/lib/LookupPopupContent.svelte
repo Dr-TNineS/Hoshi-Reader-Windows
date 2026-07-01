@@ -378,10 +378,11 @@
       const resource = await loadDictionaryMedia(dictionary, path);
       if (!placeholder.isConnected) return;
 
-      const image = document.createElement("img");
-      image.className = "gloss-image gloss-media-image";
-      image.alt = originalLabel;
-      image.src = `data:${resource.mimeType};base64,${resource.dataBase64}`;
+      const src = dictionaryMediaDataUrl(resource);
+      const image = shouldRenderHydratedDictionaryMediaToCanvas(placeholder)
+        ? await createHydratedDictionaryCanvas(placeholder, src, originalLabel)
+        : createHydratedDictionaryImage(src, originalLabel);
+      if (!placeholder.isConnected) return;
       const container = placeholder.querySelector(".gloss-image-container");
       if (container) {
         prepareHydratedDictionaryImage(placeholder, container, image);
@@ -409,7 +410,7 @@
     }
   }
 
-  function prepareHydratedDictionaryImage(placeholder: HTMLElement, container: Element, image: HTMLImageElement) {
+  function prepareHydratedDictionaryImage(placeholder: HTMLElement, container: Element, image: HTMLElement) {
     const label = container.querySelector(".gloss-media-label");
     label?.remove();
 
@@ -422,7 +423,8 @@
     const hasPreferredWidth = placeholder.dataset.hasPreferredWidth === "true";
     const hasPreferredHeight = placeholder.dataset.hasPreferredHeight === "true";
     const sizeUnits = placeholder.dataset.sizeUnits ?? "";
-    if (!hasStructuredDimensions || (!hasPreferredWidth && !hasPreferredHeight && sizeUnits === "em")) {
+    const inlineGaiji = placeholder.dataset.inlineGaiji === "true";
+    if (!inlineGaiji && image instanceof HTMLImageElement && (!hasStructuredDimensions || (!hasPreferredWidth && !hasPreferredHeight && sizeUnits === "em"))) {
       image.addEventListener("load", () => {
         if (!image.naturalWidth || !image.naturalHeight) return;
         const aspectRatio = image.naturalHeight / image.naturalWidth;
@@ -440,12 +442,92 @@
     }
 
     if (placeholder.dataset.appearance === "monochrome") {
-      image.style.opacity = "0";
       const background = container.querySelector<HTMLElement>(".gloss-image-background");
-      background?.style.setProperty("--gloss-image-url", `url("${image.src}")`);
+      if (image instanceof HTMLCanvasElement) {
+        placeholder.dataset.renderingMode = "canvas";
+        background?.style.removeProperty("--gloss-image-url");
+      } else if (image instanceof HTMLImageElement) {
+        image.style.opacity = "0";
+        background?.style.setProperty("--gloss-image-url", `url("${image.src}")`);
+      }
     }
 
     container.appendChild(image);
+  }
+
+  function createHydratedDictionaryImage(src: string, alt: string): HTMLImageElement {
+    const image = document.createElement("img");
+    image.className = "gloss-image gloss-media-image";
+    image.alt = alt;
+    image.src = src;
+    return image;
+  }
+
+  async function createHydratedDictionaryCanvas(placeholder: HTMLElement, src: string, alt: string): Promise<HTMLCanvasElement> {
+    const canvas = document.createElement("canvas");
+    canvas.className = "gloss-image gloss-media-image";
+    canvas.setAttribute("role", "img");
+    canvas.setAttribute("aria-label", alt);
+
+    const sourceImage = new Image();
+    await new Promise<void>((resolve, reject) => {
+      sourceImage.addEventListener("load", () => resolve(), { once: true });
+      sourceImage.addEventListener("error", () => reject(new Error("Cannot render dictionary SVG media.")), { once: true });
+      sourceImage.src = src;
+    });
+
+    renderHydratedDictionaryCanvas(placeholder, canvas, sourceImage);
+    return canvas;
+  }
+
+  function renderHydratedDictionaryCanvas(placeholder: HTMLElement, canvas: HTMLCanvasElement, image: HTMLImageElement) {
+    const usedWidth = positiveDatasetNumber(placeholder.dataset.imageUsedWidth) ?? 1;
+    const invAspectRatio = positiveDatasetNumber(placeholder.dataset.imageInvAspectRatio) ?? 1;
+    const fontSizeSource = placeholder.querySelector<HTMLElement>(".gloss-image-container") ?? placeholder;
+    const emSize = Number.parseFloat(getComputedStyle(fontSizeSource).fontSize) || 14;
+    const scaleFactor = Math.ceil(window.devicePixelRatio * 2);
+    const pixelWidth = Math.max(1, Math.round(usedWidth * emSize * scaleFactor));
+    const pixelHeight = Math.max(1, Math.round(usedWidth * emSize * invAspectRatio * scaleFactor));
+    const maxCanvasSize = 128;
+    const scale = Math.min(
+      1,
+      maxCanvasSize / Math.max(pixelWidth, pixelHeight),
+      Math.sqrt((maxCanvasSize * maxCanvasSize) / (pixelWidth * pixelHeight)),
+    );
+    canvas.style.width = "100%";
+    canvas.style.height = "100%";
+    canvas.width = Math.max(1, Math.round(pixelWidth * scale));
+    canvas.height = Math.max(1, Math.round(pixelHeight * scale));
+
+    const context = canvas.getContext("2d");
+    if (!context) return;
+    context.clearRect(0, 0, canvas.width, canvas.height);
+    context.drawImage(image, 0, 0, canvas.width, canvas.height);
+    context.globalCompositeOperation = "source-in";
+    context.fillStyle = getComputedStyle(placeholder).color || "#ffffff";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    context.globalCompositeOperation = "source-over";
+  }
+
+  function shouldRenderHydratedDictionaryMediaToCanvas(placeholder: HTMLElement): boolean {
+    const path = placeholder.dataset.mediaPath ?? "";
+    const usedWidth = positiveDatasetNumber(placeholder.dataset.imageUsedWidth);
+    const invAspectRatio = positiveDatasetNumber(placeholder.dataset.imageInvAspectRatio);
+    return /\.svg$/i.test(path)
+      && placeholder.dataset.appearance === "monochrome"
+      && typeof usedWidth === "number"
+      && typeof invAspectRatio === "number"
+      && usedWidth <= 4
+      && usedWidth * invAspectRatio <= 4;
+  }
+
+  function dictionaryMediaDataUrl(resource: DictionaryMediaResource): string {
+    return `data:${resource.mimeType};base64,${resource.dataBase64}`;
+  }
+
+  function positiveDatasetNumber(value: string | undefined): number | undefined {
+    const parsed = Number.parseFloat(value ?? "");
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
   }
 
   async function loadDictionaryMedia(dictionary: string, path: string): Promise<DictionaryMediaResource> {
@@ -1078,6 +1160,10 @@
   .lookup-glossary-content :global(.gloss-image-link[data-background="true"] > .gloss-image-container) { background-color: var(--app-control, #1b1b1b); }
   .lookup-glossary-content :global(.gloss-image-link[data-appearance="monochrome"] .gloss-image-background) { display: block; -webkit-mask: var(--gloss-image-url) center / contain no-repeat; mask: var(--gloss-image-url) center / contain no-repeat; }
   .lookup-glossary-content :global(.gloss-image-link[data-appearance="monochrome"] .gloss-media-image) { opacity: 0; }
+  .lookup-glossary-content :global(.gloss-image-link[data-size-units="em"]) { padding: 0; border: 0; border-radius: 0; background: transparent; color: inherit; vertical-align: baseline; }
+  .lookup-glossary-content :global(.gloss-image-link[data-size-units="em"][data-background="true"] > .gloss-image-container) { background-color: transparent; }
+  .lookup-glossary-content :global(.gloss-image-link[data-rendering-mode="canvas"] .gloss-image-background) { display: none; }
+  .lookup-glossary-content :global(.gloss-image-link[data-rendering-mode="canvas"] .gloss-media-image) { opacity: 1; }
   .lookup-glossary-content :global(.gloss-image-link[data-image-rendering="pixelated"] .gloss-media-image) { image-rendering: pixelated; }
   .lookup-glossary-content :global(.gloss-media-placeholder-loading) { color: var(--app-text, #fff); border-color: var(--app-muted, #999999); }
   .lookup-glossary-content :global(.gloss-media-placeholder-loaded) { display: inline-block; padding: calc(2px * var(--popup-scale, 1)); border-style: solid; }
@@ -1085,6 +1171,9 @@
   .lookup-glossary-content :global(.gloss-media-image) { display: block; max-width: 100%; max-height: calc(180px * var(--popup-scale, 1)); object-fit: contain; }
   .lookup-glossary-content :global(.gloss-image-link[data-has-aspect-ratio="true"] .gloss-media-image) { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; outline: 0; object-fit: contain; vertical-align: top; }
   .lookup-glossary-content :global([data-sc-img][data-sc-class="gaiji"]) { display: inline-block; line-height: 1; vertical-align: -0.12em; }
+  .lookup-glossary-content :global(.gloss-image-link[data-inline-gaiji="true"]) { display: inline-block !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; color: inherit; vertical-align: baseline; }
+  .lookup-glossary-content :global(.gloss-image-link[data-inline-gaiji="true"] .gloss-image-container) { display: inline-flex !important; width: calc(1.15em * var(--popup-scale, 1)) !important; height: calc(1.15em * var(--popup-scale, 1)) !important; margin-inline-end: calc(0.15em * var(--popup-scale, 1)); vertical-align: -0.15em; }
+  .lookup-glossary-content :global(.gloss-image-link[data-inline-gaiji="true"] .gloss-media-image) { width: 100% !important; height: 100% !important; max-width: calc(1.15em * var(--popup-scale, 1)) !important; max-height: calc(1.15em * var(--popup-scale, 1)) !important; object-fit: contain; vertical-align: middle; }
   .lookup-glossary-content :global([data-sc-img][data-sc-class="gaiji"] .gloss-media-placeholder) { display: inline-block !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; color: inherit; vertical-align: baseline; }
   .lookup-glossary-content :global([data-sc-img][data-sc-class="gaiji"] .gloss-image-container) { display: inline-flex !important; width: calc(1.15em * var(--popup-scale, 1)) !important; height: calc(1.15em * var(--popup-scale, 1)) !important; margin-inline-end: calc(0.15em * var(--popup-scale, 1)); vertical-align: -0.15em; }
   .lookup-glossary-content :global([data-sc-img][data-sc-class="gaiji"] .gloss-media-image) { width: 100% !important; height: 100% !important; max-width: calc(1.15em * var(--popup-scale, 1)) !important; max-height: calc(1.15em * var(--popup-scale, 1)) !important; object-fit: contain; vertical-align: middle; }

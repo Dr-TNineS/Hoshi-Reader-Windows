@@ -233,6 +233,7 @@ function renderStructuredImage(record: Record<string, unknown>, dictionary: stri
   const title = typeof record.title === "string" ? record.title : path;
   const alt = typeof record.alt === "string" ? record.alt : title;
   const layout = structuredImageLayout(record);
+  const inlineGaiji = isGaijiImageRecord(record);
   const dataAttrs = structuredDataAttributes(record);
   const resolved = path ? options.mediaResolver?.(dictionary, path) ?? null : null;
   const statusAttr = resolved ? " data-media-status=\"loaded\"" : "";
@@ -249,7 +250,10 @@ function renderStructuredImage(record: Record<string, unknown>, dictionary: stri
     `data-has-structured-dimensions="${layout.hasDimensions}"`,
     `data-has-preferred-width="${layout.hasPreferredWidth}"`,
     `data-has-preferred-height="${layout.hasPreferredHeight}"`,
+    `data-image-used-width="${formatCssNumber(layout.usedWidth)}"`,
+    `data-image-inv-aspect-ratio="${formatCssNumber(layout.invAspectRatio)}"`,
   ];
+  if (inlineGaiji) imageDataAttrs.push("data-inline-gaiji=\"true\"");
   if (layout.verticalAlign) imageDataAttrs.push(`data-vertical-align="${escapeAttribute(layout.verticalAlign)}"`);
   if (layout.sizeUnits === "em") imageDataAttrs.push(`data-size-units="em"`);
   const displayAlt = resolved?.alt ?? alt;
@@ -266,8 +270,10 @@ function renderStructuredImage(record: Record<string, unknown>, dictionary: stri
 }
 
 function structuredImageLayout(record: Record<string, unknown>): StructuredImageLayout {
-  const width = positiveNumber(record.width, 100) ?? 100;
-  const height = positiveNumber(record.height, 100) ?? 100;
+  const inlineGaiji = isGaijiImageRecord(record);
+  const fallbackSize = inlineGaiji ? 1 : 100;
+  const width = positiveNumber(record.width, fallbackSize) ?? fallbackSize;
+  const height = positiveNumber(record.height, fallbackSize) ?? fallbackSize;
   const preferredWidth = positiveNumber(record.preferredWidth);
   const preferredHeight = positiveNumber(record.preferredHeight);
   const hasPreferredWidth = typeof preferredWidth === "number";
@@ -297,7 +303,7 @@ function structuredImageLayout(record: Record<string, unknown>): StructuredImage
     hasDimensions,
     hasPreferredWidth,
     hasPreferredHeight,
-    sizeUnits: record.sizeUnits === "em" || isGaijiImageRecord(record) ? "em" : "px",
+    sizeUnits: record.sizeUnits === "em" || inlineGaiji ? "em" : "px",
     imageRendering,
     appearance: typeof record.appearance === "string" ? record.appearance : "auto",
     background: typeof record.background === "boolean" ? record.background : true,

@@ -1696,7 +1696,15 @@ fn read_packed_dictionary_media(
         fs::read(&index_path).map_err(|e| format!("Cannot read dictionary media index: {e}"))?;
     let media =
         fs::read(&media_path).map_err(|e| format!("Cannot read dictionary media archive: {e}"))?;
-    packed_dictionary_media(&index, &media, relative_path)
+    if let Some(data) = packed_dictionary_media(&index, &media, relative_path)? {
+        return Ok(Some(data));
+    }
+    for alias in legacy_dictionary_media_path_aliases(relative_path) {
+        if let Some(data) = packed_dictionary_media(&index, &media, &alias)? {
+            return Ok(Some(data));
+        }
+    }
+    Ok(None)
 }
 
 fn packed_dictionary_media(
@@ -1773,6 +1781,15 @@ fn packed_dictionary_media_record(
     }
 
     Ok(Some((path, media[blob_start..blob_end].to_vec())))
+}
+
+fn legacy_dictionary_media_path_aliases(relative_path: &str) -> Vec<String> {
+    let (decoded, _, _) = encoding_rs::GBK.decode(relative_path.as_bytes());
+    let decoded = decoded.into_owned();
+    if decoded == relative_path || validate_dictionary_media_relative_path(&decoded).is_err() {
+        return Vec::new();
+    }
+    vec![decoded]
 }
 
 fn read_u16_le(bytes: &[u8], offset: usize) -> Option<u16> {
@@ -3244,6 +3261,40 @@ mod tests {
         assert_eq!(
             media.data_base64,
             general_purpose::STANDARD.encode(br#"<svg><text>ref</text></svg>"#)
+        );
+
+        let _ = fs::remove_dir_all(root);
+    }
+
+    #[test]
+    fn dictionary_media_loads_packed_legacy_mojibake_alias() {
+        let root = temp_path("packed_media_legacy_mojibake");
+        let dict_dir = root.join("dict");
+        fs::create_dir_all(&dict_dir).unwrap();
+        write_packed_media(
+            &dict_dir,
+            &[(
+                concat!("gaiji/bs", "\u{6d93}\u{20ac}", ".svg"),
+                br#"<svg><text>one</text></svg>"#,
+            )],
+        );
+
+        let mut entry = manifest_entry("abc", 0);
+        entry.internal_path = dict_dir.to_string_lossy().into_owned();
+        let manifest = DictionaryManifest {
+            dictionaries: vec![entry],
+        };
+
+        let media = load_dictionary_media(
+            &manifest,
+            "abc",
+            concat!("gaiji/bs", "\u{4e00}", ".svg"),
+        )
+        .unwrap();
+        assert_eq!(media.mime_type, "image/svg+xml");
+        assert_eq!(
+            media.data_base64,
+            general_purpose::STANDARD.encode(br#"<svg><text>one</text></svg>"#)
         );
 
         let _ = fs::remove_dir_all(root);
