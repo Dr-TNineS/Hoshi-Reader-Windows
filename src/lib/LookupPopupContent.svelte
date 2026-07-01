@@ -366,7 +366,10 @@
     placeholder.dataset.mediaStatus = "loading";
     placeholder.classList.add("gloss-media-placeholder-loading");
     const loadingContainer = placeholder.querySelector(".gloss-image-container");
-    if (loadingContainer) {
+    const loadingLabel = placeholder.querySelector<HTMLElement>(".gloss-media-label");
+    if (loadingLabel) {
+      loadingLabel.textContent = "Loading media...";
+    } else if (loadingContainer) {
       loadingContainer.textContent = "Loading media...";
     } else {
       placeholder.textContent = "Loading media...";
@@ -381,7 +384,7 @@
       image.src = `data:${resource.mimeType};base64,${resource.dataBase64}`;
       const container = placeholder.querySelector(".gloss-image-container");
       if (container) {
-        container.replaceChildren(image);
+        prepareHydratedDictionaryImage(placeholder, container, image);
       } else {
         placeholder.replaceChildren(image);
       }
@@ -392,7 +395,10 @@
     } catch {
       if (!placeholder.isConnected) return;
       const container = placeholder.querySelector(".gloss-image-container");
-      if (container) {
+      const label = placeholder.querySelector<HTMLElement>(".gloss-media-label");
+      if (label) {
+        label.textContent = "Media unavailable";
+      } else if (container) {
         container.textContent = "Media unavailable";
       } else {
         placeholder.textContent = "Media unavailable";
@@ -401,6 +407,45 @@
       placeholder.classList.remove("gloss-media-placeholder-loading");
       placeholder.classList.add("gloss-media-placeholder-error");
     }
+  }
+
+  function prepareHydratedDictionaryImage(placeholder: HTMLElement, container: Element, image: HTMLImageElement) {
+    const label = container.querySelector(".gloss-media-label");
+    label?.remove();
+
+    for (const existingImage of container.querySelectorAll(".gloss-media-image")) {
+      existingImage.remove();
+    }
+
+    const sizer = container.querySelector<HTMLElement>(".gloss-image-sizer");
+    const hasStructuredDimensions = placeholder.dataset.hasStructuredDimensions === "true";
+    const hasPreferredWidth = placeholder.dataset.hasPreferredWidth === "true";
+    const hasPreferredHeight = placeholder.dataset.hasPreferredHeight === "true";
+    const sizeUnits = placeholder.dataset.sizeUnits ?? "";
+    if (!hasStructuredDimensions || (!hasPreferredWidth && !hasPreferredHeight && sizeUnits === "em")) {
+      image.addEventListener("load", () => {
+        if (!image.naturalWidth || !image.naturalHeight) return;
+        const aspectRatio = image.naturalHeight / image.naturalWidth;
+        if (!hasStructuredDimensions) {
+          (container as HTMLElement).style.width = `${Math.min(image.naturalWidth, window.innerWidth - 20)}px`;
+          if (sizer) sizer.style.paddingTop = `${aspectRatio * 100}%`;
+        } else if (sizeUnits === "em") {
+          const currentWidth = Number.parseFloat((container as HTMLElement).style.width);
+          if (Number.isFinite(currentWidth)) {
+            (container as HTMLElement).style.width = `${currentWidth}em`;
+            if (sizer) sizer.style.paddingTop = `${aspectRatio * 100}%`;
+          }
+        }
+      }, { once: true });
+    }
+
+    if (placeholder.dataset.appearance === "monochrome") {
+      image.style.opacity = "0";
+      const background = container.querySelector<HTMLElement>(".gloss-image-background");
+      background?.style.setProperty("--gloss-image-url", `url("${image.src}")`);
+    }
+
+    container.appendChild(image);
   }
 
   async function loadDictionaryMedia(dictionary: string, path: string): Promise<DictionaryMediaResource> {
@@ -1024,12 +1069,21 @@
   .lookup-glossary-content :global(a) { color: var(--app-primary, #d0bcff); }
   .lookup-glossary-content :global(a[data-lookup-redirect]) { border-bottom: 1px dotted currentColor; cursor: pointer; text-decoration: none; }
   .lookup-glossary-content :global(rt) { color: var(--app-muted, #999999); font-size: 0.72em; }
-  .lookup-glossary-content :global(.gloss-media-placeholder) { display: inline-block; max-width: 100%; padding: calc(4px * var(--popup-scale, 1)) calc(7px * var(--popup-scale, 1)); border: 1px dashed var(--app-border, #333333); border-radius: calc(4px * var(--popup-scale, 1)); color: var(--app-muted, #999999); background: var(--app-control, #1b1b1b); font-size: calc(11px * var(--popup-scale, 1)); text-decoration: none; }
-  .lookup-glossary-content :global(.gloss-image-container) { display: inline-flex; max-width: 100%; align-items: center; justify-content: center; vertical-align: middle; }
+  .lookup-glossary-content :global(.gloss-media-placeholder) { display: inline-block; position: relative; max-width: 100%; padding: calc(4px * var(--popup-scale, 1)) calc(7px * var(--popup-scale, 1)); border: 1px dashed var(--app-border, #333333); border-radius: calc(4px * var(--popup-scale, 1)); color: var(--app-muted, #999999); background: var(--app-control, #1b1b1b); line-height: 1; text-decoration: none; }
+  .lookup-glossary-content :global(.gloss-media-label) { font-size: calc(11px * var(--popup-scale, 1)); line-height: 1.2; white-space: normal; }
+  .lookup-glossary-content :global(.gloss-image-container) { display: inline-block; position: relative; max-width: 100%; max-height: calc(180px * var(--popup-scale, 1)); overflow: hidden; line-height: 0; vertical-align: top; }
+  .lookup-glossary-content :global(.gloss-image-sizer) { display: inline-block; width: 0; font-size: 0; vertical-align: top; }
+  .lookup-glossary-content :global(.gloss-image-background) { display: none; position: absolute; inset: 0; background-color: currentColor; }
+  .lookup-glossary-content :global(.gloss-image-container-overlay) { position: absolute; inset: 0; display: table; width: 100%; height: 100%; table-layout: fixed; color: var(--app-muted, #999999); font-size: calc(11px * var(--popup-scale, 1)); line-height: 1.2; white-space: normal; }
+  .lookup-glossary-content :global(.gloss-image-link[data-background="true"] > .gloss-image-container) { background-color: var(--app-control, #1b1b1b); }
+  .lookup-glossary-content :global(.gloss-image-link[data-appearance="monochrome"] .gloss-image-background) { display: block; -webkit-mask: var(--gloss-image-url) center / contain no-repeat; mask: var(--gloss-image-url) center / contain no-repeat; }
+  .lookup-glossary-content :global(.gloss-image-link[data-appearance="monochrome"] .gloss-media-image) { opacity: 0; }
+  .lookup-glossary-content :global(.gloss-image-link[data-image-rendering="pixelated"] .gloss-media-image) { image-rendering: pixelated; }
   .lookup-glossary-content :global(.gloss-media-placeholder-loading) { color: var(--app-text, #fff); border-color: var(--app-muted, #999999); }
-  .lookup-glossary-content :global(.gloss-media-placeholder-loaded) { display: block; padding: calc(2px * var(--popup-scale, 1)); border-style: solid; }
+  .lookup-glossary-content :global(.gloss-media-placeholder-loaded) { display: inline-block; padding: calc(2px * var(--popup-scale, 1)); border-style: solid; }
   .lookup-glossary-content :global(.gloss-media-placeholder-error) { color: var(--app-error, #ffb4ab); border-color: var(--app-error, #ffb4ab); }
   .lookup-glossary-content :global(.gloss-media-image) { display: block; max-width: 100%; max-height: calc(180px * var(--popup-scale, 1)); object-fit: contain; }
+  .lookup-glossary-content :global(.gloss-image-link[data-has-aspect-ratio="true"] .gloss-media-image) { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; outline: 0; object-fit: contain; vertical-align: top; }
   .lookup-glossary-content :global([data-sc-img][data-sc-class="gaiji"]) { display: inline-block; line-height: 1; vertical-align: -0.12em; }
   .lookup-glossary-content :global([data-sc-img][data-sc-class="gaiji"] .gloss-media-placeholder) { display: inline-block !important; padding: 0 !important; border: 0 !important; border-radius: 0 !important; background: transparent !important; color: inherit; vertical-align: baseline; }
   .lookup-glossary-content :global([data-sc-img][data-sc-class="gaiji"] .gloss-image-container) { display: inline-flex !important; width: calc(1.15em * var(--popup-scale, 1)) !important; height: calc(1.15em * var(--popup-scale, 1)) !important; margin-inline-end: calc(0.15em * var(--popup-scale, 1)); vertical-align: -0.15em; }

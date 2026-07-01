@@ -132,6 +132,23 @@ export interface RenderGlossaryOptions {
   mediaResolver?: (dictionary: string, path: string) => RenderGlossaryMediaResource | null;
 }
 
+interface StructuredImageLayout {
+  usedWidth: number;
+  invAspectRatio: number;
+  hasDimensions: boolean;
+  hasPreferredWidth: boolean;
+  hasPreferredHeight: boolean;
+  sizeUnits: "px" | "em";
+  imageRendering: string;
+  appearance: string;
+  background: boolean;
+  collapsed: boolean;
+  collapsible: boolean;
+  verticalAlign: string;
+  border: string;
+  borderRadius: string;
+}
+
 export function renderGlossaryContent(text: string, dictionary = "", options: RenderGlossaryOptions = {}): string {
   const trimmed = text.trim();
   if (!trimmed.startsWith("{") && !trimmed.startsWith("[")) return renderText(text);
@@ -215,20 +232,107 @@ function renderStructuredImage(record: Record<string, unknown>, dictionary: stri
       : "";
   const title = typeof record.title === "string" ? record.title : path;
   const alt = typeof record.alt === "string" ? record.alt : title;
+  const layout = structuredImageLayout(record);
   const dataAttrs = structuredDataAttributes(record);
   const resolved = path ? options.mediaResolver?.(dictionary, path) ?? null : null;
   const statusAttr = resolved ? " data-media-status=\"loaded\"" : "";
   const pathAttr = path ? ` data-media-path="${escapeAttribute(path)}"` : "";
   const dictionaryAttr = dictionary ? ` data-media-dictionary="${escapeAttribute(dictionary)}"` : "";
   const titleAttr = title ? ` title="${escapeAttribute(title)}"` : "";
+  const imageDataAttrs = [
+    `data-has-aspect-ratio="true"`,
+    `data-image-rendering="${escapeAttribute(layout.imageRendering)}"`,
+    `data-appearance="${escapeAttribute(layout.appearance)}"`,
+    `data-background="${layout.background}"`,
+    `data-collapsed="${layout.collapsed}"`,
+    `data-collapsible="${layout.collapsible}"`,
+    `data-has-structured-dimensions="${layout.hasDimensions}"`,
+    `data-has-preferred-width="${layout.hasPreferredWidth}"`,
+    `data-has-preferred-height="${layout.hasPreferredHeight}"`,
+  ];
+  if (layout.verticalAlign) imageDataAttrs.push(`data-vertical-align="${escapeAttribute(layout.verticalAlign)}"`);
+  if (layout.sizeUnits === "em") imageDataAttrs.push(`data-size-units="em"`);
   const displayAlt = resolved?.alt ?? alt;
+  const imageStyle = layout.appearance === "monochrome" ? " style=\"opacity:0\"" : "";
   const image = resolved
-    ? `<img class="gloss-image gloss-media-image" src="${escapeAttribute(resolved.src)}" alt="${escapeAttribute(displayAlt)}">`
+    ? `<img class="gloss-image gloss-media-image" src="${escapeAttribute(resolved.src)}" alt="${escapeAttribute(displayAlt)}"${imageStyle}>`
     : `<span class="gloss-media-label">${escapeHtml(alt || "Dictionary media")}</span>`;
-  const gaijiStyle = isGaijiImageRecord(record)
-    ? ` style="width:1.15em !important;height:1.15em !important;margin-inline-end:0.15em;vertical-align:-0.15em;"`
+  const containerStyle = structuredImageContainerStyle(layout);
+  const sizerStyle = `padding-top:${formatCssNumber(layout.invAspectRatio * 100)}%`;
+  const backgroundStyle = resolved && layout.appearance === "monochrome"
+    ? ` style="--gloss-image-url:url(&quot;${escapeAttribute(resolved.src)}&quot;)"`
     : "";
-  return `<span${dataAttrs.length ? ` ${dataAttrs.join(" ")}` : ""}><a class="gloss-image-link gloss-media-placeholder"${pathAttr}${dictionaryAttr}${titleAttr}${statusAttr}><span class="gloss-image-container"${gaijiStyle}>${image}</span></a></span>`;
+  return `<span${dataAttrs.length ? ` ${dataAttrs.join(" ")}` : ""}><a class="gloss-image-link gloss-media-placeholder"${pathAttr}${dictionaryAttr}${titleAttr}${statusAttr} ${imageDataAttrs.join(" ")}><span class="gloss-image-container" style="${escapeAttribute(containerStyle)}"><span class="gloss-image-sizer" style="${escapeAttribute(sizerStyle)}"></span><span class="gloss-image-background"${backgroundStyle}></span><span class="gloss-image-container-overlay"></span>${image}</span></a></span>`;
+}
+
+function structuredImageLayout(record: Record<string, unknown>): StructuredImageLayout {
+  const width = positiveNumber(record.width, 100) ?? 100;
+  const height = positiveNumber(record.height, 100) ?? 100;
+  const preferredWidth = positiveNumber(record.preferredWidth);
+  const preferredHeight = positiveNumber(record.preferredHeight);
+  const hasPreferredWidth = typeof preferredWidth === "number";
+  const hasPreferredHeight = typeof preferredHeight === "number";
+  const hasDimensions = hasPreferredWidth || hasPreferredHeight || typeof record.width === "number" || typeof record.height === "number";
+  const invAspectRatio = positiveRatio(
+    hasPreferredWidth && hasPreferredHeight
+      ? preferredHeight / preferredWidth
+      : height / width,
+  );
+  const usedWidth = positiveRatio(
+    hasPreferredWidth
+      ? preferredWidth
+      : hasPreferredHeight
+        ? preferredHeight / invAspectRatio
+        : width,
+  );
+  const imageRendering = typeof record.imageRendering === "string"
+    ? record.imageRendering
+    : record.pixelated === true
+      ? "pixelated"
+      : "auto";
+
+  return {
+    usedWidth,
+    invAspectRatio,
+    hasDimensions,
+    hasPreferredWidth,
+    hasPreferredHeight,
+    sizeUnits: record.sizeUnits === "em" || isGaijiImageRecord(record) ? "em" : "px",
+    imageRendering,
+    appearance: typeof record.appearance === "string" ? record.appearance : "auto",
+    background: typeof record.background === "boolean" ? record.background : true,
+    collapsed: typeof record.collapsed === "boolean" ? record.collapsed : false,
+    collapsible: typeof record.collapsible === "boolean" ? record.collapsible : true,
+    verticalAlign: typeof record.verticalAlign === "string" ? record.verticalAlign : "",
+    border: typeof record.border === "string" && isSafeStructuredStyleValue(record.border) ? record.border : "",
+    borderRadius: typeof record.borderRadius === "string" && isSafeStructuredStyleValue(record.borderRadius) ? record.borderRadius : "",
+  };
+}
+
+function structuredImageContainerStyle(layout: StructuredImageLayout): string {
+  const declarations = [
+    `width:${formatCssNumber(layout.usedWidth)}${layout.sizeUnits}`,
+  ];
+  if (layout.sizeUnits === "em") declarations.push("font-size:1em");
+  if (layout.verticalAlign && isSafeStructuredStyleValue(layout.verticalAlign)) {
+    declarations.push(`vertical-align:${layout.verticalAlign}`);
+  }
+  if (layout.border) declarations.push(`border:${layout.border}`);
+  if (layout.borderRadius) declarations.push(`border-radius:${layout.borderRadius}`);
+  return declarations.join(";");
+}
+
+function positiveNumber(value: unknown, fallback?: number): number | undefined {
+  if (typeof value === "number" && Number.isFinite(value) && value > 0) return Math.min(value, 10000);
+  return fallback;
+}
+
+function positiveRatio(value: number | undefined): number {
+  return typeof value === "number" && Number.isFinite(value) && value > 0 ? Math.min(value, 10000) : 1;
+}
+
+function formatCssNumber(value: number): string {
+  return Number.isInteger(value) ? String(value) : value.toFixed(4).replace(/0+$/, "").replace(/\.$/, "");
 }
 
 function renderText(text: string, language: string | null = null): string {
